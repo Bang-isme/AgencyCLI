@@ -1,0 +1,34 @@
+name: CI
+
+# Enforced verification gate. Runs the same `pnpm verify` (build all 16
+# packages + full test suite) that contributors run locally, so a "claimed
+# green but actually broken" change can never land on main/master once this
+# repo has a GitHub remote. Pinned to windows-latest because that is the
+# platform the baseline was verified on; broaden to a matrix once the suite
+# is confirmed green on Linux/macOS too.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build + test (pnpm verify)
+        run: pnpm verify
