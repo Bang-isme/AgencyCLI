@@ -32,7 +32,8 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, repackContextAndSystemPrompt } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory } from "./turn-helpers.js";
+import { getRuntimeFlags } from "../runtime/flags.js";
 import {
   globalCostGovernor,
   globalProviderSupervisor,
@@ -218,6 +219,16 @@ export async function runChatTurnWithStream(
       ...(input.history || []),
       { role: "user" as const, content: input.prompt },
     ];
+
+    // §2.3 — proactively compact a long history before it overflows the window.
+    if (getRuntimeFlags().contextCompaction) {
+      const compaction = await compactTurnHistory(
+        turnHistory,
+        provider,
+        getModelSpec(modelName).contextWindow
+      );
+      turnHistory = compaction.messages;
+    }
 
     loopCount = 0;
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);

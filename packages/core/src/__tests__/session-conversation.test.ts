@@ -66,8 +66,9 @@ describe("SessionConversationManager", () => {
     // Let's set contextWindowLimit = 50 tokens (so threshold is 35).
     // The history contains about 100 characters, which is ~25 tokens + overhead.
     // Let's set contextWindowLimit = 20 tokens to force summarization.
+    // Real provider API: complete(messages, opts) → Promise<string>.
     const mockProvider = {
-      complete: vi.fn().mockResolvedValue({ text: "Mock Summary" }),
+      complete: vi.fn().mockResolvedValue("Mock Summary"),
     };
 
     const res = await mgr.summarizeHistory(history, mockProvider, 20);
@@ -78,6 +79,8 @@ describe("SessionConversationManager", () => {
     expect(res[1]?.content).toContain("Mock Summary");
     expect(res[2]?.content).toBe("last turn 4");
     expect(res[5]?.content).toBe("last turn 1");
+    // Called positionally with the message array, not a {messages} object.
+    expect(Array.isArray(mockProvider.complete.mock.calls[0]?.[0])).toBe(true);
 
     expect(mockedWriteFileSync).toHaveBeenCalled();
   });
@@ -100,6 +103,6 @@ describe("SessionConversationManager", () => {
     const res = await mgr.summarizeHistory(history, null, 20);
 
     expect(res.length).toBe(6);
-    expect(res[1]?.content).toContain("[SYSTEM HISTORICAL CONVERSATION SUMMARY]: [Dialogue history compressed: truncated 2 middle turns to save memory context]");
+    expect(res[1]?.content).toContain("[CONVERSATION SUMMARY]: [2 earlier turn(s) omitted to fit the context window]");
   });
 });

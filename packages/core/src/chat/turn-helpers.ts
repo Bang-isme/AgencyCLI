@@ -1,6 +1,7 @@
 import {
   loadAgencyConfig,
   resolveApiKey,
+  estimateMessagesTokens,
   type ProviderId,
 } from "@agency/providers";
 import {
@@ -11,8 +12,9 @@ import { buildContextPack } from "../context/pack.js";
 import { getCachedRoute, setCachedRoute } from "../context/session-cache.js";
 import { type TokenBudgetPlan } from "../context/token-policy.js";
 import { routeUserPrompt, type RouteResult } from "../router/model-router.js";
+import { EventBus } from "../events/event-bus.js";
 import { buildSystemPrompt } from "./prompt.js";
-import type { ChatTurnInput } from "./orchestrator.js";
+import type { ChatTurnInput, ChatMessage } from "./orchestrator.js";
 
 /**
  * Chat-turn setup helpers shared by BOTH entry points — the non-streaming
@@ -80,4 +82,106 @@ export function repackContextAndSystemPrompt(
     input.systemInstructionOverride,
     historicalMemories
   );
+}
+
+/** Minimal provider surface the compactor needs (matches LlmProvider.complete). */
+interface CompletionProvider {
+  complete(messages: ChatMessage[], opts?: { maxTokens?: number }): Promise<string>;
+}
+
+export interface CompactionOptions {
+  /** Fraction of the context window above which compaction triggers (default 0.7). */
+  thresholdRatio?: number;
+  /** Most-recent turns kept verbatim, including the current user turn (default 4). */
+  keepRecent?: number;
+  /** Output cap for the generated summary (default 300). */
+  maxSummaryTokens?: number;
+}
+
+export interface CompactionResult {
+  messages: ChatMessage[];
+  compacted: boolean;
+  summarizedTurns: number;
+}
+
+/**
+ * Roadmap §2.3 — proactively compress a turn's message list before it is sent
+ * to the model, so a long conversation doesn't overflow the context window
+ * mid-task. Keeps the leading system turn and the last `keepRecent` turns
+ * verbatim and replaces the middle with a single model-written summary (or a
+ * placeholder if the summary call fails or no provider is available).
+ *
+ * Returns the ORIGINAL array untouched (compacted=false) when below threshold or
+ * too short, so a caller can stay byte-identical when the feature flag is off.
+ * Never throws — compaction must not break a turn. Emits a best-effort
+ * observability event when it triggers.
+ */
+export async function compactTurnHistory(
+  messages: ChatMessage[],
+  provider: CompletionProvider | null | undefined,
+  contextWindowLimit: number,
+  options: CompactionOptions = {}
+): Promise<CompactionResult> {
+  const thresholdRatio = options.thresholdRatio ?? 0.7;
+  const keepRecent = options.keepRecent ?? 4;
+  const maxSummaryTokens = options.maxSummaryTokens ?? 300;
+
+  const threshold = Math.round(contextWindowLimit * thresholdRatio);
+  const tokenCount = estimateMessagesTokens(messages);
+
+  // Under budget, or too short to compress without dropping the system turn /
+  // recent context → leave it exactly as-is.
+  if (tokenCount <= threshold || messages.length <= keepRecent + 2) {
+    return { messages, compacted: false, summarizedTurns: 0 };
+  }
+
+  const leadIsSystem = messages[0]?.role === "system";
+  const head: ChatMessage[] = leadIsSystem ? [messages[0]!] : [];
+  const startIndex = leadIsSystem ? 1 : 0;
+  const recent = messages.slice(-keepRecent);
+  const middle = messages.slice(startIndex, messages.length - keepRecent);
+
+  if (middle.length === 0) {
+    return { messages, compacted: false, summarizedTurns: 0 };
+  }
+
+  let summaryText = "";
+  if (provider && typeof provider.complete === "function") {
+    try {
+      const payload =
+        "Summarize the following developer interaction history cleanly and very " +
+        "briefly, preserving key findings, active tasks, decisions, and any " +
+        "acceptance criteria. Output only the summary:\n\n" +
+        middle.map((m) => `[${m.role}]: ${m.content}`).join("\n");
+      const out = await provider.complete([{ role: "user", content: payload }], {
+        maxTokens: maxSummaryTokens,
+      });
+      summaryText = typeof out === "string" ? out.trim() : "";
+    } catch {
+      // Compaction must never break a turn — fall through to the placeholder.
+    }
+  }
+
+  if (!summaryText) {
+    summaryText = `[${middle.length} earlier turn(s) omitted to fit the context window]`;
+  }
+
+  const summaryTurn: ChatMessage = {
+    role: "system",
+    content: `[CONVERSATION SUMMARY]: ${summaryText}`,
+  };
+
+  try {
+    void EventBus.getInstance().publish("system:warning", {
+      message: `⚠ Context compaction: summarized ${middle.length} older turn(s) (~${tokenCount} est tokens > ${threshold} threshold) to fit the model window.`,
+    });
+  } catch {
+    /* observability is best-effort */
+  }
+
+  return {
+    messages: [...head, summaryTurn, ...recent],
+    compacted: true,
+    summarizedTurns: middle.length,
+  };
 }

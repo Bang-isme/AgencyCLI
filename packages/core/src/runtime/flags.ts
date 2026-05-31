@@ -69,6 +69,14 @@ export interface RuntimeFlags {
   verifyTests: boolean;
   /** Use the bundled model catalog (models.json) for accurate per-model limits/cost/capabilities. */
   modelCatalog: boolean;
+  /**
+   * Proactively compact (summarize the middle of) a turn's conversation history
+   * before it is sent to the model, once it exceeds ~70% of the context window,
+   * so a long task doesn't overflow mid-conversation (roadmap §2.3). Off in
+   * legacy (history sent verbatim — relies on the reactive context-limit retry),
+   * on in hardened.
+   */
+  contextCompaction: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -161,5 +169,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Additive accuracy (better limits/cost/caps for any BYOK model) → on in
     // hardened; off in legacy to preserve the exact current spec resolution.
     modelCatalog: parseBool(env.AGENCY_MODEL_CATALOG, hardened),
+    // Behaviour-changing (rewrites the prompt history with a summary; costs one
+    // extra summarisation call when it triggers) → off in legacy (verbatim
+    // history), on in hardened.
+    contextCompaction: parseBool(env.AGENCY_CONTEXT_COMPACTION, hardened),
   };
 }

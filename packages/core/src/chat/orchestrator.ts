@@ -29,7 +29,8 @@ import { type RouteResult } from "../router/model-router.js";
 import { getInvokeActions } from "../skill/invoke-actions.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { providerHasKey, resolveRoute, repackContextAndSystemPrompt } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory } from "./turn-helpers.js";
+import { getRuntimeFlags } from "../runtime/flags.js";
 import { parseToolCalls, executeTool, truncateToolResult } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
 import { runGateQuick } from "../task/runner.js";
@@ -256,6 +257,16 @@ export async function runChatTurn(
       ...(input.history || []),
       { role: "user" as const, content: input.prompt },
     ];
+
+    // §2.3 — proactively compact a long history before it overflows the window.
+    if (getRuntimeFlags().contextCompaction) {
+      const compaction = await compactTurnHistory(
+        turnHistory,
+        provider,
+        getModelSpec(modelName).contextWindow
+      );
+      turnHistory = compaction.messages;
+    }
 
     loopCount = 0;
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);

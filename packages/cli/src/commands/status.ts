@@ -79,6 +79,7 @@ function printHuman(r: StatusReport): void {
   console.log(`  Capability routing   ${r.flags.capabilityRouting ? "on" : "off"}`);
   console.log(`  Verify loop          ${r.flags.verifyLoop ? `on (≤${r.flags.verifyMaxRounds} rounds; build${r.flags.verifyLint ? "+lint" : ""}${r.flags.verifyTests ? "+test" : ""})` : "off"}`);
   console.log(`  Model catalog        ${r.flags.modelCatalog ? "on (models.json)" : "off"}`);
+  console.log(`  Context compaction   ${r.flags.contextCompaction ? "on (summarize >70% window)" : "off"}`);
   console.log("");
   console.log(`  ${bold}Events${reset}               ${r.events.inMemoryJournal} in-memory${r.events.backpressured ? " (backpressured!)" : ""}`);
   console.log("");

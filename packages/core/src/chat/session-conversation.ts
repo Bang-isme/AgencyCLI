@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ChatMessage } from "./orchestrator.js";
-import { estimateMessagesTokens } from "@agency/providers";
+import { compactTurnHistory } from "./turn-helpers.js";
 
 export class SessionConversationManager {
   private sessionDir: string;
@@ -55,71 +55,28 @@ export class SessionConversationManager {
   }
 
   /**
-   * Summarizes the dialogue history dynamically if it exceeds 70% of the context limit.
-   * Keeps the original system prompt and the last 4 turns intact in full.
+   * Summarizes the dialogue history dynamically if it exceeds 70% of the context
+   * limit, keeping the original system prompt and the last 4 turns intact, then
+   * persists the compacted history to the session file.
+   *
+   * Delegates the actual compaction to the shared {@link compactTurnHistory} so
+   * there is exactly ONE compaction algorithm (the live turn path uses the same
+   * one). `provider` must expose the real `complete(messages, opts): Promise<string>`
+   * API; an unusable provider falls back to a placeholder summary.
    */
   public async summarizeHistory(
     history: ChatMessage[],
     provider: any,
     contextWindowLimit: number
   ): Promise<ChatMessage[]> {
-    const tokenCount = estimateMessagesTokens(history);
-    const threshold = Math.round(contextWindowLimit * 0.7);
-
-    // Only summarize if exceeding 70% of the active context window limit
-    if (tokenCount <= threshold || history.length <= 6) {
-      return history;
+    const { messages, compacted } = await compactTurnHistory(
+      history,
+      provider,
+      contextWindowLimit
+    );
+    if (compacted) {
+      this.checkpointConversation(messages);
     }
-
-    const firstTurn = history[0];
-    const systemTurn = firstTurn && firstTurn.role === "system" ? firstTurn : null;
-    const startIndex = systemTurn ? 1 : 0;
-
-    const last4Turns = history.slice(-4);
-    const middleTurns = history.slice(startIndex, -4);
-
-    if (middleTurns.length === 0) {
-      return history;
-    }
-
-    let summaryText = "";
-    if (provider && typeof provider.complete === "function") {
-      try {
-        const payload =
-          "Summarize the following developer interaction history cleanly, extremely briefly, highlighting key findings, active tasks, and context. Do not output anything else:\n\n" +
-          middleTurns.map((m) => `[${m.role}]: ${m.content}`).join("\n");
-
-        const res = await provider.complete({
-          messages: [{ role: "user", content: payload }],
-          max_tokens: 300,
-        });
-        summaryText = res?.text?.trim() || "";
-      } catch {
-        // Fallback below on catch
-      }
-    }
-
-    if (!summaryText) {
-      // Fallback: character-level truncation summary
-      const totalTruncated = middleTurns.length;
-      summaryText = `[Dialogue history compressed: truncated ${totalTruncated} middle turns to save memory context]`;
-    }
-
-    const summaryTurn: ChatMessage = {
-      role: "system",
-      content: `[SYSTEM HISTORICAL CONVERSATION SUMMARY]: ${summaryText}`,
-    };
-
-    const newHistory: ChatMessage[] = [];
-    if (systemTurn) {
-      newHistory.push(systemTurn);
-    }
-    newHistory.push(summaryTurn);
-    newHistory.push(...last4Turns);
-
-    // Save checkpoint cleanly
-    this.checkpointConversation(newHistory);
-
-    return newHistory;
+    return messages;
   }
 }
