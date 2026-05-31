@@ -652,7 +652,6 @@ This layer backs both the CLI's headless rendering and the data the TUI's runtim
 - `chat/circuit-breaker.ts` — tool-failure circuit breaker guarding the chat loop
 - `kernel/entropy-provider.ts` — `DeterministicEntropy` / `DeterministicClock` + `installDeterministicGlobals()` for reproducible runs
 - `utils/ast-compiler.ts` — AST-level patch operations (`applyPatch`, `replaceFunctionBody`, `renameSymbol`, …)
-- `agents/specialist-registry.ts` — `DomainSpecialistRegistry` for domain-specialist routing
 
 ---
 

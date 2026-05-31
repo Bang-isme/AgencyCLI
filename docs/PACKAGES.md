@@ -68,7 +68,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `stream.ts` | `runChatTurnWithStream(input, handlers)` — streaming variant with `onRoute`/`onDelta` callbacks |
 | `presentation.ts` | `toPresentationTurn()`, `routeToChips()`, `formatChatTurnForSurface()` |
 | `prompt.ts` | `buildSystemPrompt()` — assembles the agent system prompt |
-| `session-conversation.ts` | Multi-turn conversation/session message state |
 | `memory-integration.ts` | `loadHistoricalMemories()`, `safeAddEpisode()` — wires chat to `@agency/memory` |
 | `circuit-breaker.ts` | `createCircuitBreaker()`, `checkCircuitBreaker()`, `recordToolFailure/Success()` — tool-failure circuit breaker |
 
@@ -106,7 +105,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `profiles.ts` | `AGENT_DISCIPLINES`, `AGENT_SUBAGENT_PROMPT`, `coerceAgentId()`, `loadCustomAgents()`, `subagentPromptPath()` |
 | `orchestrator.ts` | `dispatchAgent()`, `dispatchAgentsParallel()` — with staging + re-index |
 | `workspace-isolation.ts` | `createIsolatedWorkspace()`, `mergeWorkspaceChanges()` |
-| `specialist-registry.ts` | `DomainSpecialistRegistry`, `SpecialistProfile` — domain specialist routing |
+| `agent-registry.ts` | `CapabilityAgentRegistry`, `capabilityRegistry`, `inferCapabilities()` — capability-driven routing + agent health/utilization (flag `AGENCY_CAPABILITY_ROUTING`) |
 
 **`task/` — Plan Execution:**
 | Module | Key Exports |

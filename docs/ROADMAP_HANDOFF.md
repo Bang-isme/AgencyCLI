@@ -153,9 +153,13 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   thật → luôn rơi fallback). Sửa: helper thuần `compactTurnHistory()` (`chat/turn-helpers.ts`, API thật, giữ
   system + 4 lượt cuối nguyên văn, tóm tắt phần giữa, fallback khi provider lỗi/null, KHÔNG ném) chạy trong CẢ
   `runChatTurn` + `runChatTurnWithStream` ngay trước khi gửi model, gate cờ `AGENCY_CONTEXT_COMPACTION`
-  (off legacy/on hardened); `summarizeHistory` giờ delegate vào nó (dedup + sửa bug). Test
+  (off legacy/on hardened). Test
   `context-compaction.test.ts` (5). Commit `b9f33e9`. *Follow-up:* nén 1 lần trước outer tool-loop —
   in-loop compaction là bước sau; reactive context-limit handler vẫn là lưới an toàn.
+- **Dọn dẹp sau đó (2026-05-31, cont'd 2):** vỏ `SessionConversationManager` (đã ủy quyền compaction cho
+  `compactTurnHistory`, phần JSONL persistence trùng với TUI `sessions/store.ts` live) là dead-duplicate
+  0 call-site → **đã xóa** cùng `DomainSpecialistRegistry`. Compaction live giờ CHỈ nằm ở
+  `compactTurnHistory` (không còn lớp delegate trung gian).
 
 ### 2.4 — Tầng tool chắc hơn
 - Sửa file dạng diff/patch chính xác (đã có `ast-compiler` trong `utils/` — dùng nhất quán).

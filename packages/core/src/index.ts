@@ -329,10 +329,6 @@ export {
   type SemanticFindings,
 } from "./index/incremental-indexer.js";
 export {
-  DomainSpecialistRegistry,
-  type SpecialistProfile,
-} from "./agents/specialist-registry.js";
-export {
   CapabilityAgentRegistry,
   capabilityRegistry,
   getAgentRegistrySnapshot,
@@ -350,9 +346,6 @@ export {
   SkillCircuitBreakerError,
   type SkillDefinition,
 } from "./skill/skills-registry.js";
-export {
-  SessionConversationManager,
-} from "./chat/session-conversation.js";
 export {
   LongRunnerManager,
   type RunnerState,

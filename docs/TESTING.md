@@ -52,7 +52,7 @@ src/__tests__/<name>.test.tsx  — React/Ink component tests
 | Context | `pack.test.ts`, `file-refs.test.ts`, `token-policy.test.ts`, `compact.test.ts` | Context assembly, @-reference resolution, token budgets |
 | Events & Journal | `event-bus.test.ts`, `replay-journal.test.ts` | Pub/sub, dedup, SQLite journal replay |
 | Agents | `agents-orchestrator.test.ts`, `workspace-isolation.test.ts` | Agent dispatch, workspace isolation, parallel merge |
-| Other | `chat-stream.test.ts`, `chat-presentation.test.ts`, `mcp.test.ts`, `workflow-compose.test.ts`, `harness.test.ts`, `tool-harness.test.ts`, `output-engine.test.ts`, `ast-compiler.test.ts`, `specialist-registry.test.ts`, etc. | Streaming, presentation, MCP, workflow chains, skill/tool harness, output engine, AST patching |
+| Other | `chat-stream.test.ts`, `chat-presentation.test.ts`, `mcp.test.ts`, `workflow-compose.test.ts`, `harness.test.ts`, `tool-harness.test.ts`, `output-engine.test.ts`, `ast-compiler.test.ts`, etc. | Streaming, presentation, MCP, workflow chains, skill/tool harness, output engine, AST patching |
 
 **Patterns:**
 - Heavy use of `mkdtempSync` + `rmSync` for filesystem isolation
