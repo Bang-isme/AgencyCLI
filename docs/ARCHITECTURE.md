@@ -245,5 +245,5 @@ Mỗi task step persist state (`tasks/<id>.json`), cho phép crash recovery. Har
 ### 7. Workspace Isolation for Parallel Agents
 `createIsolatedWorkspace()` tạo temp dir cho mỗi agent → merge changes → clean temp dir.
 
-### 8. DAG Scheduler + Cascade Rollback
-`PlannerEngine` hỗ trợ dependency graph, retries với exponential backoff, deadlock detection, best-effort cascade rollback on failure.
+### 8. DAG Scheduler
+`runPlan` (`task/runner.ts`) hỗ trợ dependency graph (`parsePlanTasks`), static cycle detection (`detectDagCycle` → `PlanCycleError`), per-task retries, checkpoint-based resume, và recovery escalation qua `ConvergenceEngine`.

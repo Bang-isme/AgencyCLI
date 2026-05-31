@@ -120,7 +120,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 |--------|------------|
 | `harness.ts` | `runWithVerificationHarness()` — max 3 retry + auto_gate |
 | `tool-harness.ts` | `parseToolCalls()`, `executeTool()`, `registry`, `truncateToolResult()` — tool-call loop + registry |
-| `skills-registry.ts` | `SkillsRegistry`, `SkillDefinition`, `SkillCircuitBreakerError` |
 | `invoke-actions.ts` | `getInvokeActions()` — resolves skill invoke actions |
 | `context-delivery.ts` | `ContextSufficiencyModel`, `TopologyDetector`, `ContextEscalationEngine` — tiered skill context delivery |
 
@@ -137,7 +136,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | Module | Key Exports |
 |--------|------------|
 | `workflow/compose.ts` | `runWorkflow()` — 8 predefined workflow chains |
-| `planner/planner-engine.ts` | `PlannerEngine` — DAG scheduler with cascade rollback |
 | `events/event-bus.ts` | `EventBus` (singleton pub/sub, SHA-256 dedup) |
 | `events/event-journal.ts` | `EventJournal` — SQLite-backed replay |
 | `events/replay-engine.ts` | `ReplayEngine` — replays journaled events |

@@ -41,7 +41,7 @@ startup hook over writing new mechanisms. Most remaining work is wiring, not inv
 
 ---
 
-## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 344 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~1995 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load. Core dropped 350→344 after the wire-or-delete slice deleted two dead duplicates — see §5 LATEST.)
+## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 336 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~1987 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load. Core dropped 350→344→336 across two wire-or-delete slices that deleted four dead-duplicate modules — see §5 LATEST.)
 
 All 5 CRITICAL threats from the audit are closed, plus several HIGH clusters.
 
@@ -193,21 +193,23 @@ Inspect any time with `agency status` / `agency status --json`.
 > - **Verify gate:** `pnpm verify` (build+test all 16 pkgs) + CI workflow. **The rule now: run `pnpm verify` before claiming green** — directly cures this repo's recurring false-green handoffs.
 > - **Memory observability:** `safeAddEpisode` no longer silently drops a failed episode write — it emits a `system:warning` (same class as the `loadCheckpoint` corrupt-swallow fix).
 > - **§2.3 context compaction WIRED:** the `summarizeHistory` machinery was built-but-unwired (0 call sites) **and** coded against a phantom provider API. Now one shared `compactTurnHistory` (turn-helpers.ts) runs in BOTH `runChatTurn` + `runChatTurnWithStream`, gated by `AGENCY_CONTEXT_COMPACTION`; `summarizeHistory` delegates to it (dedup + bugfix).
-> - **WIRED-OR-DEAD AUDIT (the initiative's core thesis, made explicit).** Swept every machinery class exported from `core/index.ts`. **Confirmed WIRED:** `ApprovalPolicyEngine` (tool-harness), `CapabilityAgentRegistry`/`capabilityRegistry` (dispatch), `RuntimePressureController` (static, runner.ts), `ToolRegistry`, cost governor/supervisor, `LeaseManager`. **Confirmed DEAD (built + exported + tested, but NO live code imports the module):**
+> - **WIRED-OR-DEAD AUDIT (the initiative's core thesis, made explicit).** Swept every machinery class exported from `core/index.ts`. **Confirmed WIRED:** `ApprovalPolicyEngine` (tool-harness), `CapabilityAgentRegistry`/`capabilityRegistry` (dispatch), `RuntimePressureController` (static, runner.ts), `ToolRegistry`, cost governor/supervisor, `LeaseManager`, **`OutputEngine`** (cli `out`/`handleError` — corrected 2026-05-31 cont'd 3, was mislabeled dead below). **Confirmed DEAD (built + exported + tested, but NO live code imports the module):**
 >
 > | Dead module | Disposition |
 > |---|---|
 > | ~~`DomainSpecialistRegistry` (agents/specialist-registry.ts)~~ | superseded by `CapabilityAgentRegistry` → **DELETED** (dead duplicate; `.agency/specialists/*.json` override was never wired — recover from `0d216b9` if ever wanted) |
 > | ~~`SessionConversationManager` (chat/session-conversation.ts)~~ | compaction lives in `compactTurnHistory`; JSONL persistence duplicated by TUI's live `sessions/store.ts` → **DELETED** (dead duplicate) |
-> | `PlannerEngine` (planner/planner-engine.ts) | planning happens via the `$plan` skill → wire-or-delete |
-> | `SkillsRegistry` (skill/skills-registry.ts) | skills handled via skills-bridge / `skillsRoot` → wire-or-delete |
-> | `OutputEngine` (+ formatters, output/) | CLI uses `writeProcessOutput`/console → wire-or-delete |
+> | ~~`PlannerEngine` (planner/planner-engine.ts)~~ | duplicate DAG executor (own `ExecutionDagContract` model); live plan execution is `runPlan`/`task/runner.ts` (+ `ConvergenceEngine`, `detectDagCycle`, checkpoints) → **DELETED** (dead duplicate) |
+> | ~~`SkillsRegistry` (skill/skills-registry.ts)~~ | in-memory skill registry duplicates skills-bridge; its per-skill circuit-breaker overlaps the wired tool-loop breaker (`chat/circuit-breaker.ts`) → **DELETED** (dead duplicate) |
+> | ~~`OutputEngine` (+ formatters, output/)~~ | **AUDIT MISLABEL — actually WIRED, not dead.** `cli/src/utils.ts` `out = OutputEngine.shared()` + `handleError()` → **49 `out.*`/`handleError` calls across 12 command files.** Moved to WIRED list above; NOT deleted. |
 > | `LongRunnerManager` (task/long-runner-manager.ts) | long-running task mgmt → **wire-target** (tier-6 ops) |
 > | `ReplayEngine` (events/replay-engine.ts) | **roadmap §2.5** (replay self-check) — deferred ON PURPOSE, do NOT delete |
 >
 > The remaining live-but-unwired modules are **left in place + documented** (not mass-deleted/wired in one pass — several need design decisions, one is planned). Picking any single one to wire-or-delete is a clean next slice.
 >
-> **wire-or-delete slice DONE (2026-05-31, cont'd 2):** the two confirmed-replaced dead duplicates above — `DomainSpecialistRegistry` and `SessionConversationManager` (+ their tests + `core/index.ts` exports) — were **deleted**. Verified by grep (only their own tests + the index re-export imported them; no live/CLI/TUI consumer) then `pnpm verify` green. Core 350→**344**, repo ~2001→**1995** tests (−6 = the two test files). Next clean slice: `PlannerEngine` / `SkillsRegistry` / `OutputEngine` (wire-or-delete), or `LongRunnerManager` (tier-6 wire-target). `ReplayEngine` stays for §2.5.
+> **wire-or-delete slice DONE (2026-05-31, cont'd 2):** the two confirmed-replaced dead duplicates above — `DomainSpecialistRegistry` and `SessionConversationManager` (+ their tests + `core/index.ts` exports) — were **deleted**. Verified by grep (only their own tests + the index re-export imported them; no live/CLI/TUI consumer) then `pnpm verify` green. Core 350→**344**, repo ~2001→**1995** tests (−6 = the two test files).
+>
+> **wire-or-delete slice 2 DONE (2026-05-31, cont'd 3):** swept the next batch with the "no duplication" lens. **`OutputEngine` was an audit MISLABEL — it is WIRED** (cli `out`/`handleError`, 49 calls/12 files) → kept + moved to WIRED, docs corrected. **`PlannerEngine` and `SkillsRegistry`** were confirmed dead duplicates (PlannerEngine ↔ live `runPlan`/`runner.ts`; SkillsRegistry ↔ live skills-bridge + `chat/circuit-breaker.ts`) → **deleted** (+ tests + `core/index.ts` exports). Verified by grep (no live importer, incl. the `cli/commands/skill.ts` `registerSkill` name-collision being unrelated) then `pnpm verify` green: core 344→**336**, repo 1995→**1987** (−8 = the two test files). **`LongRunnerManager` kept** (tier-6 wire-target, no live duplicate); `ReplayEngine` stays for §2.5. Dead-module list is now empty except those two intentional keeps.
 >
 > **NEXT after that:** roadmap §2.4 (stronger tool layer: parallel tools, structured tool results) · §2.5 (use `ReplayEngine` for behaviour-level regression) · measure legacy↔hardened on a harder eval corpus (needs a BYOK key — ceiling effect on current corpus) · then promote `hardened`→default.
 
@@ -447,8 +449,8 @@ tools/MCP/plugins; full artifact system (id/owner/version). See PRODUCTION_AUDIT
 ## 7. How to resume in one minute
 ```bash
 pnpm -r build                                   # must be clean (all 16 packages)
-pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~1995, exit 0)
-# or per-package: core 344 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
+pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~1987, exit 0)
+# or per-package: core 336 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
 agency eval --json                              # run the eval suite + (if present) the regression gate
 agency status --json                            # see active flags (24)
 AGENCY_PROFILE=hardened agency status            # see hardened posture (auto-recover, GC, budgets, compaction…)

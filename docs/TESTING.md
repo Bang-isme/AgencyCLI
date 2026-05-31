@@ -47,7 +47,7 @@ src/__tests__/<name>.test.tsx  — React/Ink component tests
 | Test Category | Files | What's Tested |
 |--------------|-------|---------------|
 | Orchestration & Routing | `model-router.test.ts`, `orchestrator.test.ts`, `prompt-bridge.test.ts`, `routing-weights.test.ts` | Route resolution, weight application, feedback learning, Python bridge integration |
-| Task & Plan | `task-runner.test.ts`, `planner-engine.test.ts`, `approval-policy.test.ts` | Plan parsing, checkpoint save/load, DAG execution, cascade rollback, autonomy escalation |
+| Task & Plan | `task-runner.test.ts`, `dag-checkpoint-integrity.test.ts`, `approval-policy.test.ts` | Plan parsing, checkpoint save/load, DAG cycle detection, autonomy escalation |
 | Approval & Security | `approval.test.ts`, `approval-policy.test.ts`, `sandbox-routing.test.ts` | 23 DENY_PATTERNS, risk assessment, continuation policies, sticky denials |
 | Context | `pack.test.ts`, `file-refs.test.ts`, `token-policy.test.ts`, `compact.test.ts` | Context assembly, @-reference resolution, token budgets |
 | Events & Journal | `event-bus.test.ts`, `replay-journal.test.ts` | Pub/sub, dedup, SQLite journal replay |

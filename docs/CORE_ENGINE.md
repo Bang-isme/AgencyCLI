@@ -371,26 +371,27 @@ dispatchAgentsParallel(tasks, projectRoot)
 
 ---
 
-## 9. Planner Engine (DAG)
+## 9. Plan Execution (DAG)
 
-**Location:** `packages/core/src/planner/planner-engine.ts`
+**Location:** `packages/core/src/task/runner.ts`
 
-### `PlannerEngine`
+### `runPlan` (+ `parsePlanTasks`, `detectDagCycle`)
 
 ```
-PlannerEngine
+runPlan(projectRoot, planPath, opts)
     │
-    ├─→ createDag(tasks, rollbackPaths)
-    │     └─→ ExecutionDagContract { nodes, edges, metadata }
-    │
-    └─→ execute(dag, context, executor)
-          ├─→ Dependency resolution (topological sort)
-          ├─→ Parallel execution where dependencies allow
-          ├─→ Retry per node (exponential backoff)
-          ├─→ Heartbeat (3s interval) for liveness
-          ├─→ Deadlock detection → abort
-          └─→ Cascade rollback on failure (reverse completion order)
+    ├─→ parsePlanTasks  (### Task N: headers → PlanTask { id, title, dependencies })
+    ├─→ detectDagCycle  (DFS; throws PlanCycleError on a dependency cycle)
+    ├─→ schedule ready nodes (dependencies met) → dispatchAgent per task
+    ├─→ per-task retry up to resolvedMaxAttempts
+    ├─→ TaskCheckpoint save/load for crash-resume
+    └─→ 0–6 level recovery escalation via ConvergenceEngine
 ```
+
+> The earlier standalone `PlannerEngine` (its own `ExecutionDagContract` model with
+> parallel execute + cascade rollback + 3s heartbeat) was a **dead duplicate** of this
+> path — no live callers — and was removed (2026-05-31). Recover from git `0d216b9` if
+> a programmatic DAG API is ever wanted.
 
 ---
 
