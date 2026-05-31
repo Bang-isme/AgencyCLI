@@ -41,7 +41,7 @@ startup hook over writing new mechanisms. Most remaining work is wiring, not inv
 
 ---
 
-## 3. What is DONE (verified: full `pnpm -r build` clean; core 344 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 (full `pnpm -r` sweep green under concurrent load, ~1993 tests))
+## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 350 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~2001 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load)
 
 All 5 CRITICAL threats from the audit are closed, plus several HIGH clusters.
 
@@ -178,12 +178,36 @@ additions to `governance/src/__tests__/governance.test.ts`.
 | `AGENCY_VERIFY_TESTS` | off / off | add `test` to acceptance (opt-in — full suite is slow) |
 | `AGENCY_MODEL_CATALOG` | off / on | use `models.json` for accurate per-model limits/cost/capabilities |
 | `AGENCY_MODELS_JSON` | (auto-located) | explicit path to the model catalog (else env→walk-up→cwd) |
+| `AGENCY_CONTEXT_COMPACTION` | off / on | §2.3 — summarize the middle of a long history before it overflows the context window (keeps system + last 4 turns) |
+
+**24 flags total.** All resolve via `getRuntimeFlags()` (env override → `AGENCY_PROFILE` default → built-in).
 
 Inspect any time with `agency status` / `agency status --json`.
 
 ---
 
 ## 5. What's NEXT (priority order — pick the top item)
+
+> **LATEST (2026-05-31, cont'd) — git history established, verify gate, compaction wired, dead-machinery audited.**
+> - **Git:** repo had ZERO commits; now `0d216b9`(init) → `656498d`(memory observability fix) → `1cb58c1`(verify gate) → `b9f33e9`(§2.3 compaction). Tree clean. See §6.
+> - **Verify gate:** `pnpm verify` (build+test all 16 pkgs) + CI workflow. **The rule now: run `pnpm verify` before claiming green** — directly cures this repo's recurring false-green handoffs.
+> - **Memory observability:** `safeAddEpisode` no longer silently drops a failed episode write — it emits a `system:warning` (same class as the `loadCheckpoint` corrupt-swallow fix).
+> - **§2.3 context compaction WIRED:** the `summarizeHistory` machinery was built-but-unwired (0 call sites) **and** coded against a phantom provider API. Now one shared `compactTurnHistory` (turn-helpers.ts) runs in BOTH `runChatTurn` + `runChatTurnWithStream`, gated by `AGENCY_CONTEXT_COMPACTION`; `summarizeHistory` delegates to it (dedup + bugfix).
+> - **WIRED-OR-DEAD AUDIT (the initiative's core thesis, made explicit).** Swept every machinery class exported from `core/index.ts`. **Confirmed WIRED:** `ApprovalPolicyEngine` (tool-harness), `CapabilityAgentRegistry`/`capabilityRegistry` (dispatch), `RuntimePressureController` (static, runner.ts), `ToolRegistry`, cost governor/supervisor, `LeaseManager`. **Confirmed DEAD (built + exported + tested, but NO live code imports the module):**
+>
+> | Dead module | Disposition |
+> |---|---|
+> | `DomainSpecialistRegistry` (agents/specialist-registry.ts) | superseded by `CapabilityAgentRegistry` → **delete candidate** |
+> | `SessionConversationManager` (chat/session-conversation.ts) | its algorithm now lives in `compactTurnHistory`; live history uses SQLite → **delete candidate** |
+> | `PlannerEngine` (planner/planner-engine.ts) | planning happens via the `$plan` skill → wire-or-delete |
+> | `SkillsRegistry` (skill/skills-registry.ts) | skills handled via skills-bridge / `skillsRoot` → wire-or-delete |
+> | `OutputEngine` (+ formatters, output/) | CLI uses `writeProcessOutput`/console → wire-or-delete |
+> | `LongRunnerManager` (task/long-runner-manager.ts) | long-running task mgmt → **wire-target** (tier-6 ops) |
+> | `ReplayEngine` (events/replay-engine.ts) | **roadmap §2.5** (replay self-check) — deferred ON PURPOSE, do NOT delete |
+>
+> These were **left in place + documented** (not mass-deleted/wired in one pass — several need design decisions, one is planned). Picking any single one to wire-or-delete is a clean next slice.
+>
+> **NEXT after that:** roadmap §2.4 (stronger tool layer: parallel tools, structured tool results) · §2.5 (use `ReplayEngine` for behaviour-level regression) · measure legacy↔hardened on a harder eval corpus (needs a BYOK key — ceiling effect on current corpus) · then promote `hardened`→default.
 
 > **STATUS (2026-05-30):** (A)·(B)·(C)·(D)·(E)·(F) all DONE → **every audit hardening gap is closed.**
 > Maturity tier 1 + tier 2 complete + 3 TUI reliability fixes. **Eval harness (ROADMAP Phần 3) STARTED:**
@@ -401,46 +425,33 @@ tools/MCP/plugins; full artifact system (id/owner/version). See PRODUCTION_AUDIT
 
 ---
 
-## 6. Git / commit state  ⚠️
+## 6. Git / commit state  ✅ (2026-05-31 — repo now has history)
 
-- Branch: **`master`** (main branch for PRs is `main`). **Nothing has been committed yet** — the entire
-  initiative is uncommitted in the working tree: P0 + P1 slices 1–7, the (B)/(C)/(D)/(E)/(F) roadmap slices,
-  the three TUI reliability fixes, plus the deleted governance `.js` artifacts.
-- New **untracked** files to include in any commit: `packages/tui/src/components/AppErrorBoundary.tsx`,
-  `packages/tui/src/__tests__/error-boundary.test.tsx`, `packages/core/src/__tests__/auto-resume.test.ts`,
-  `packages/core/src/__tests__/dag-checkpoint-integrity.test.ts`, `packages/workspace/src/mutation-journal.ts`,
-  `packages/workspace/src/__tests__/mutation-journal.test.ts`, `packages/memory/src/secret-policy.ts`,
-  `packages/memory/src/__tests__/secret-on-persist.test.ts`, `packages/benchmark/src/metrics.ts`,
-  `packages/benchmark/src/eval-gate.ts`, `packages/benchmark/src/__tests__/eval-harness.test.ts`,
-  `packages/cli/src/commands/eval.ts`, `packages/core/src/task/verify-loop.ts`,
-  `packages/core/src/__tests__/verify-loop.test.ts`, `packages/core/src/__tests__/acceptance-commands.test.ts`,
-  `packages/providers/src/model-catalog.ts`, `packages/providers/src/__tests__/model-catalog.test.ts`
-  (and `packages/providers/models.json` — the catalog data; **moved out of repo root** into the package
-  that loads it and added to `@agency/providers` `files` so it actually SHIPS on publish — previously it
-  sat unshipped at repo root, making the model-catalog feature dev-only. Cleaned of external SDK/vendor
-  refs by `scripts/strip-external-refs.mjs`. Resolves via walk-up from the loader module, dev + installed)
-  (and earlier: `event-bus`, `agent-registry`, `mcp-approval`, `event-attribution-handover`,
-  `lifecycle-manager`, `invoke-safe` test files). Runtime-created `.agency/` dirs are gitignored.
-- The user keeps saying "continue/tiếp tục" and has **not** asked to commit. When they do:
-  **branch off `master` first** (don't commit straight to it), then commit in logical slices
-  (P0, each P1 slice, the 3 TUI fixes, B, F) or as one hardening PR. End commit messages with the
-  Co-Authored-By trailer.
-- Quick sanity before committing: `pnpm -r build` + the suites in §3 must be green.
+- Branch: **`master`** (main branch for PRs is `main`). The repo previously had **ZERO commits**; the entire
+  initiative now sits on a real commit history. **Tree is clean.** Commits:
+  | Commit | What |
+  |---|---|
+  | `0d216b9` | **Initial commit** — recovery point capturing the whole hardened tree (981 files). `*.tsbuildinfo` gitignored at commit #1. |
+  | `656498d` | `fix(memory)`: `safeAddEpisode` silently swallowed every episode-write failure; now emits a best-effort `system:warning` (keeps no-throw). |
+  | `1cb58c1` | `ci`: `pnpm verify` (= build all + test all) + `.github/workflows/ci.yml` (windows-latest, push main/master + PR). |
+  | `b9f33e9` | `feat(context)`: wire **§2.3 conversation compaction** into both turn paths (was built-not-wired; one shared `compactTurnHistory`). |
+- **Each commit was verified before claiming green** (`pnpm verify` / per-package `vitest run`) — the cure
+  for this repo's recurring "claimed green but build was actually broken" handoffs. **Always run `pnpm verify`
+  before asserting green.**
+- CI activates once a GitHub **remote** exists (repo is currently local-only; `PUBLISH.md`/publish scripts
+  imply a remote is intended). End commit messages with the Co-Authored-By trailer.
+- Runtime-created `.agency/` dirs and `*.tsbuildinfo` build caches are gitignored.
 
 ## 7. How to resume in one minute
 ```bash
 pnpm -r build                                   # must be clean (all 16 packages)
-pnpm --filter @agency/core      test            # 329  (verify-loop both edit paths + acceptance)
-pnpm --filter @agency/cli       test            # 547
-pnpm --filter @agency/tui       test            # 115  (the 3 TUI reliability fixes live here)
-pnpm --filter @agency/memory    test            # 34   (incl. secret-on-persist)
-pnpm --filter @agency/workspace test            # 11   (incl. mutation-journal atomic rollback)
-pnpm --filter @agency/benchmark test            # 13   (eval harness: metrics + regression gate)
+pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~2001, exit 0)
+# or per-package: core 350 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
 agency eval --json                              # run the eval suite + (if present) the regression gate
-agency status --json                            # see active flags
-AGENCY_PROFILE=hardened agency status            # see hardened posture (auto-recover, GC, budgets…)
+agency status --json                            # see active flags (24)
+AGENCY_PROFILE=hardened agency status            # see hardened posture (auto-recover, GC, budgets, compaction…)
 ```
-Then open this file (read §5 STATUS banner → all audit gaps closed + eval harness + verify loop started; **top pick is grow the corpus & measure, then widen verify-loop acceptance**) + ROADMAP_HANDOFF.md +
+Then open this file (read §5 **LATEST** banner → git history + verify gate + §2.3 compaction wired + the wired-or-dead audit; **top pick is wire-or-delete one dead module, or grow the eval corpus & measure**) + ROADMAP_HANDOFF.md +
 PRODUCTION_AUDIT.md §2 (gap matrix). Memory note for the assistant: see
 `agencycli-production-hardening` in the project memory.
 

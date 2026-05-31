@@ -130,7 +130,11 @@ pnpm agency run "npm test"
 ### 3. Testing
 
 ```bash
-# Run all tests
+# ▶ THE ground-truth gate — build all 16 packages + run the full suite (~2001 tests).
+#   Run this before claiming "green" or committing a change. Don't assert green — verify it.
+pnpm verify            # = pnpm -r build && pnpm -r test
+
+# Run all tests only
 pnpm -r test
 
 # Run single package
@@ -142,6 +146,10 @@ cd packages/core && npx vitest run src/__tests__/approval.test.ts
 # Watch mode
 cd packages/tui && npx vitest
 ```
+
+> **Rule (load-bearing):** this repo has a history of handoffs that *claimed* "build clean / all green"
+> when the tree was actually broken. The single authoritative check is **`pnpm verify`**, also enforced by
+> `.github/workflows/ci.yml` on push/PR. If you didn't run it, you don't know it's green.
 
 ### 4. Linting & Type Checking
 

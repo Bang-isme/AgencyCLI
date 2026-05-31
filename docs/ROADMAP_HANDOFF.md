@@ -145,9 +145,17 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   (`no-progress`); hết round (`max-rounds`); hết budget (`budget-exhausted`).
 - **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build (gắn với 2.1 còn lại).
 
-### 2.3 — Quản lý context window (compaction)
+### 2.3 — Quản lý context window (compaction)  ← ✅ XONG (2026-05-31)
 - Hội thoại/task dài sẽ tràn context window. Cần nén lịch sử (tóm tắt lượt cũ, giữ phần
   quan trọng + tiêu chí task) khi gần đầy. Không có → task dài vỡ giữa chừng.
+- **Đã wire.** `SessionConversationManager.summarizeHistory` từng **xây-mà-chưa-nối-dây** (0 call site) *và*
+  viết cho **API provider MA** (`complete({messages})→{text}`, khác `LlmProvider.complete(messages,opts)→string`
+  thật → luôn rơi fallback). Sửa: helper thuần `compactTurnHistory()` (`chat/turn-helpers.ts`, API thật, giữ
+  system + 4 lượt cuối nguyên văn, tóm tắt phần giữa, fallback khi provider lỗi/null, KHÔNG ném) chạy trong CẢ
+  `runChatTurn` + `runChatTurnWithStream` ngay trước khi gửi model, gate cờ `AGENCY_CONTEXT_COMPACTION`
+  (off legacy/on hardened); `summarizeHistory` giờ delegate vào nó (dedup + sửa bug). Test
+  `context-compaction.test.ts` (5). Commit `b9f33e9`. *Follow-up:* nén 1 lần trước outer tool-loop —
+  in-loop compaction là bước sau; reactive context-limit handler vẫn là lưới an toàn.
 
 ### 2.4 — Tầng tool chắc hơn
 - Sửa file dạng diff/patch chính xác (đã có `ast-compiler` trong `utils/` — dùng nhất quán).
@@ -157,6 +165,9 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
 ### 2.5 — Dùng Replay để tự kiểm
 - Đã có `ReplayEngine` + `DeterministicClock/Entropy`. Tận dụng để **chạy lại phiên cũ và xác
   nhận ra kết quả y hệt** → nền cho test hồi quy ở **cấp hành vi**, không chỉ cấp unit.
+- *Audit wired-or-dead (2026-05-31):* `ReplayEngine` (events/replay-engine.ts) hiện **xây nhưng chưa
+  nối dây trong live code** (chỉ dùng ở test core + telemetry) — đây CHÍNH là việc của 2.5. Giữ lại,
+  KHÔNG xóa; wiring nó = thực thi mục này.
 
 ---
 
@@ -252,11 +263,12 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 
 ---
 
-## 7. Trạng thái git / commit ⚠️
-- Nhánh: **`master`** (nhánh PR chính là `main`). **Chưa commit gì** — toàn bộ P0 + P1 slice 1–7,
-  slice (B)/(F), và 3 fix TUI còn nằm trong working tree. Chi tiết file untracked: xem
-  HARDENING_HANDOFF.md §6.
-- Khi commit: **tách nhánh từ `master` trước**, commit theo từng slice logic, kết thúc message
-  bằng trailer `Co-Authored-By`. Sanity trước commit: `pnpm -r build` sạch + suite xanh
-  (core 308 · cli 547 · tui 115 · memory 30 · governance 4).
-- **Bắt đầu session sau:** đọc HARDENING_HANDOFF.md §5 (banner STATUS → top pick **(D)**) + Phần 6 ở trên.
+## 7. Trạng thái git / commit ✅ (2026-05-31)
+- Nhánh: **`master`** (nhánh PR chính là `main`). Repo trước đây **0 commit**; giờ có lịch sử thật,
+  **tree sạch**: `0d216b9`(init/recovery, 981 file) → `656498d`(fix memory observability) →
+  `1cb58c1`(verify gate + CI) → `b9f33e9`(§2.3 compaction). Chi tiết: HARDENING_HANDOFF.md §6.
+- **Quy tắc: chạy `pnpm verify` (build+test cả 16 package) TRƯỚC khi claim green** — trị bệnh "xanh ảo"
+  tái diễn của repo. Baseline đã tự verify: build 16/16, ~2001 test, exit 0 (core 350 · cli 547 · tui 115 …).
+  Commit kết thúc message bằng trailer `Co-Authored-By`. CI kích hoạt khi có remote GitHub (hiện local-only).
+- **Bắt đầu session sau:** đọc HARDENING_HANDOFF.md §5 (banner **LATEST** → git history + verify gate +
+  §2.3 compaction + audit wired-or-dead; top pick = wire-or-delete 1 module dead, hoặc đo eval corpus khó hơn).
