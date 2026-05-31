@@ -1,4 +1,5 @@
 import { getDb, EpisodicStore } from "@agency/memory";
+import { EventBus } from "../events/event-bus.js";
 
 /**
  * Loads relevant historical episodes matching the current userPrompt via FTS5
@@ -94,6 +95,19 @@ export function safeAddEpisode(
       { created_at: Date.now() }
     );
   } catch (err) {
-    // Fail silently to avoid breaking chat flow
+    // The write failed (disk full, corrupt DB, ENFILE, schema drift, ...).
+    // Swallowing it keeps the chat turn alive — persisting a memory must never
+    // crash the conversation — but a silently-dropped episode means the agent's
+    // persistent history degrades with zero signal. Surface it best-effort so
+    // the loss is observable, mirroring loadCheckpoint's corrupt-checkpoint
+    // warning. The publish itself is wrapped so telemetry can never re-break the
+    // path we are protecting.
+    try {
+      void EventBus.getInstance().publish("system:warning", {
+        message: `⚠ Failed to persist memory episode (session ${sessionId}, turn ${turnIndex}) — chat continues but this turn was not recorded: ${(err as Error)?.message ?? String(err)}`,
+      });
+    } catch {
+      /* observability is best-effort */
+    }
   }
 }

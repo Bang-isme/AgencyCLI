@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb, closeAllDbs } from "@agency/memory";
 import { loadHistoricalMemories, safeAddEpisode } from "../chat/memory-integration.js";
+import { EventBus } from "../events/event-bus.js";
 
 describe("Phase 1: Persistent SQLite Memory Integration Tests", () => {
   let tempProjectRoot: string;
@@ -116,5 +117,29 @@ describe("Phase 1: Persistent SQLite Memory Integration Tests", () => {
     const memoryBlock = await loadHistoricalMemories(tempProjectRoot, "cost budget", sessionB);
     expect(memoryBlock).toContain("Configure cost governance");
     expect(memoryBlock).toContain("Setup cost ceiling to $10.0");
+  });
+
+  // EventBus delivers to subscribers asynchronously (scheduleDrain → setImmediate),
+  // so the assertion awaits a tick. Warnings are filtered by the unique session id
+  // in the payload because the bus is a process-wide singleton shared across tests.
+  it("surfaces a system:warning (not silent) when an episode write fails", async () => {
+    const sessionId = "sess-write-fail";
+
+    // Force the cached backend's next write to throw, simulating disk/DB failure.
+    const backend = getDb(tempProjectRoot);
+    (backend as any).simulateEnfile = true;
+
+    const warnings: any[] = [];
+    EventBus.getInstance().subscribe("system:warning", (e) => warnings.push(e));
+
+    // A failed persist must NOT crash the chat flow — it stays a no-throw call...
+    expect(() =>
+      safeAddEpisode(tempProjectRoot, sessionId, "goal", 7, "user_input", "content")
+    ).not.toThrow();
+
+    // ...but the dropped episode must be observable, not silently lost.
+    await new Promise((resolve) => setImmediate(resolve));
+    const mine = warnings.filter((e) => String(e?.payload ?? "").includes(sessionId));
+    expect(mine.length).toBeGreaterThan(0);
   });
 });
