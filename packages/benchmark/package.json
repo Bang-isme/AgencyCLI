@@ -1,0 +1,33 @@
+{
+  "name": "@agency/benchmark",
+  "version": "0.1.0",
+  "description": "Agency CLI isolated benchmark task runner and regression trace replayer",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@agency/core": "workspace:*",
+    "@agency/telemetry": "workspace:*",
+    "@agency/governance": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "vitest": "^2.1.0",
+    "typescript": "^5.6.0"
+  },
+  "publishConfig": { "access": "public" }
+}

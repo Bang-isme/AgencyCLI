@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "file_dependencies": {
+    "src/index.ts": ["src/routes/api.ts", "src/models/user.ts"],
+    "src/routes/api.ts": ["src/models/user.ts"],
+    "src/models/user.ts": []
+  },
+  "entrypoints": [
+    { "path": "src/index.ts", "kind": "route", "label": "API entry" },
+    { "path": "src/models/user.ts", "kind": "model", "label": "User model" }
+  ],
+  "stats": {
+    "files": 3,
+    "dependencies": 3,
+    "entrypoints": 2
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "@agency/core",
+  "version": "0.1.0",
+  "description": "Agency CLI core orchestration, routing, and task runtime",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./approval": {
+      "import": "./dist/approval/index.js",
+      "types": "./dist/approval/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@agency/context": "workspace:*",
+    "@agency/contracts": "workspace:*",
+    "@agency/governance": "workspace:*",
+    "@agency/heuristics": "workspace:*",
+    "@agency/memory": "workspace:*",
+    "@agency/providers": "workspace:*",
+    "@agency/security": "workspace:*",
+    "@agency/skills-bridge": "workspace:*",
+    "@agency/tooling": "workspace:*",
+    "@agency/workspace": "workspace:*",
+    "better-sqlite3": "^11.8.0",
+    "execa": "^9.0.0",
+    "pidusage": "^4.0.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/pidusage": "^2.0.5",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

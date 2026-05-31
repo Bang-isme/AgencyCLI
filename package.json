@@ -1,0 +1,22 @@
+{
+  "name": "agency-cli",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "agency": "pnpm --filter @agency/cli exec agency",
+    "acg": "pnpm --filter @agency/cli exec agency",
+    "setup": "pnpm --filter @agency/cli exec agency setup",
+    "smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1",
+    "pack:local": "powershell -ExecutionPolicy Bypass -File scripts/pack-local.ps1",
+    "dogfood": "powershell -ExecutionPolicy Bypass -File scripts/dogfood.ps1",
+    "publish:dry": "powershell -ExecutionPolicy Bypass -File scripts/publish.ps1",
+    "publish:release": "powershell -ExecutionPolicy Bypass -File scripts/publish.ps1 -Publish"
+  },
+  "dependencies": {
+    "@agency/cli": "workspace:*"
+  },
+  "engines": { "node": ">=22" }
+}

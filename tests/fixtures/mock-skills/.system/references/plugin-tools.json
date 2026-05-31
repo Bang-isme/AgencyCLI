@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "tools": [
+    {
+      "name": "pack_health",
+      "kind": "health",
+      "script": ".system/scripts/check_pack_health.py",
+      "purpose": "Validate skills pack",
+      "safety_policy": {
+        "network": "none",
+        "writes_artifacts": false,
+        "reads_secrets": false
+      }
+    },
+    {
+      "name": "write_stub",
+      "kind": "test",
+      "script": ".system/scripts/write_stub.py",
+      "purpose": "Fixture tool that writes artifacts",
+      "safety_policy": {
+        "network": "none",
+        "writes_artifacts": true,
+        "reads_secrets": false
+      }
+    }
+  ]
+}

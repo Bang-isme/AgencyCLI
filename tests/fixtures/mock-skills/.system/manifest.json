@@ -1,0 +1,11 @@
+{
+  "version": "0.0.0-fixture",
+  "skills": [
+    "codex-demo",
+    "codex-plan-writer",
+    "codex-test-driven-development",
+    "codex-execution-quality-gate",
+    "codex-runtime-hook",
+    "codex-subagent-execution"
+  ]
+}

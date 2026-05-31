@@ -1,0 +1,15 @@
+{
+  "defaultProvider": "openrouter",
+  "providers": {
+    "openrouter": {
+      "apiKey": "${OPENROUTER_API_KEY}"
+    },
+    "anthropic": {
+      "apiKey": "${ANTHROPIC_API_KEY}"
+    },
+    "local": {
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "llama3"
+    }
+  }
+}

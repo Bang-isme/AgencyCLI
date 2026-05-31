@@ -1,0 +1,33 @@
+{
+  "name": "@agency/cli",
+  "version": "0.1.0",
+  "description": "Agency CLI — CodexAI skills harness (agency + acg TUI)",
+  "license": "MIT",
+  "keywords": ["cli", "codex", "skills", "tui", "ai", "agent"],
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "files": ["dist", "skills", ".codex-plugin", ".claude-plugin", ".agents", "hooks"],
+  "bin": {
+    "agency": "./dist/index.js",
+    "acg": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@agency/core": "workspace:*",
+    "@agency/skills-bridge": "workspace:*",
+    "@agency/tui": "workspace:*",
+    "@agency/benchmark": "workspace:*",
+    "commander": "^12.0.0",
+    "execa": "^9.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  },
+  "publishConfig": { "access": "public" }
+}

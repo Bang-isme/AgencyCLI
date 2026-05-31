@@ -1,0 +1,53 @@
+import type { Command } from "commander";
+import { registerAgents } from "./commands/agents.js";
+import { registerBrowser } from "./commands/browser.js";
+import { registerChat } from "./commands/chat.js";
+import { registerConfig } from "./commands/config.js";
+import { registerCompact } from "./commands/compact.js";
+import { registerDoctor } from "./commands/doctor.js";
+import { registerGraph } from "./commands/graph.js";
+import { registerGit } from "./commands/git.js";
+import { registerIndex } from "./commands/index-cmd.js";
+import { registerMemory } from "./commands/memory.js";
+import { registerRoute } from "./commands/route.js";
+import { registerRouting } from "./commands/routing.js";
+import { registerRun } from "./commands/run.js";
+import { registerBenchmark } from "./commands/benchmark.js";
+import { registerEval } from "./commands/eval.js";
+import { registerPlugin } from "./commands/plugin.js";
+import { registerSkill } from "./commands/skill.js";
+import { registerTask } from "./commands/task.js";
+import { registerTeam } from "./commands/team.js";
+import { registerWorkflow } from "./commands/workflow.js";
+import { registerSchedule } from "./commands/schedule.js";
+import { registerSetup } from "./commands/setup.js";
+import { registerStatus } from "./commands/status.js";
+import { registerHandover } from "./commands/handover.js";
+
+export function registerCommands(program: Command) {
+  registerAgents(program);
+  registerBrowser(program);
+  registerChat(program);
+  registerConfig(program);
+  registerCompact(program);
+  registerDoctor(program);
+  registerGraph(program);
+  registerGit(program);
+  registerIndex(program);
+  registerMemory(program);
+  registerPlugin(program);
+  registerRoute(program);
+  registerRouting(program);
+  registerRun(program);
+  registerBenchmark(program);
+  registerEval(program);
+  registerSkill(program);
+  registerTask(program);
+  registerTeam(program);
+  registerWorkflow(program);
+  registerSchedule(program);
+  registerSetup(program);
+  registerStatus(program);
+  registerHandover(program);
+}
+

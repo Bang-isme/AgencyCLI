@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "tools": [
+    { "name": "pack_health" },
+    { "name": "write_stub" }
+  ]
+}

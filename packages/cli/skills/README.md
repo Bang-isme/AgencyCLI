@@ -1,0 +1,279 @@
+# CodexAI Skill Pack - Technical Internals
+
+> Runtime-focused reference for the `skills/` directory. For the public overview, see [../README.md](../README.md).
+
+## Current State
+
+| Metric | Value |
+| --- | --- |
+| Version | `15.2.0` |
+| Core Skills | 28 |
+| Entry-point Scripts | 69 |
+| Shared Helpers | 2 (`_js_parser.py`, `_scrum_agent_kit.py`) |
+| References | 188+ |
+| Starters | 29 |
+| Artifact Templates | 9 |
+| Agent Personas | 8 |
+| Workflow Aliases | 8 |
+| Short Aliases | 25+ |
+| Codex Plugin Manifest | `../.codex-plugin/plugin.json` |
+| Local Marketplace | `../.agents/plugins/marketplace.json` |
+| Claude Plugin Manifest | `../.claude-plugin/plugin.json` |
+| Claude Hooks | `../hooks/hooks.json` |
+| GitHub CLI Integration | `.system/GITHUB_CLI_INTEGRATION.md` |
+| CI/CD Workflows | `../.github/workflows/ci.yml`, `../.github/workflows/release.yml` |
+| Pytest | 341/341 |
+| Smoke | 71/71 |
+
+---
+
+## Runtime Flow
+
+```text
+User Request
+  -> Pack Health (when install/sync/runtime metadata is in doubt)
+  -> Runtime Hook (one-command preflight for domains, readiness gaps, suggested agent)
+  -> Project Profile / Knowledge Index (stable routing + visible tacit knowledge)
+  -> Intent Context Analyzer
+  -> Logical Decision Layer (when multiple paths or hidden tradeoffs exist)
+  -> Plan Writer (when task is medium/large, with TDD steps + No Placeholders)
+  -> Workflow Autopilot (routes to mode + TDD/Debug/Subagent skills)
+  -> Domain/Security Routing
+  -> Git Worktrees (optional, for complex tasks needing isolation)
+  -> Subagent Execution (optional, for plan with independent tasks)
+  -> TDD Implementation (RED-GREEN-REFACTOR per feature/fix)
+  -> Systematic Debugging (4-phase root cause, for bugs)
+  -> Execution Quality Gate
+  -> Role Docs / Docs Change Sync / Project Memory / Git Autopilot
+```
+
+### Output Quality Path
+
+```text
+Reasoning Rigor
+  -> Output Guard
+  -> Editorial Review
+  -> Run Gate (strict by default for plan/review/handoff)
+  -> Benchmark Quality (static corpus for release measurement)
+  -> Quality Trend logging
+```
+
+---
+
+## Skill Inventory
+
+### Core Pipeline
+
+| Skill | Role |
+| --- | --- |
+| `codex-master-instructions` | Global completion rules, evidence policy, failure circuit breaker |
+| `codex-intent-context-analyzer` | Parse request into structured intent JSON |
+| `codex-context-engine` | Generate/load `.codex/context/genome.md` |
+| `codex-plan-writer` | Create verifiable task plans |
+| `codex-workflow-autopilot` | Route work into build/fix/debug/review/docs/deploy/teach flows |
+| `codex-runtime-hook` | Detect project domains, readiness gaps, suggested agent, and next commands before loading heavy context |
+| `codex-logical-decision-layer` | Compare 2-4 options with evidence, cost, risk, reversibility, and verification without leaking hidden chain-of-thought |
+| `codex-reasoning-rigor` | Force deliberate, non-generic, evidence-backed reasoning |
+| `codex-document-writer` | Professional document, report, memo, guide, and Vietnamese writing structure |
+| `codex-role-docs` | Initialize and maintain project-local FE/BE/DevOps/Admin/QA role docs |
+| `codex-spec-driven-development` | Spec-first requirements, acceptance criteria, and traceability for prototype/fullstack work |
+| `codex-scrum-subagents` | Install project Scrum kits and native `.codex/agents` |
+
+### Knowledge Packs
+
+| Skill | Notes |
+| --- | --- |
+| `codex-design-system` | Premium visual vocabulary with palettes, typography, layouts, motion, composition, trends, and anti-pattern guards |
+| `codex-design-md` | DESIGN.md contract authoring, scaffold, lint/diff/export wrapper, and reusable design-system source-of-truth workflow |
+| `codex-document-writer` | Report and document templates, sentence-quality rules, reliability tone, Vietnamese style, and formatting guidance |
+| `codex-domain-specialist` | 66 references and 19 starters across frontend, backend, data, DevOps, UX, and debugging |
+| `codex-security-specialist` | 30 references and 10 starters across network, infrastructure, AppSec, DevSecOps, compliance, and advanced security |
+
+### Quality, Memory, Delivery, and Discipline
+
+| Skill | Notes |
+| --- | --- |
+| `codex-execution-quality-gate` | 17 runtime scripts including gate orchestration, security scan, smart tests, output guard, editorial review, quality trends, UX/a11y, and Lighthouse |
+| `codex-project-memory` | 12 scripts plus the `genome_builder.py` helper for genome and knowledge-index generation across Architecture, API Surface, Data Layer, Security Posture, Test Coverage, File Map, and tacit project knowledge |
+| `codex-docs-change-sync` | Code-to-docs impact mapper |
+| `codex-role-docs` | 4 scripts for role-doc initialization, updates, indexing, and advisory changed-file coverage checks |
+| `codex-git-autopilot` | Commit automation with gate awareness |
+| `codex-doc-renderer` | DOCX rendering and verification helpers |
+| `codex-test-driven-development` | **v14 NEW** - RED-GREEN-REFACTOR enforcement, Iron Law TDD, testing anti-patterns reference. Aliases: `$tdd`, `$red-green` |
+| `codex-systematic-debugging` | **v14 NEW** - 4-phase root cause debugging, defense-in-depth, condition-based waiting, root cause tracing. Aliases: `$root-cause`, `$trace` |
+| `codex-subagent-execution` | **v14 NEW** - Fresh subagent per task + 2-stage review (spec compliance -> code quality), prompt templates. Aliases: `$sdd`, `$dispatch` |
+| `codex-git-worktrees` | **v14 NEW** - Isolated workspaces with safety verification, auto-setup, clean test baseline. Aliases: `$worktree`, `$isolate` |
+| `codex-verification-discipline` | **v14.1 NEW** - Iron Law "evidence before claims" behavioral constraint. No "should work" without fresh verification. Aliases: `$verify`, `$evidence` |
+| `codex-branch-finisher` | **v14.1 NEW** - Structured 4-option completion workflow (merge, PR, keep, discard) with test gate and worktree cleanup. Aliases: `$finish`, `$finish-branch` |
+
+---
+
+## Execution Quality Gate
+
+### Main Entry Points
+
+| Script | Purpose |
+| --- | --- |
+| `auto_gate.py` | Single entry point for quick, full, and deploy verification modes |
+| `check_pack_health.py` | Pack operational integrity check for manifest, registry, aliases, dot directories, global sync, and markdown encoding |
+| `build_release_zip.py` | Clean release archive builder that excludes `.git`, cache, backup, coverage, and pycache artifacts |
+| `run_gate.py` | Aggregate lint, test, and deliverable quality into a single gate decision |
+| `pre_commit_check.py` | Fast staged-file checks before commit |
+| `smart_test_selector.py` | Run only relevant tests for the current change surface |
+| `security_scan.py` | Secret, debug, HTTP, and placeholder security checks |
+| `install_hooks.py` | Install managed pre-commit enforcement hooks |
+| `install_ci_gate.py` | Generate GitHub Actions or GitLab CI quality gate files |
+| `output_guard.py` | Detect generic filler and weak evidence |
+| `editorial_review.py` | Score decision clarity, grounding, tradeoffs, structure, and tone |
+| `quality_trend.py` | Track code-shape, gate pass rate, output score, and editorial score over time |
+
+### Strict Deliverables
+
+These deliverable types auto-enable strict output behavior unless intentionally downgraded with `--advisory-output`:
+
+- `plan`
+- `review`
+- `handoff`
+
+For those artifacts, the pack now expects both:
+
+1. grounded, reproducible evidence
+2. writing that reads like an accountable human engineering artifact
+
+---
+
+## Scrum Subagents
+
+The Scrum kit is no longer just documentation. It is executable infrastructure:
+
+- 10 role briefs in the `.agent` bundle
+- 10 native Codex custom agents rendered into `.codex/agents`
+- 7 workflows
+- 12 shorthand aliases
+- 6 artifact templates
+- installer, validator, diff, and update flows
+
+Supported native-agent scopes:
+
+- `project`
+- `personal`
+- `both`
+
+---
+
+## Agent Personas
+
+The agent layer adds scoped personas on top of the normal skill pipeline. Current personas:
+
+- `frontend-specialist`
+- `backend-specialist`
+- `security-auditor`
+- `debugger`
+- `test-engineer`
+- `devops-engineer`
+- `planner`
+- `scrum-master`
+
+These files live under `skills/.agents/` and are loaded when intent analysis suggests a matching persona.
+
+---
+
+## Role Documentation System
+
+`codex-role-docs` creates `.codex/project-docs/` inside the target project so specialists can keep durable context without loading the whole repository history.
+
+- Frontend docs cover UI/UX, design system, tokens, reusable components, routing, accessibility, and frontend tests.
+- Backend docs cover architecture, API contracts, database design, domain model, auth/security, integrations, logging, and backend tests.
+- DevOps docs cover environments, CI/CD, deployment, observability, incidents, secrets/config, and rollback.
+- Admin docs are documentation-only and split across planner, backend, frontend, and security ownership.
+- QA docs cover test strategy, regression map, and end-to-end flows.
+
+`auto_gate.py` runs role-doc checks in full/deploy mode as advisory warnings only.
+
+For exact operating steps, use `.system/OPERATION_RUNBOOK.md`.
+
+---
+
+## Workflow Aliases
+
+Workflow aliases are shorthand entry points that load `skills/.workflows/*.md` before running the richer underlying flow.
+
+| Alias | Workflow File | Equivalent |
+| --- | --- | --- |
+| `$plan` | `.workflows/plan.md` | `$codex-plan-writer` + BMAD Phase 1-2 |
+| `$debug` | `.workflows/debug.md` | `$codex-systematic-debugging` + 4-phase root cause |
+| `$create` | `.workflows/create.md` | `workflow-create.md` + TDD |
+| `$review` | `.workflows/review.md` | `workflow-review.md` + output-guard + editorial |
+| `$deploy` | `.workflows/deploy.md` | `workflow-deploy.md` + full gate |
+| `$handoff` | `.workflows/handoff.md` | `workflow-handoff.md` + session summary |
+
+---
+
+## Testing Strategy
+
+### Unit tests
+
+Current suite coverage includes:
+
+- parsing and routing behavior
+- output rigor and editorial rubric
+- strict-output gate logic
+- quality-trend aggregation
+- role-doc initialization, changed-file mapping, indexing, and advisory gate behavior
+- Scrum installer, validator, diff, update, and native agent rendering
+- docs encoding and mojibake regression guards
+- skill validation and pre-commit hardening
+
+### Smoke tests
+
+Smoke checks verify:
+
+- all codex skill directories expose `SKILL.md`
+- critical scripts respond to `--help`
+- selected JSON-returning CLIs run real happy paths
+- the DESIGN.md wrapper reports runtime health through `design_contract.py doctor`
+- workflow routing contract exists and is valid
+
+---
+
+## Maintenance Notes
+
+### When updating docs
+
+Refresh these together:
+
+- `README.md`
+- `skills/README.md`
+- `docs/huong-dan-vi.md`
+- `skills/CHANGELOG.md`
+- `skills/VERSION`
+
+### When updating deliverable quality logic
+
+Review these together:
+
+- `codex-reasoning-rigor/SKILL.md`
+- `codex-execution-quality-gate/SKILL.md`
+- `scripts/output_guard.py`
+- `scripts/editorial_review.py`
+- `scripts/run_gate.py`
+- `scripts/quality_trend.py`
+- `tests/test_output_rigor.py`
+- `tests/test_parsing.py`
+- `tests/smoke_test.py`
+
+---
+
+## Commands Worth Remembering
+
+```bash
+python skills/tests/smoke_test.py
+python -m pytest skills/tests -q
+python skills/codex-execution-quality-gate/scripts/run_gate.py --project-root <repo>
+python skills/codex-execution-quality-gate/scripts/output_guard.py --file <deliverable.md>
+python skills/codex-execution-quality-gate/scripts/editorial_review.py --file <deliverable.md>
+python skills/codex-execution-quality-gate/scripts/quality_trend.py --project-root <repo> --report
+python skills/tests/benchmark_quality.py
+python skills/codex-design-md/scripts/design_contract.py scaffold --name <brand-or-product>
+python skills/codex-design-md/scripts/design_contract.py lint DESIGN.md
+```

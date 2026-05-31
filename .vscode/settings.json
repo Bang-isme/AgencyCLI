@@ -1,0 +1,12 @@
+{
+  "python.analysis.extraPaths": [
+    "./packages/cli/skills/codex-execution-quality-gate/scripts",
+    "./packages/cli/skills/codex-project-memory/scripts",
+    "./packages/cli/skills/codex-scrum-subagents/scripts",
+    "./packages/cli/skills/codex-workflow-autopilot/scripts",
+    "./packages/cli/skills/codex-doc-renderer/scripts",
+    "./packages/cli/skills/codex-role-docs/scripts",
+    "./packages/cli/skills/.system/lib",
+    "./packages/cli/skills/.system/scripts"
+  ]
+}

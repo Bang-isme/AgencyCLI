@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Domain Specialist"
+  short_description: "Layered domain routing with specialized engineering references"
+  default_prompt: "Use $codex-domain-specialist to route this task through base and specialized references with strict context boundaries."

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+__pycache__/
+**/__pycache__/
+.agency/
+.agencyai/
+**/.agency/
+**/.agencyai/
+.codex/quality/
+.codex/state/
+**/.codex/quality/
+**/.codex/state/

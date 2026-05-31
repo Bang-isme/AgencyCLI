@@ -1,0 +1,126 @@
+{
+  "version": "15.2.0",
+  "skills": [
+    "codex-master-instructions",
+    "codex-intent-context-analyzer",
+    "codex-context-engine",
+    "codex-plan-writer",
+    "codex-workflow-autopilot",
+    "codex-reasoning-rigor",
+    "codex-document-writer",
+    "codex-role-docs",
+    "codex-spec-driven-development",
+    "codex-design-system",
+    "codex-design-md",
+    "codex-domain-specialist",
+    "codex-security-specialist",
+    "codex-execution-quality-gate",
+    "codex-project-memory",
+    "codex-docs-change-sync",
+    "codex-git-autopilot",
+    "codex-doc-renderer",
+    "codex-scrum-subagents",
+    "codex-test-driven-development",
+    "codex-systematic-debugging",
+    "codex-subagent-execution",
+    "codex-git-worktrees",
+    "codex-verification-discipline",
+    "codex-branch-finisher",
+    "codex-project-pulse",
+    "codex-runtime-hook",
+    "codex-logical-decision-layer"
+  ],
+  "agents": [
+    "frontend-specialist",
+    "backend-specialist",
+    "security-auditor",
+    "debugger",
+    "test-engineer",
+    "devops-engineer",
+    "planner",
+    "scrum-master"
+  ],
+  "workflows": [
+    "plan",
+    "debug",
+    "create",
+    "review",
+    "deploy",
+    "handoff",
+    "refactor",
+    "prototype"
+  ],
+  "scripts_registry": ".system/REGISTRY.md",
+  "plugin_tool_contract": {
+    "registry": ".system/references/plugin-tools.json",
+    "schema": ".system/references/plugin-tools.schema.json",
+    "documentation": ".system/references/tool-call-contract.md",
+    "validator": ".system/scripts/validate_tool_contracts.py",
+    "skill_level_memory_tools": "codex-project-memory/references/project-memory-tools.json"
+  },
+  "codex_plugin": {
+    "manifest": "../.codex-plugin/plugin.json",
+    "marketplace": "../.agents/plugins/marketplace.json",
+    "native_install_script": ".system/scripts/install_codex_native.py",
+    "plugin_validator": ".system/scripts/validate_codex_plugin.py",
+    "agents_bridge_script": ".system/scripts/init_agents_md.py",
+    "release_packager": ".system/scripts/build_release_zip.py",
+    "generic_trust_harness": ".system/scripts/trust_harness.py",
+    "prompt_router": ".system/scripts/prompt_router.py",
+    "github_cli": {
+      "binary": "gh",
+      "auth_command": "gh auth login",
+      "required_for": [
+        "pull_request_automation",
+        "future_project_cli_wrapper"
+      ],
+      "credential_policy": "Do not commit credentials or tokens; rely on GitHub CLI auth storage or CI secrets."
+    }
+  },
+  "claude_plugin": {
+    "manifest": "../.claude-plugin/plugin.json",
+    "hooks": "../hooks/hooks.json",
+    "native_install_script": ".system/scripts/install_claude_native.py",
+    "plugin_validator": ".system/scripts/validate_claude_plugin.py"
+  },
+  "generic_adapter": {
+    "trust_harness": ".system/scripts/trust_harness.py",
+    "prompt_router": ".system/scripts/prompt_router.py",
+    "hook_contract": ".codexai/hooks/pre_prompt.json"
+  },
+  "load_order": {
+    "always": [
+      "codex-master-instructions",
+      "codex-intent-context-analyzer",
+      "codex-context-engine",
+      "codex-verification-discipline"
+    ],
+    "on-demand": [
+      "codex-plan-writer",
+      "codex-workflow-autopilot",
+      "codex-reasoning-rigor",
+      "codex-document-writer",
+      "codex-role-docs",
+      "codex-spec-driven-development",
+      "codex-design-system",
+      "codex-design-md",
+      "codex-domain-specialist",
+      "codex-security-specialist",
+      "codex-execution-quality-gate",
+      "codex-project-memory",
+      "codex-docs-change-sync",
+      "codex-git-autopilot",
+      "codex-doc-renderer",
+      "codex-scrum-subagents",
+      "codex-test-driven-development",
+      "codex-systematic-debugging",
+      "codex-subagent-execution",
+      "codex-git-worktrees",
+      "codex-branch-finisher",
+      "codex-project-pulse",
+      "codex-runtime-hook",
+      "codex-logical-decision-layer"
+    ]
+  },
+  "operation_runbook": ".system/OPERATION_RUNBOOK.md"
+}
