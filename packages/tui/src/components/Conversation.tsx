@@ -115,7 +115,15 @@ export interface AssistantBlock {
 }
 
 export function stripToolCalls(text: string): string {
-  let result = text;
+  // Assistant message content can be `undefined` at runtime even though the type
+  // says `string`: App patches `content: turn.body || undefined`, and a
+  // `Partial<SessionMessage>` widens `content` to `string | undefined`. This
+  // helper runs in the render-time line-measurement pass
+  // (`calculateFormattedLines`), so a non-string here threw "Cannot read
+  // properties of undefined (reading 'indexOf')" and crashed the whole App
+  // render into the error-boundary recovery loop. Coerce defensively, exactly
+  // like the sibling `parseAssistantContent` already does with `safeContent`.
+  let result = typeof text === "string" ? text : "";
   const tags = ["tool_call", "invoke", "invoke_call"];
 
   while (true) {

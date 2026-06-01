@@ -26,6 +26,16 @@ describe("stripToolCalls", () => {
     const input = "One\n<invoke name=\"read_file\">\n  <param name=\"path\">models.py</param>\n</invoke_call>\nTwo\n<invoke_call name=\"read_file\">\n  <param name=\"path\">urls.py</param>\n</tool_call>\nThree";
     expect(stripToolCalls(input)).toBe("One\n\nTwo\n\nThree");
   });
+
+  it("returns empty string for non-string content without throwing", () => {
+    // Regression: App patches `content: turn.body || undefined`, and a
+    // Partial<SessionMessage> lets `undefined` reach the render-time
+    // line-measurement pass. This used to throw "Cannot read properties of
+    // undefined (reading 'indexOf')" and crash the whole TUI render loop.
+    expect(stripToolCalls(undefined as unknown as string)).toBe("");
+    expect(stripToolCalls(null as unknown as string)).toBe("");
+    expect(stripToolCalls(42 as unknown as string)).toBe("");
+  });
 });
 
 describe("parseAssistantContent with stripped tool calls", () => {
