@@ -139,6 +139,11 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   Legacy = build-only 1 lượt → throw. Test integration trong `agents-orchestrator.test.ts`.
 - **Còn lại:** "test liên quan" (scoped theo file đổi, không phải full suite) + tín hiệu "đạt mục tiêu task"
   khách quan hơn build/lint/test.
+- **ĐÃ CHỨNG MINH end-to-end trên model thật (2026-06-01):** thêm bài `hard-merge-intervals`
+  (counter-conventional: interval chỉ CHẠM nhau KHÔNG merge → cần `<` strict, `<=` thường-dùng fail)
+  → hardened ghi nhận **rounds=2** (attempt 1 fail acceptance → feed lỗi → attempt 2 pass) trên
+  `minimaxai/minimax-m2.7`. Lần đầu verify-loop tự-sửa lỗi model THẬT ngoài integration test mock
+  (trước đó luôn avg 1.0 = loop chưa từng kích hoạt). Chi tiết: [EVAL_RESULTS.md](EVAL_RESULTS.md).
 
 ### 2.2 — Phát hiện hoàn thành (completion detection)  ← 🟡 một phần (2026-05-30)
 - Engine đã có: đạt tiêu chí → dừng (`passed`); **không tiến triển (lỗi lặp) sau N vòng → dừng**

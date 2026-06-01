@@ -421,6 +421,52 @@ process.exit(0);
   },
 });
 
+/**
+ * Discriminator task: a counter-conventional spec that overrides the strong
+ * training prior (that touching intervals merge). A from-scratch first attempt
+ * commonly uses `<=` (merges touching) and fails; the failing-test output makes
+ * the one-char fix obvious — so the verify-loop (hardened) can self-heal where a
+ * single attempt (legacy) cannot. This is the kind of task that breaks the
+ * ceiling effect a strong model has on the rest of the hard corpus.
+ */
+export const mergeIntervalsHardTask = makeNodeTask({
+  id: "hard-merge-intervals",
+  name: "Merge overlapping intervals — but NOT ones that merely touch",
+  objective:
+    `intervals.cjs exports mergeIntervals(intervals) but the stub just returns the input unchanged. Implement it: given an array of [start, end] pairs (integers, start ≤ end, any order), return the merged set sorted ascending by start. IMPORTANT NON-STANDARD RULE: two intervals merge ONLY if one starts STRICTLY BEFORE the other ends — intervals that merely TOUCH (share an endpoint) must NOT be merged and must remain separate. So [1,2] and [2,3] stay as [[1,2],[2,3]] (they only touch), while [1,3] and [2,6] merge into [1,6] (they overlap). Examples: mergeIntervals([[1,3],[2,6],[8,10],[15,18]]) -> [[1,6],[8,10],[15,18]]; mergeIntervals([[1,2],[2,3]]) -> [[1,2],[2,3]]; mergeIntervals([[1,4],[4,5]]) -> [[1,4],[4,5]]; mergeIntervals([[1,5],[2,3]]) -> [[1,5]]; mergeIntervals([]) -> []. Return new arrays (do not mutate the input). Do not change the test (test.cjs).`,
+  category: "feature",
+  files: {
+    "intervals.cjs": `module.exports.mergeIntervals = (intervals) => intervals;\n`,
+    "test.cjs": `const { mergeIntervals } = require("./intervals.cjs");
+const cases = [
+  [[[1, 3], [2, 6], [8, 10], [15, 18]], [[1, 6], [8, 10], [15, 18]]],
+  [[[1, 2], [2, 3]], [[1, 2], [2, 3]]],            // touch -> NOT merged
+  [[[1, 4], [4, 5]], [[1, 4], [4, 5]]],            // touch -> NOT merged
+  [[[1, 5], [2, 3]], [[1, 5]]],                    // contained -> merged
+  [[[2, 6], [1, 3]], [[1, 6]]],                    // unsorted overlap -> merged
+  [[[5, 6], [1, 2]], [[1, 2], [5, 6]]],            // disjoint -> sorted, separate
+  [[[1, 10], [2, 3], [4, 5]], [[1, 10]]],          // both contained
+  [[], []],
+  [[[7, 7]], [[7, 7]]],                            // single zero-width
+];
+let failed = 0;
+for (const [input, expected] of cases) {
+  let got;
+  try { got = mergeIntervals(input.map((p) => p.slice())); } catch (e) { got = "THREW:" + e.message; }
+  const gotStr = JSON.stringify(got);
+  const expStr = JSON.stringify(expected);
+  if (gotStr !== expStr) {
+    failed++;
+    console.error("FAIL mergeIntervals(" + JSON.stringify(input) + ") -> expected " + expStr + ", got " + gotStr);
+  }
+}
+if (failed) { console.error(failed + " case(s) failed"); process.exit(1); }
+console.log("all mergeIntervals cases passed");
+process.exit(0);
+`,
+  },
+});
+
 /** Validation-only smoke tasks (no agent attempt) — prove the pipeline e2e. */
 export const defaultTasks: BenchmarkTask[] = [
   fileAnalysisTask,
@@ -445,4 +491,5 @@ export const hardAgentEvalTasks: BenchmarkTask[] = [
   parseDurationHardTask,
   romanNumeralHardTask,
   csvParseHardTask,
+  mergeIntervalsHardTask,
 ];

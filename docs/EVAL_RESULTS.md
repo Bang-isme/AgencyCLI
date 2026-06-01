@@ -3,7 +3,7 @@
 > Living record of real agent-backed eval runs. Methodology + how to reproduce, then
 > the measured legacy↔hardened comparison. Companion to
 > [HARDENING_HANDOFF.md](HARDENING_HANDOFF.md) (§5 verify-loop) and the eval harness in
-> `packages/benchmark`. Last run: 2026-05-31 (provider: NVIDIA NIM `minimaxai/minimax-m2.7`).
+> `packages/benchmark`. Last run: 2026-06-01 (provider: NVIDIA NIM `minimaxai/minimax-m2.7`).
 
 ---
 
@@ -28,11 +28,13 @@ Headline metric = **task success rate** (did the agent actually fix it?), not "t
 | Suite | Tasks |
 |---|---|
 | `easy` | `fix-add-bug`, `impl-multiply`, `fix-clamp-bug` |
-| `hard` | `hard-slugify`, `hard-parse-duration`, `hard-roman-numeral` (multi-file), `hard-csv-parse` |
+| `hard` | `hard-slugify`, `hard-parse-duration`, `hard-roman-numeral` (multi-file), `hard-csv-parse`, `hard-merge-intervals` |
 
 Each hard task's `test.cjs` prints its failing case(s) to stderr so self-correction has a
-concrete signal. `hard-csv-parse` (added 2026-05-31) is the sharpest intended discriminator:
-quoted commas, the `""`→`"` escape, and a trailing empty field — classic round-1 near-misses.
+concrete signal. `hard-merge-intervals` (added 2026-06-01) is the sharpest discriminator: it is
+**counter-conventional** — overlapping intervals merge, but ones that merely *touch* (share an
+endpoint) must NOT (correct impl needs a strict `<`; the universal `<=` fails exactly the touch
+cases). Overriding that training prior is what trips a strong model's first attempt.
 
 ## Reproduce
 
@@ -48,6 +50,33 @@ AGENCY_PROFILE=hardened agency eval --agent --suite hard --provider nvidia \
 
 `.agency/` is gitignored, so the baseline + run JSON are local artifacts. To gate in CI, write
 the baseline somewhere non-ignored or regenerate it in the pipeline.
+
+---
+
+## Results — 2026-06-01, `minimaxai/minimax-m2.7` (NVIDIA NIM) — verify-loop fires end-to-end
+
+Added the counter-conventional `hard-merge-intervals` discriminator (see Corpus) and re-ran the
+full legacy↔hardened comparison.
+
+### Hard suite (5 tasks)
+
+| Profile | Pass | Success | avg rounds | `hard-merge-intervals` | Gate |
+|---|---|---|---|---|---|
+| legacy   | 5/5 | 100% | 1.0 | rounds=1 (one-shot this run) | baseline |
+| hardened | 5/5 | 100% | 1.2 | **rounds=2 — attempt 1 failed acceptance → fed back → attempt 2 passed** | **PASS** |
+
+**First end-to-end evidence the production verify-loop self-heals a real model mistake.** In the
+hardened run, `hard-merge-intervals` recorded **rounds=2**: the first attempt failed the
+acceptance test (the touch cases), the failing `test.cjs` output was fed back into the next turn,
+and the second attempt passed. Every prior run only ever showed avg rounds = 1.0 — the loop never
+had a failing round to fire on. This complements the mocked integration tests
+(`agents-orchestrator.test.ts`, `main-turn-verify.test.ts`) with a **live-model** demonstration.
+
+Why the success *rate* is still equal (both 5/5), not legacy<hardened: the loop *recovered* the
+failure, and the model is non-deterministic — it one-shot the same task in the legacy run. The
+**rounds telemetry**, not the rate, is the proof here. A clean rate gap needs a task this model
+fails attempt-1 *reliably* (or a weaker model); `hard-merge-intervals` sits right at minimax's
+attempt-1 boundary, which is exactly why it fired the loop at all.
 
 ---
 
@@ -87,9 +116,11 @@ rounds=0/cost=0: the request itself failed before the agent could attempt), not 
 
 ## Recommended next steps
 
-- Grow the corpus with tasks **harder than this model can one-shot** (subtle multi-file refactors,
-  obscure-spec parsers, concurrency edge cases) so `avg rounds > 1` under hardened and the
-  self-correction delta becomes measurable.
-- Or run the comparison against a **smaller/weaker model** where near-misses are common — that is
-  where the verify-loop's value (legacy fails → hardened self-corrects → passes) will show.
+- ✅ **Done (2026-06-01):** added `hard-merge-intervals`, a discriminator at this model's
+  attempt-1 boundary → the hardened verify-loop fired end-to-end (rounds=2 self-heal). The loop is
+  now demonstrated on a live model, not just in mocked tests.
+- **For a clean success-*rate* delta** (legacy<hardened), the corpus still needs a task this model
+  fails attempt-1 *reliably* (merge-intervals is non-deterministic at the boundary), or a run
+  against a **smaller/weaker model** where near-misses are the norm. Candidate harder tasks:
+  subtle multi-file refactors, more counter-conventional specs, concurrency/ordering edge cases.
 - Commit a baseline to a non-gitignored path + wire `agency eval` into CI as a regression gate.
