@@ -33,6 +33,7 @@ import {
   type ChatTurnResult,
 } from "./orchestrator.js";
 import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost } from "./turn-helpers.js";
+import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
   globalCostGovernor,
@@ -201,6 +202,7 @@ export async function runChatTurnWithStream(
   }
 
   const startTime = Date.now();
+  const traceRecorder = createTraceRecorder(input.projectRoot, resolvedSessionId, input.prompt);
   let llmText = "";
   const filesWritten = new Set<string>();
   const aggregatedUsage = { promptTokens: 0, completionTokens: 0, reasoningTokens: 0 };
@@ -395,6 +397,7 @@ export async function runChatTurnWithStream(
             const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
+            traceRecorder?.recordTool(tc.name, tc.arguments, truncated);
             safeAddEpisode(
               input.projectRoot,
               resolvedSessionId,
@@ -468,6 +471,8 @@ export async function runChatTurnWithStream(
 
     // Record actual or estimated tokens cost (shared estimate — see turn-helpers).
     recordTurnTokenCost(aggregatedUsage, contextPack, llmText, providerId);
+    traceRecorder?.recordTurn(duration);
+    traceRecorder?.save();
   } catch (err) {
     const duration = Date.now() - startTime;
     globalProviderSupervisor.recordCall(providerId, duration, false);

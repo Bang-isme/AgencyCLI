@@ -85,5 +85,7 @@ describe.skipIf(!canIntegrate)("routePrompt integration", () => {
     const result = await routePromptLive(integrationRoot!, "fix auth bug");
 
     expect(typeof result.intent).toBe("string");
-  });
+    // Spawns the Python prompt_router; ~5s cold-start sits right on the default
+    // 5000ms limit and tips over under the concurrent `pnpm -r test` load → widen.
+  }, 20000);
 });

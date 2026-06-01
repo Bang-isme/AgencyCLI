@@ -70,6 +70,8 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `prompt.ts` | `buildSystemPrompt()` — assembles the agent system prompt |
 | `memory-integration.ts` | `loadHistoricalMemories()`, `safeAddEpisode()` — wires chat to `@agency/memory` |
 | `circuit-breaker.ts` | `createCircuitBreaker()`, `checkCircuitBreaker()`, `recordToolFailure/Success()` — tool-failure circuit breaker |
+| `turn-helpers.ts` | `resolveRoute()`, `providerHasKey()`, `repackContextAndSystemPrompt()`, `compactTurnHistory()`, `recordTurnTokenCost()` — logic shared by orchestrator.ts + stream.ts (single source) |
+| `trace-recorder.ts` | `SessionTraceRecorder`, `createTraceRecorder()` — §2.5 behaviour-trace recording to `.agency/traces/` (flag `AGENCY_TRACE_RECORD`) |
 
 **`router/` — Prompt Routing:**
 | Module | Key Exports |
@@ -644,6 +646,8 @@ workspace ─────────┤           ├──→ benchmark
 browser (standalone)
 ```
 
+> `core` also depends on `@agency/telemetry` (a zero-dependency leaf) for §2.5 behaviour-trace recording (`chat/trace-recorder.ts`).
+
 ## Canonical Homes & No-Duplication Map
 
 Single source of truth for shared logic, so new work **reuses** instead of
@@ -662,6 +666,7 @@ home here.
 | Capability-driven agent routing + health/utilization | `core/src/agents/agent-registry.ts` | The deleted `DomainSpecialistRegistry` duplicated this. |
 | Task/worker liveness — lease heartbeat, stall→fail, crash-resume | `LeaseManager` + `core/src/task/runner.ts` (`acquireLease`/`renewLease`/`checkExpired`) + `checkpoint.ts` + bootstrap auto-resume | The deleted `LongRunnerManager` duplicated this (plus SIGINT/SIGTERM shutdown, already live in tui/security/browser). A tier-6 *detached cross-process* runner, if ever built, belongs here on `LeaseManager`. |
 | Durable event journal + replay verification | `core/src/events/event-journal.ts` + `events/replay-engine.ts` (`verifyJournalReplay`, `replaySessionJournal`) | Path convention lives only in `EventJournal.resolvePath`. |
+| Behaviour-trace record/replay (§2.5) | record: `@agency/telemetry` `ActiveTelemetryTracker` (wired via `core/src/chat/trace-recorder.ts`); replay/regression: telemetry `ReplayEngine` + `@agency/benchmark` `runRegressionReplay` | One trace format (`DeterministicExecutionTrace`). Don't build a second tracker/replayer — extend these. |
 | Memory lifecycle / GC / secret redaction | `@agency/memory` | Flag-gated from core via setter (no core-flag import — avoids a dependency cycle). |
 | Model catalog + cost resolution | `@agency/providers` (`model-catalog.ts`) + governance cost resolver | One price table; `matchModelKey` is shared with `resolveModelSpec`. |
 | TUI severity glyph/colour | `tui/src/utils/severity.ts` (`thoughtSeverity*`) | Consolidated from CognitionPanel + ExecutionPanel. |

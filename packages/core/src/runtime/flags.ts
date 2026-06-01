@@ -77,6 +77,12 @@ export interface RuntimeFlags {
    * on in hardened.
    */
   contextCompaction: boolean;
+  /**
+   * Record a per-session {@link DeterministicExecutionTrace} (turn timings +
+   * tool I/O) to `.agency/traces/` for behaviour-level replay regression
+   * (roadmap §2.5). Opt-in in both profiles — recording adds a per-tool push.
+   */
+  traceRecord: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -173,5 +179,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // extra summarisation call when it triggers) → off in legacy (verbatim
     // history), on in hardened.
     contextCompaction: parseBool(env.AGENCY_CONTEXT_COMPACTION, hardened),
+    // Behaviour-recording for §2.5 replay regression; per-tool overhead → opt-in
+    // (off by default even in hardened, like verifyTests).
+    traceRecord: parseBool(env.AGENCY_TRACE_RECORD, false),
   };
 }

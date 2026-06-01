@@ -36,6 +36,7 @@
     "@agency/providers": "workspace:*",
     "@agency/security": "workspace:*",
     "@agency/skills-bridge": "workspace:*",
+    "@agency/telemetry": "workspace:*",
     "@agency/tooling": "workspace:*",
     "@agency/workspace": "workspace:*",
     "better-sqlite3": "^11.8.0",

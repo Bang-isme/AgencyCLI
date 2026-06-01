@@ -178,9 +178,18 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   nhận diện spill-ref và đếm `skipped` (trung thực về độ phủ), KHÔNG coi là fail. Thuần additive (lệnh
   mới, không đổi path cũ → legacy ≡ hardened, không cờ). Test: `replay-journal.test.ts` (+6) +
   `cli/replay.test.ts` (+3). `pnpm verify` xanh (core 342, cli 550, ~1996).
-- **Còn lại (full §2.5):** record/replay cấp hành vi thật = re-execute phiên cô lập (DeterministicClock/
-  Entropy đã có) + phát lại LLM response đã ghi, đẩy từng action qua `verifyJournalReplay`/`ReplayEngine`
-  để bắt divergence. Xây trên CHÍNH primitive này — không nhân đôi.
+- **RECORD producer ĐÃ WIRE (2026-05-31).** Machinery record/replay cấp-hành-vi ĐÃ CÓ ở `telemetry`
+  (`ActiveTelemetryTracker` ghi turn-timings + tool I/O → `DeterministicExecutionTrace`; `ReplayEngine`
+  `interceptToolCall` fuzzy-match recorded outputs, throw "[Replay Deviation]" khi lệch) + consumer
+  `benchmark.runRegressionReplay` — NHƯNG **0 producer live** (chỉ test sinh trace). Đã wire: `SessionTraceRecorder`
+  + `createTraceRecorder` (`chat/trace-recorder.ts`, TÁI DÙNG `ActiveTelemetryTracker` — không impl mới) cắm
+  vào CẢ `runChatTurn` + `runChatTurnWithStream` (hook null-safe: recordTool sau mỗi `executeTool`,
+  recordTurn + save cuối lượt) → ghi `.agency/traces/<sessionId>.json`. Cờ `AGENCY_TRACE_RECORD` opt-in
+  (off cả 2 profile — có overhead per-tool; off = recorder null = byte-identical). core thêm dep
+  `@agency/telemetry` (leaf, 0 dep → không cycle). Test: `trace-recorder.test.ts` (+3).
+- **Còn lại (full §2.5):** lệnh replay-regression (`agency` chạy `runRegressionReplay` trên trace đã ghi) +
+  re-execute agent thật (cần ghi thêm LLM response — trace hiện chỉ có tool I/O + timings). Xây TRÊN
+  producer + consumer sẵn có — không nhân đôi.
 
 ---
 
