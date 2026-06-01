@@ -115,6 +115,20 @@ export interface RuntimeFlags {
    * easy tasks while keeping multi-option depth for hard ones. Roadmap §8.11-C.
    */
   softApproaches: boolean;
+  /**
+   * When a turn exhausts its tool/continuation loop (maxLoops) with possibly
+   * unfinished work (e.g. a large file written in chunks via append_file), fold
+   * a structured resume notice into the returned assistant text — a single
+   * `[SYSTEM:]` line instructing a "continue" to read the current on-disk state
+   * and append from where it stopped (never rewrite from scratch), plus a list
+   * of every file the turn modified with its current size. The legacy notice was
+   * a generic "response truncated" line that was never folded into the returned
+   * text, so the NEXT turn's history had no record of it and a "continue"
+   * restarted the file from scratch. Off in legacy (legacy notice preserved
+   * byte-identical, not persisted to history), on in hardened. Roadmap §8.10
+   * (loop/resume robustness).
+   */
+  resumeContinuation: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -227,5 +241,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Behaviour-changing (relaxes the "exactly 5 approaches" output rule) → off
     // in legacy (rule preserved verbatim), on in hardened.
     softApproaches: parseBool(env.AGENCY_SOFT_APPROACHES, hardened),
+    // Behaviour-changing (folds a resume notice into the assistant text at loop
+    // exhaustion → changes the returned text + next-turn history) → off in legacy
+    // (the generic truncation notice preserved byte-identical), on in hardened.
+    resumeContinuation: parseBool(env.AGENCY_RESUME_CONTINUATION, hardened),
   };
 }

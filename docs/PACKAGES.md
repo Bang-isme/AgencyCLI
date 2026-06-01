@@ -70,7 +70,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `prompt.ts` | `buildSystemPrompt()` — assembles the agent system prompt |
 | `memory-integration.ts` | `loadHistoricalMemories()`, `safeAddEpisode()` — wires chat to `@agency/memory` |
 | `circuit-breaker.ts` | `createCircuitBreaker()`, `checkCircuitBreaker()`, `recordToolFailure/Success()` — tool-failure circuit breaker |
-| `turn-helpers.ts` | `resolveRoute()`, `providerHasKey()`, `repackContextAndSystemPrompt()`, `compactTurnHistory()`, **`reduceHistoryToFit()`** (§8.1 — reactive last-resort body reducer on a context-limit retry: repack system + summarize middle + trim/drop large turns until the estimate fits `newLimit*safety`), `recordTurnTokenCost()` — logic shared by orchestrator.ts + stream.ts (single source) |
+| `turn-helpers.ts` | `resolveRoute()`, `providerHasKey()`, `repackContextAndSystemPrompt()`, `compactTurnHistory()`, **`reduceHistoryToFit()`** (§8.1 — reactive last-resort body reducer on a context-limit retry: repack system + summarize middle + trim/drop large turns until the estimate fits `newLimit*safety`), **`buildIncompleteTurnNotice()`** (§8.10 — resume notice when a turn exhausts `maxLoops`: one `[SYSTEM:]` resume-instruction line + per-file on-disk size; appended to `llmText` in BOTH turn paths so the next "continue" reads+appends instead of restarting; gated by `resumeContinuation`), `recordTurnTokenCost()` — logic shared by orchestrator.ts + stream.ts (single source) |
 | `trace-recorder.ts` | `SessionTraceRecorder`, `createTraceRecorder()` — §2.5 behaviour-trace recording to `.agency/traces/` (flag `AGENCY_TRACE_RECORD`) |
 
 **`router/` — Prompt Routing:**

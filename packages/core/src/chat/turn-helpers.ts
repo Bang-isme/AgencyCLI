@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   loadAgencyConfig,
   resolveApiKey,
@@ -135,6 +137,51 @@ export function recordTurnTokenCost(
   const inputTokens = usage.promptTokens || Math.round(contextPack.length / 4) + 200;
   const outputTokens = usage.completionTokens || Math.round(llmText.length / 4);
   globalCostGovernor.recordTokens(inputTokens, outputTokens, providerId);
+}
+
+/**
+ * §8.10 — build the notice emitted when a turn exhausts its tool/continuation
+ * loop (maxLoops). The legacy notice was a generic "response truncated" line
+ * that was (a) never folded into the returned assistant text, so the NEXT turn's
+ * history had no record of it, and (b) state-free, so on "continue" the model
+ * restarted an in-progress file from scratch instead of appending to it.
+ *
+ * This notice is meant to be appended to the turn's `llmText` so it persists
+ * into history: it carries the resume instruction on a single `[SYSTEM:]` line
+ * (so both the model and the TUI's system-activity parser see the gist), then
+ * lists every file the turn modified with its current on-disk size as a readable
+ * appendix. File stats are best-effort; never throws. Shared by BOTH turn paths.
+ */
+export function buildIncompleteTurnNotice(
+  filesWritten: Iterable<string>,
+  projectRoot: string,
+  maxLoops: number
+): string {
+  const files = Array.from(new Set(filesWritten));
+  const detail = files.map((rel) => {
+    try {
+      const abs = resolve(projectRoot, rel);
+      const size = statSync(abs).size;
+      let lines: number | undefined;
+      try {
+        lines = readFileSync(abs, "utf8").split("\n").length;
+      } catch {
+        /* binary / unreadable — report bytes only */
+      }
+      return `  • ${rel} (now ${lines !== undefined ? `${lines} lines, ` : ""}${size} bytes)`;
+    } catch {
+      return `  • ${rel}`;
+    }
+  });
+
+  const head =
+    files.length > 0
+      ? `⚠ [SYSTEM: Reached the maximum ${maxLoops} tool/continuation iterations for this turn — the work may be incomplete. Modified ${files.length} file(s) this turn; to finish, send "continue": read the current on-disk contents with read_file, then resume with append_file/edit_file from where it stopped — do NOT rewrite a file from scratch (that discards the work already saved).]`
+      : `⚠ [SYSTEM: Reached the maximum ${maxLoops} tool/continuation iterations for this turn — the work may be incomplete. To finish, send "continue" and I will resume exactly where I stopped without repeating completed work.]`;
+
+  return files.length > 0
+    ? `${head}\nFiles modified this turn:\n${detail.join("\n")}`
+    : head;
 }
 
 /** Minimal provider surface the compactor needs (matches LlmProvider.complete). */

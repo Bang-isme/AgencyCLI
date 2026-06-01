@@ -401,8 +401,9 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > của user; KHÔNG đụng API key). Giờ honor limit thật từ provider + cắt thân. `pnpm verify` xanh 16/16
 > (providers 850 · core 351 · tui 116). **CẬP NHẬT 2026-06-01 (HEAD `aa14e48`): sau P0 đã xong tiếp §8.5 paste ✅ ·
 > §8.11-A/B/C token-efficiency ✅ (prompt-cache reorder + Anthropic cache_control + soften 5-approaches) · 2 runtime fix
-> từ ảnh user ✅ (tool `append_file` cho file lớn + egress `fonts.gstatic.com`). Baseline giờ: core 367 · providers 852 ·
-> security 36 · ~2078 test · 29 cờ · 18 tool. ▶ FRONTIER: §8.10 TUI realtime (+ độ bền loop/resume) · §8.4 ảnh · §8.11-D/E.**
+> từ ảnh user ✅ (tool `append_file` cho file lớn + egress `fonts.gstatic.com`) · **§8.10 loop/resume ✅ (2026-06-01: notice
+> resume khi chạm maxLoops, cờ `AGENCY_RESUME_CONTINUATION`)**. Baseline giờ: core **373** · providers 852 ·
+> security 36 · ~2084 test · **30 cờ** · 18 tool. ▶ FRONTIER: §8.10 TUI realtime activity (A/B/D/E/C, CHƯA code) · §8.4 ảnh · §8.11-D/E.**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -656,10 +657,15 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 **▶ NEXT P1 — 2 nhánh (user ưu tiên):**
 - **§8.10 TUI realtime activity** (user báo trực tiếp 2026-06-01, "đang làm gì chưa realtime + UX chưa chuyên nghiệp"):
   event tool-lifecycle cấu trúc cho main turn (gốc A) → lái status/phase realtime (B) → gộp 4 bề mặt + dedup 3 bản render
-  (D/E) → progress per-tool (C). Xem §8.10 ở trên (đã chẩn đoán từ source). **+ SUB-ITEM CÒN MỞ (ưu tiên cao, từ ảnh user):
-  max-loop-limit(15) + "tiếp tục" ghi LẠI từ đầu** = thiếu completion-detection / resume tiến độ file dở. `append_file`
-  (`aa14e48`) đã trị GỐC (có primitive ghi nối-tiếp) nhưng độ bền vòng lặp riêng: chạm maxLoops nên báo "đã ghi X/Y, còn Z"
-  + "tiếp tục" NỐI TIẾP file dở (đọc trạng thái thật) thay vì restart. Điều tra `maxLoops` ở turn loop + cách tái dựng context.
+  (D/E) → progress per-tool (C). Xem §8.10 ở trên (đã chẩn đoán từ source). **+ SUB-ITEM loop/resume ✅ ĐÃ XONG (2026-06-01):**
+  ~~max-loop-limit + "tiếp tục" ghi LẠI từ đầu~~ → khi chạm `maxLoops`, helper dùng chung `buildIncompleteTurnNotice`
+  (`chat/turn-helpers.ts`) dựng notice 1 dòng `[SYSTEM:]` (model + TUI activity-parser thấy gist) + phụ lục liệt mọi file đã
+  sửa kèm size đĩa THẬT (lines + bytes), **nối vào `llmText`** (CẢ 2 turn path stream + non-stream) → persist vào history
+  → turn "tiếp tục" thấy chỉ dẫn "read_file rồi append_file/edit_file, ĐỪNG rewrite từ đầu" + trạng thái file thật. Cờ MỚI
+  `AGENCY_RESUME_CONTINUATION`/`resumeContinuation` (off-legacy giữ notice "Response truncated" cũ byte-identical + KHÔNG
+  persist / on-hardened). Test `resume-continuation.test.ts` (6: pure helper ×3 + wiring stream ON/OFF + non-stream ON).
+  core 367→373, **30 cờ**, row `agency status` "Resume continuation". KHÔNG đụng `maxLoops` value (giữ 15/8/3 — chỉ trị
+  resume, không nới cap = tránh runaway). **CÒN LẠI §8.10:** realtime event A/B/D/E/C (chưa code).
 - **§8.4 ảnh đa tầng:** `ChatMessage.content: string|ContentPart[]` additive (default string = byte-identical); adapter
   openai-compatible map `image_url` CHỈ khi `getModelSpec(model).capabilities.vision`; estimator §8.3 ĐÃ đếm token ảnh sẵn
   (`IMAGE_PART_TOKENS`); TUI đính ảnh (path qua `@` đã có resolve IMG badge — tận dụng). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →

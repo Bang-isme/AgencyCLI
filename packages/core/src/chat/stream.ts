@@ -31,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
@@ -487,11 +487,24 @@ export async function runChatTurnWithStream(
 
     // Warn user if the loop was exhausted rather than completing naturally
     if (loopCount >= maxLoops) {
-      const truncMsg = `⚠ [SYSTEM: Response truncated — reached maximum ${maxLoops} continuation/tool iterations. Some output may be incomplete.]`;
-      handlers.onDelta(`\n${truncMsg}\n`);
-      EventBus.getInstance().publish("system:warning", {
-        message: `Chat stream hit max loop limit (${maxLoops}). Response may be incomplete.`,
-      });
+      if (getRuntimeFlags().resumeContinuation) {
+        // §8.10 — fold an informative, resume-oriented notice into the turn text
+        // (not just a transient onDelta) so the NEXT turn's history records what
+        // was in progress and a "continue" appends from the on-disk state instead
+        // of restarting from scratch.
+        const notice = buildIncompleteTurnNotice(filesWritten, input.projectRoot, maxLoops);
+        handlers.onDelta(`\n${notice}\n`);
+        llmText += `\n${notice}`;
+        EventBus.getInstance().publish("system:warning", {
+          message: `Chat stream hit max loop limit (${maxLoops}). ${filesWritten.size > 0 ? `Modified ${filesWritten.size} file(s); send "continue" to resume.` : "Response may be incomplete."}`,
+        });
+      } else {
+        const truncMsg = `⚠ [SYSTEM: Response truncated — reached maximum ${maxLoops} continuation/tool iterations. Some output may be incomplete.]`;
+        handlers.onDelta(`\n${truncMsg}\n`);
+        EventBus.getInstance().publish("system:warning", {
+          message: `Chat stream hit max loop limit (${maxLoops}). Response may be incomplete.`,
+        });
+      }
     }
 
     const duration = Date.now() - startTime;

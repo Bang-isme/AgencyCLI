@@ -29,7 +29,7 @@ import { type RouteResult } from "../router/model-router.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool } from "../skill/tool-harness.js";
@@ -456,9 +456,19 @@ export async function runChatTurn(
     }
 
     if (loopCount >= maxLoops) {
-      void EventBus.getInstance().publish("system:warning", {
-        message: `Chat turn hit max loop limit (${maxLoops}). Response may be incomplete.`,
-      });
+      if (getRuntimeFlags().resumeContinuation) {
+        // §8.10 — persist a resume notice into the turn text (see stream.ts). The
+        // non-stream path has no onDelta, so the notice reaches the user + the
+        // next turn only via llmText → assistantText → history.
+        llmText += `\n${buildIncompleteTurnNotice(filesWritten, input.projectRoot, maxLoops)}`;
+        void EventBus.getInstance().publish("system:warning", {
+          message: `Chat turn hit max loop limit (${maxLoops}). ${filesWritten.size > 0 ? `Modified ${filesWritten.size} file(s); send "continue" to resume.` : "Response may be incomplete."}`,
+        });
+      } else {
+        void EventBus.getInstance().publish("system:warning", {
+          message: `Chat turn hit max loop limit (${maxLoops}). Response may be incomplete.`,
+        });
+      }
     }
 
     const duration = Date.now() - startTime;
