@@ -267,7 +267,8 @@ export async function runChatTurn(
       const compaction = await compactTurnHistory(
         turnHistory,
         provider,
-        getModelSpec(modelName).contextWindow
+        getModelSpec(modelName).contextWindow,
+        { cacheKey: resolvedSessionId }
       );
       turnHistory = compaction.messages;
     }

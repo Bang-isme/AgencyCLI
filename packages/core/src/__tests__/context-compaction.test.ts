@@ -101,4 +101,45 @@ describe("compactTurnHistory (roadmap §2.3 context-window compaction)", () => {
       expect((msgs[0].content as string).length).toBeLessThan(250 + 300);
     }
   });
+
+  it("running summary (cacheKey): a later, grown middle only summarizes the new turns", async () => {
+    const big = (tag: string) => `${tag} ${tag.toLowerCase().repeat(40)}`;
+    const provider = { complete: vi.fn().mockResolvedValue("PRIORSUM") };
+    const cacheKey = "sess-running-test-unique";
+
+    // Turn A: middle = [ALPHA, BETA] (the other 4 are recent).
+    const turnA: ChatMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: big("ALPHA") },
+      { role: "assistant", content: big("BETA") },
+      { role: "user", content: "r4" },
+      { role: "assistant", content: "r3" },
+      { role: "user", content: "r2" },
+      { role: "assistant", content: "r1" },
+    ] as ChatMessage[];
+    const resA = await compactTurnHistory(turnA, provider, 20, { cacheKey });
+    expect(resA.compacted).toBe(true);
+
+    // Turn B: one more turn appended → the old "r4" slides into the middle, so
+    // the middle GREW from [ALPHA,BETA] to [ALPHA,BETA,GAMMA].
+    const turnB: ChatMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: big("ALPHA") },
+      { role: "assistant", content: big("BETA") },
+      { role: "user", content: big("GAMMA") },
+      { role: "assistant", content: "r3" },
+      { role: "user", content: "r2" },
+      { role: "assistant", content: "r1" },
+      { role: "user", content: "newest" },
+    ] as ChatMessage[];
+    const resB = await compactTurnHistory(turnB, provider, 20, { cacheKey });
+    expect(resB.compacted).toBe(true);
+
+    // The most recent summarizer call folded the prior summary + only the NEW
+    // turn — it did NOT re-send the already-summarized ALPHA/BETA verbatim.
+    const lastInput = (provider.complete.mock.calls.at(-1)![0][0].content as string);
+    expect(lastInput).toContain("Summary of the earlier conversation so far: PRIORSUM");
+    expect(lastInput).toContain("GAMMA");
+    expect(lastInput).not.toContain("ALPHA");
+  });
 });

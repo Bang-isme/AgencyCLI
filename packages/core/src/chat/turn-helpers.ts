@@ -157,7 +157,23 @@ export interface CompactionOptions {
    * middle could).
    */
   maxInputChars?: number;
+  /**
+   * Scope for the cross-turn running summary (typically the session id). When
+   * set, a later turn whose middle *extends* an already-summarized one only
+   * summarizes the NEW turns (folding them into the prior summary) instead of
+   * re-summarizing the whole middle every turn — O(new) not O(all). Absent ⇒ no
+   * caching (each call summarizes from scratch), which keeps callers that don't
+   * opt in byte-identical.
+   */
+  cacheKey?: string;
 }
+
+/**
+ * Per-scope running-summary memo: the most-recently summarized middle for a
+ * cacheKey and the summary it produced. Lets a growing conversation summarize
+ * incrementally instead of re-summarizing the whole middle each turn.
+ */
+const runningSummaryCache = new Map<string, { coveredCount: number; coveredContent: string; summary: string }>();
 
 /** Render a turn list as the summarizer's plain-text input. */
 function renderForSummary(messages: ChatMessage[]): string {
@@ -237,6 +253,55 @@ export interface CompactionResult {
 }
 
 /**
+ * Summarize the middle, reusing a prior summary when this middle merely extends
+ * an already-summarized one (the common case for a growing conversation): only
+ * the NEW turns are summarized, folded into the cached summary, rather than
+ * re-summarizing every older turn each turn. Falls back to a full summary when
+ * there is no usable cache entry. Caching is per `cacheKey`; with none it always
+ * summarizes the full middle (byte-identical to the non-cached path).
+ */
+async function computeMiddleSummary(
+  middle: ChatMessage[],
+  provider: CompletionProvider,
+  maxSummaryTokens: number,
+  maxInputChars: number,
+  cacheKey?: string
+): Promise<string> {
+  let summary = "";
+
+  const cached = cacheKey ? runningSummaryCache.get(cacheKey) : undefined;
+  if (
+    cached &&
+    middle.length >= cached.coveredCount &&
+    renderForSummary(middle.slice(0, cached.coveredCount)) === cached.coveredContent
+  ) {
+    if (middle.length === cached.coveredCount) {
+      // Identical middle as last time → reuse the summary, no LLM call.
+      return cached.summary;
+    }
+    // Incremental: summarize only the appended turns on top of the prior summary.
+    const newTail = middle.slice(cached.coveredCount);
+    summary = await summarizeMiddle(
+      [{ role: "system", content: `Summary of the earlier conversation so far: ${cached.summary}` }, ...newTail],
+      provider,
+      maxSummaryTokens,
+      maxInputChars
+    );
+  } else {
+    summary = await summarizeMiddle(middle, provider, maxSummaryTokens, maxInputChars);
+  }
+
+  if (cacheKey && summary) {
+    runningSummaryCache.set(cacheKey, {
+      coveredCount: middle.length,
+      coveredContent: renderForSummary(middle),
+      summary,
+    });
+  }
+  return summary;
+}
+
+/**
  * Roadmap §2.3 — proactively compress a turn's message list before it is sent
  * to the model, so a long conversation doesn't overflow the context window
  * mid-task. Keeps the leading system turn and the last `keepRecent` turns
@@ -280,9 +345,9 @@ export async function compactTurnHistory(
 
   let summaryText = "";
   if (provider && typeof provider.complete === "function") {
-    // Chunked + bounded so the summarizer's own prompt can never overflow the
-    // model window (a single-shot summary of an unbounded middle could).
-    summaryText = await summarizeMiddle(middle, provider, maxSummaryTokens, maxInputChars);
+    // Chunked + bounded (the summarizer's own prompt can never overflow), and
+    // incremental across turns when a cacheKey is supplied.
+    summaryText = await computeMiddleSummary(middle, provider, maxSummaryTokens, maxInputChars, options.cacheKey);
   }
 
   if (!summaryText) {
