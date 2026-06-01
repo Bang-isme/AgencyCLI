@@ -70,6 +70,61 @@ export interface SystemActivityLineProps {
   expandedTui: boolean;
 }
 
+/**
+ * The classified kind + extracted fields of one `[SYSTEM: …]` activity line.
+ * The classification (the `includes` checks + field-extraction regexes) used to
+ * be copy-pasted across THREE renderers — the live verbose `SystemActivityLine`,
+ * a byte-identical dead `formatSystemActivityLine` (now removed), and the concise
+ * `toConciseTelemetry`. Parsing once here is the single canonical mapping
+ * (§8.10-E); the renderers differ only in how they present the parsed result.
+ */
+export interface ParsedSystemActivity {
+  kind:
+    | "spawn"
+    | "exec"
+    | "completed"
+    | "verify-run"
+    | "verify-pass"
+    | "verify-fail"
+    | "retry"
+    | "system"
+    | "other";
+  cleanLine: string;
+  worker?: string;
+  toolName?: string;
+  target?: string;
+  args?: string;
+  len?: string;
+  gate?: string;
+}
+
+export function parseSystemActivityLine(line: string): ParsedSystemActivity {
+  // Strip any leading ⚡ or ◆ or whitespace.
+  const cleanLine = line.replace(/^[⚡◆\s]+/, "").trim();
+
+  if (cleanLine.includes("Spawning specialist")) {
+    const m = cleanLine.match(/Spawning specialist (.+?)\.\.\./);
+    return { kind: "spawn", cleanLine, worker: m ? m[1]! : "specialist" };
+  }
+  if (cleanLine.includes("Executing tool")) {
+    const m = cleanLine.match(/Executing tool "([a-zA-Z0-9_-]+)"(?:\s+on\s+(.+?))?(?:\s+with\s+arguments\s+(.+?))?\.\.\./);
+    if (m) return { kind: "exec", cleanLine, toolName: m[1]!, target: m[2] || "", args: m[3] ?? "" };
+  }
+  if (cleanLine.includes("completed with result length")) {
+    const m = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
+    if (m) return { kind: "completed", cleanLine, toolName: m[1]!, len: m[2]! };
+  }
+  if (cleanLine.includes("Running auto-verification")) {
+    const m = cleanLine.match(/Running auto-verification \((.+?)\)\.\.\./);
+    return { kind: "verify-run", cleanLine, gate: m ? m[1]! : "verification" };
+  }
+  if (cleanLine.includes("Verification passed successfully")) return { kind: "verify-pass", cleanLine };
+  if (cleanLine.includes("Verification failed! Re-routing")) return { kind: "verify-fail", cleanLine };
+  if (cleanLine.includes("Retrying in")) return { kind: "retry", cleanLine };
+  if (cleanLine.includes("[SYSTEM:") || cleanLine.includes("[SYSTEM WARNING:")) return { kind: "system", cleanLine };
+  return { kind: "other", cleanLine };
+}
+
 export const SystemActivityLine = memo(function SystemActivityLine({
   line,
   theme,
@@ -77,10 +132,6 @@ export const SystemActivityLine = memo(function SystemActivityLine({
   expandedTui,
 }: SystemActivityLineProps) {
   const tick = useTick(isActive, 100);
-
-  // Strip any leading ⚡ or ◆ or whitespace
-  const cleanLine = line.replace(/^[⚡◆\s]+/, "").trim();
-
   const spinnerFrame = SPINNER_DOTS[tick % SPINNER_DOTS.length];
   const bullet = isActive ? (
     <Text color={theme.accent} bold>{spinnerFrame} </Text>
@@ -88,37 +139,32 @@ export const SystemActivityLine = memo(function SystemActivityLine({
     <Text color={theme.muted}>→ </Text>
   );
 
-  // Pattern 1: Spawning specialist
-  if (cleanLine.includes("Spawning specialist")) {
-    const match = cleanLine.match(/Spawning specialist (.+?)\.\.\./);
-    const worker = match ? match[1] : "specialist";
-    return (
-      <Box flexDirection="row">
-        {bullet}
-        <Text color={theme.muted}>Spawning specialist </Text>
-        <Text color={theme.muted} bold>{worker}</Text>
-      </Box>
-    );
-  }
+  const parsed = parseSystemActivityLine(line);
 
-  // Pattern 2: Executing tool
-  if (cleanLine.includes("Executing tool")) {
-    const match = cleanLine.match(/Executing tool "([a-zA-Z0-9_-]+)"(?:\s+on\s+(.+?))?(?:\s+with\s+arguments\s+(.+?))?\.\.\./);
-    if (match) {
-      const toolName = match[1]!;
-      const target = match[2] || "";
-      const args = match[3] ?? "";
+  switch (parsed.kind) {
+    // Pattern 1: Spawning specialist
+    case "spawn":
+      return (
+        <Box flexDirection="row">
+          {bullet}
+          <Text color={theme.muted}>Spawning specialist </Text>
+          <Text color={theme.muted} bold>{parsed.worker}</Text>
+        </Box>
+      );
 
+    // Pattern 2: Executing tool
+    case "exec": {
+      const toolName = parsed.toolName!;
+      const target = parsed.target ?? "";
+      const args = parsed.args ?? "";
       if (target) {
         lastToolTargets.set(toolName, target);
       } else if (args) {
         lastToolTargets.set(toolName, args);
       }
-
       const semanticOp = expandedTui
         ? `${getToolAlias(toolName)} ➔ ${target || args}`
         : getSemanticToolOperation(toolName, args, target);
-
       return (
         <Box flexDirection="row">
           {bullet}
@@ -126,14 +172,11 @@ export const SystemActivityLine = memo(function SystemActivityLine({
         </Box>
       );
     }
-  }
 
-  // Pattern 3: Tool completed
-  if (cleanLine.includes("completed with result length")) {
-    const match = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
-    if (match) {
-      const toolName = match[1]!;
-      const len = match[2];
+    // Pattern 3: Tool completed
+    case "completed": {
+      const toolName = parsed.toolName!;
+      const len = parsed.len;
       const prevTarget = lastToolTargets.get(toolName) || "";
       const semanticOp = expandedTui
         ? `${getToolAlias(toolName)} completed (${len} chars)`
@@ -145,89 +188,81 @@ export const SystemActivityLine = memo(function SystemActivityLine({
         </Box>
       );
     }
-  }
 
-  // Pattern 4: Running auto-verification
-  if (cleanLine.includes("Running auto-verification")) {
-    const match = cleanLine.match(/Running auto-verification \((.+?)\)\.\.\./);
-    const gate = match ? match[1] : "verification";
-    return (
-      <Box flexDirection="row">
-        {isActive ? (
-          <Text color={theme.warning} bold>{spinnerFrame} </Text>
-        ) : (
-          <Text color={theme.warning}>→ </Text>
-        )}
-        <Text color={theme.muted}>Running build & compile checks ({gate})...</Text>
-      </Box>
-    );
-  }
+    // Pattern 4: Running auto-verification
+    case "verify-run":
+      return (
+        <Box flexDirection="row">
+          {isActive ? (
+            <Text color={theme.warning} bold>{spinnerFrame} </Text>
+          ) : (
+            <Text color={theme.warning}>→ </Text>
+          )}
+          <Text color={theme.muted}>Running build & compile checks ({parsed.gate})...</Text>
+        </Box>
+      );
 
-  // Pattern 5: Verification passed
-  if (cleanLine.includes("Verification passed successfully")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.success}>✓ </Text>
-        <Text color={theme.muted} bold>Build & compilation integrity verified</Text>
-      </Box>
-    );
-  }
+    // Pattern 5: Verification passed
+    case "verify-pass":
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.success}>✓ </Text>
+          <Text color={theme.muted} bold>Build & compilation integrity verified</Text>
+        </Box>
+      );
 
-  // Pattern 6: Verification failed
-  if (cleanLine.includes("Verification failed! Re-routing")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.danger}>✕ </Text>
-        <Text color={theme.muted} bold>Integrity check failed ➔ Entering recovery self-healing loop</Text>
-      </Box>
-    );
-  }
+    // Pattern 6: Verification failed
+    case "verify-fail":
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.danger}>✕ </Text>
+          <Text color={theme.muted} bold>Integrity check failed ➔ Entering recovery self-healing loop</Text>
+        </Box>
+      );
 
-  // Pattern 7: Retrying / Countdown
-  if (cleanLine.includes("Retrying in")) {
-    const displayMsg = cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "■ ").replace(/^\[SYSTEM:\s*/i, "◈ ").replace(/\]$/, "");
-    return (
-      <Box flexDirection="row">
-        <RetryCountdownMsg message={displayMsg} theme={theme} />
-      </Box>
-    );
-  }
+    // Pattern 7: Retrying / Countdown
+    case "retry": {
+      const displayMsg = parsed.cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "■ ").replace(/^\[SYSTEM:\s*/i, "◈ ").replace(/\]$/, "");
+      return (
+        <Box flexDirection="row">
+          <RetryCountdownMsg message={displayMsg} theme={theme} />
+        </Box>
+      );
+    }
 
-  // Fallback for other [SYSTEM: lines
-  if (cleanLine.includes("[SYSTEM:") || cleanLine.includes("[SYSTEM WARNING:")) {
-    const displayMsg = cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "■ ").replace(/^\[SYSTEM:\s*/i, "◈ ").replace(/\]$/, "");
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.muted}>{displayMsg}</Text>
-      </Box>
-    );
-  }
+    // Fallback for other [SYSTEM: lines
+    case "system": {
+      const displayMsg = parsed.cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "■ ").replace(/^\[SYSTEM:\s*/i, "◈ ").replace(/\]$/, "");
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.muted}>{displayMsg}</Text>
+        </Box>
+      );
+    }
 
-  return null;
+    default:
+      return null;
+  }
 });
 
 export function toConciseTelemetry(line: string, theme: ThemeTokens, isActive = false, tick = 0): React.ReactNode {
-  const cleanLine = line.replace(/^[⚡◆\s]+/, "").trim();
   const spinnerFrame = SPINNER_DOTS[tick % SPINNER_DOTS.length];
+  const parsed = parseSystemActivityLine(line);
 
-  if (cleanLine.includes("Spawning specialist")) {
-    const match = cleanLine.match(/Spawning specialist (.+?)\.\.\./);
-    const worker = match ? match[1] : "specialist";
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.accent}>{isActive ? `${spinnerFrame} ` : "▶ "}</Text>
-        <Text color={theme.muted}>worker · spawning · </Text>
-        <Text color={theme.text} bold>{worker}</Text>
-      </Box>
-    );
-  }
+  switch (parsed.kind) {
+    case "spawn":
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.accent}>{isActive ? `${spinnerFrame} ` : "▶ "}</Text>
+          <Text color={theme.muted}>worker · spawning · </Text>
+          <Text color={theme.text} bold>{parsed.worker}</Text>
+        </Box>
+      );
 
-  if (cleanLine.includes("Executing tool")) {
-    const match = cleanLine.match(/Executing tool "([a-zA-Z0-9_-]+)"(?:\s+on\s+(.+?))?(?:\s+with\s+arguments\s+(.+?))?\.\.\./);
-    if (match) {
-      const toolName = match[1]!;
-      const target = match[2] || "";
-      const args = match[3] ?? "";
+    case "exec": {
+      const toolName = parsed.toolName!;
+      const target = parsed.target ?? "";
+      const args = parsed.args ?? "";
       const displayTarget = target ? getGroundedTargetName(target) : (args ? getGroundedTargetName(args) : "");
       return (
         <Box flexDirection="row">
@@ -238,200 +273,59 @@ export function toConciseTelemetry(line: string, theme: ThemeTokens, isActive = 
         </Box>
       );
     }
-  }
 
-  if (cleanLine.includes("completed with result length")) {
-    const match = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
-    if (match) {
-      const toolName = match[1]!;
+    case "completed":
       return (
         <Box flexDirection="row">
           <Text color={theme.success}>✓ </Text>
-          <Text color={theme.muted}>{`exec · ${getToolAlias(toolName)} · completed`}</Text>
+          <Text color={theme.muted}>{`exec · ${getToolAlias(parsed.toolName!)} · completed`}</Text>
         </Box>
       );
-    }
-  }
 
-  if (cleanLine.includes("Running auto-verification")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.warning}>{isActive ? `${spinnerFrame} ` : `${SPINNER_DOTS[0]} `}</Text>
-        <Text color={theme.muted}>verify · building</Text>
-      </Box>
-    );
-  }
-
-  if (cleanLine.includes("Verification passed successfully")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.success}>✓ </Text>
-        <Text color={theme.muted}>verify · passed</Text>
-      </Box>
-    );
-  }
-
-  if (cleanLine.includes("Verification failed! Re-routing")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.danger}>✕ </Text>
-        <Text color={theme.muted}>verify · failed</Text>
-      </Box>
-    );
-  }
-
-  if (cleanLine.includes("Retrying in")) {
-    const match = cleanLine.match(/Retrying in (\d+(?:\.\d+)?)s/);
-    const time = match ? `${match[1]}s` : "";
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.warning}>⚠ </Text>
-        <Text color={theme.muted}>{`retry · retrying ${time ? `in ${time}` : ""}`}</Text>
-      </Box>
-    );
-  }
-
-  // Fallback
-  const displayMsg = cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "").replace(/^\[SYSTEM:\s*/i, "").replace(/\]$/, "");
-  return (
-    <Box flexDirection="row">
-      <Text color={theme.muted}>→ </Text>
-      <Text color={theme.muted} wrap="truncate">{displayMsg}</Text>
-    </Box>
-  );
-}
-
-export function formatSystemActivityLine(
-  line: string,
-  theme: ThemeTokens,
-  isActive = false,
-  tick = 0,
-  expandedTui = false
-): React.ReactNode | null {
-  // Strip any leading ⚡ or ◆ or whitespace
-  const cleanLine = line.replace(/^[⚡◆\s]+/, "").trim();
-
-  const spinnerFrame = SPINNER_DOTS[tick % SPINNER_DOTS.length];
-  const bullet = isActive ? (
-    <Text color={theme.accent} bold>{spinnerFrame} </Text>
-  ) : (
-    <Text color={theme.muted}>→ </Text>
-  );
-
-  // Pattern 1: Spawning specialist
-  if (cleanLine.includes("Spawning specialist")) {
-    const match = cleanLine.match(/Spawning specialist (.+?)\.\.\./);
-    const worker = match ? match[1] : "specialist";
-    return (
-      <Box flexDirection="row">
-        {bullet}
-        <Text color={theme.muted}>Spawning specialist </Text>
-        <Text color={theme.muted} bold={expandedTui}>{worker}</Text>
-      </Box>
-    );
-  }
-
-  // Pattern 2: Executing tool
-  if (cleanLine.includes("Executing tool")) {
-    const match = cleanLine.match(/Executing tool "([a-zA-Z0-9_-]+)"(?:\s+on\s+(.+?))?(?:\s+with\s+arguments\s+(.+?))?\.\.\./);
-    if (match) {
-      const toolName = match[1]!;
-      const target = match[2] || "";
-      const args = match[3] ?? "";
-
-      if (target) {
-        lastToolTargets.set(toolName, target);
-      } else if (args) {
-        lastToolTargets.set(toolName, args);
-      }
-
-      const semanticOp = expandedTui
-        ? `${getToolAlias(toolName)} ➔ ${target || args}`
-        : getSemanticToolOperation(toolName, args, target);
-
+    case "verify-run":
       return (
         <Box flexDirection="row">
-          {bullet}
-          <Text color={theme.muted} bold={expandedTui}>{semanticOp}</Text>
+          <Text color={theme.warning}>{isActive ? `${spinnerFrame} ` : `${SPINNER_DOTS[0]} `}</Text>
+          <Text color={theme.muted}>verify · building</Text>
         </Box>
       );
-    }
-  }
 
-  // Pattern 3: Tool completed
-  if (cleanLine.includes("completed with result length")) {
-    const match = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
-    if (match) {
-      const toolName = match[1]!;
-      const len = match[2];
-      const prevTarget = lastToolTargets.get(toolName) || "";
-      const semanticOp = expandedTui
-        ? `${getToolAlias(toolName)} completed (${len} chars)`
-        : toPastTense(getSemanticToolOperation(toolName, "", prevTarget));
+    case "verify-pass":
       return (
         <Box flexDirection="row">
           <Text color={theme.success}>✓ </Text>
-          <Text color={theme.muted}>{semanticOp}</Text>
+          <Text color={theme.muted}>verify · passed</Text>
+        </Box>
+      );
+
+    case "verify-fail":
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.danger}>✕ </Text>
+          <Text color={theme.muted}>verify · failed</Text>
+        </Box>
+      );
+
+    case "retry": {
+      const match = parsed.cleanLine.match(/Retrying in (\d+(?:\.\d+)?)s/);
+      const time = match ? `${match[1]}s` : "";
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.warning}>⚠ </Text>
+          <Text color={theme.muted}>{`retry · retrying ${time ? `in ${time}` : ""}`}</Text>
+        </Box>
+      );
+    }
+
+    default: {
+      // "system" + "other": concise catch-all (strip any [SYSTEM:] framing).
+      const displayMsg = parsed.cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "").replace(/^\[SYSTEM:\s*/i, "").replace(/\]$/, "");
+      return (
+        <Box flexDirection="row">
+          <Text color={theme.muted}>→ </Text>
+          <Text color={theme.muted} wrap="truncate">{displayMsg}</Text>
         </Box>
       );
     }
   }
-
-  // Pattern 4: Running auto-verification
-  if (cleanLine.includes("Running auto-verification")) {
-    const match = cleanLine.match(/Running auto-verification \((.+?)\)\.\.\./);
-    const gate = match ? match[1] : "verification";
-    return (
-      <Box flexDirection="row">
-        {isActive ? (
-          <Text color={theme.warning} bold>{spinnerFrame} </Text>
-        ) : (
-          <Text color={theme.warning}>→ </Text>
-        )}
-        <Text color={theme.muted}>Running build & compile checks ({gate})...</Text>
-      </Box>
-    );
-  }
-
-  // Pattern 5: Verification passed
-  if (cleanLine.includes("Verification passed successfully")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.success}>✓ </Text>
-        <Text color={theme.muted} bold>Build & compilation integrity verified</Text>
-      </Box>
-    );
-  }
-
-  // Pattern 6: Verification failed
-  if (cleanLine.includes("Verification failed! Re-routing")) {
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.danger}>✕ </Text>
-        <Text color={theme.muted} bold>Integrity check failed ➔ Entering recovery self-healing loop</Text>
-      </Box>
-    );
-  }
-
-  // Pattern 7: Retrying / Countdown
-  if (cleanLine.includes("Retrying in")) {
-    const displayMsg = cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "■ ").replace(/^\[SYSTEM:\s*/i, "◈ ").replace(/\]$/, "");
-    return (
-      <Box flexDirection="row">
-        <RetryCountdownMsg message={displayMsg} theme={theme} />
-      </Box>
-    );
-  }
-
-  // Fallback for other [SYSTEM: lines
-  if (cleanLine.includes("[SYSTEM:") || cleanLine.includes("[SYSTEM WARNING:")) {
-    const displayMsg = cleanLine.replace(/^\[SYSTEM WARNING:\s*/i, "■ ").replace(/^\[SYSTEM:\s*/i, "◈ ").replace(/\]$/, "");
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.muted}>{displayMsg}</Text>
-      </Box>
-    );
-  }
-
-  return null;
 }
