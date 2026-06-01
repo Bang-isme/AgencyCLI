@@ -345,10 +345,6 @@ export {
   type TaskNeed,
   type RouteResolution,
 } from "./agents/agent-registry.js";
-export {
-  LongRunnerManager,
-  type RunnerState,
-} from "./task/long-runner-manager.js";
 
 
 export {  

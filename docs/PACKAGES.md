@@ -113,7 +113,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `runner.ts` | `parsePlanTasks()`, `runPlan()` — checkpoint-driven execution |
 | `checkpoint.ts` | `saveCheckpoint()`, `loadCheckpoint()`, `abortCheckpoint()` |
 | `convergence-engine.ts` | `ConvergenceEngine` — structural convergence + 0–6 recovery levels |
-| `long-runner-manager.ts` | `LongRunnerManager`, `RunnerState` — long-running task supervision |
 
 **`skill/` — Skill Execution:**
 | Module | Key Exports |
@@ -659,6 +658,7 @@ home here.
 | Tool-loop circuit breaking | `core/src/chat/circuit-breaker.ts` | Wired into `skill/tool-harness.ts`. The deleted `SkillsRegistry` per-skill breaker duplicated this. |
 | Plan / DAG execution | `core/src/task/runner.ts` (`runPlan`, `parsePlanTasks`, `detectDagCycle`) | The deleted `PlannerEngine` duplicated this on a separate `ExecutionDagContract` model. |
 | Capability-driven agent routing + health/utilization | `core/src/agents/agent-registry.ts` | The deleted `DomainSpecialistRegistry` duplicated this. |
+| Task/worker liveness — lease heartbeat, stall→fail, crash-resume | `LeaseManager` + `core/src/task/runner.ts` (`acquireLease`/`renewLease`/`checkExpired`) + `checkpoint.ts` + bootstrap auto-resume | The deleted `LongRunnerManager` duplicated this (plus SIGINT/SIGTERM shutdown, already live in tui/security/browser). A tier-6 *detached cross-process* runner, if ever built, belongs here on `LeaseManager`. |
 | Durable event journal + replay verification | `core/src/events/event-journal.ts` + `events/replay-engine.ts` (`verifyJournalReplay`, `replaySessionJournal`) | Path convention lives only in `EventJournal.resolvePath`. |
 | Memory lifecycle / GC / secret redaction | `@agency/memory` | Flag-gated from core via setter (no core-flag import — avoids a dependency cycle). |
 | Model catalog + cost resolution | `@agency/providers` (`model-catalog.ts`) + governance cost resolver | One price table; `matchModelKey` is shared with `resolveModelSpec`. |
