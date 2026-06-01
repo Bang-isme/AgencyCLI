@@ -406,10 +406,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > tại main-turn tool loop → status line realtime, dùng cờ sẵn `cognitionStream`)** · **§8.10-B/D ✅ (2026-06-02: lái
 > `activityPhase` từ thought qua `activityPhaseFromThought` → status hết kẹt "Writing" >10s; bỏ subtask GIẢ ExecutionPanel →
 > activity thật)** · **§8.10-E ✅ (parser canonical) · §8.10-C ✅ (2026-06-02: diệt nhãn sai `getGroundedTargetName` + gỡ
-> `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (2026-06-02: compact tool-docs args, cờ
-> `AGENCY_COMPACT_TOOL_DOCS`)**.
-> Baseline giờ: core **386** · tui **148** · providers 852 · security 36 · ~2121 test · **31 cờ** · 18 tool.
-> ▶ FRONTIER: §8.11-E (grep_file/grep_search rename rõ + patch tool/index-search) · §8.4 ảnh/multimodal (cần vision key verify e2e). P2: §8.6/8.7/8.8.**
+> `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (compact tool-docs args, cờ
+> `AGENCY_COMPACT_TOOL_DOCS`) · §8.11-E ✅ (2026-06-02: clarify grep mô tả cross-ref; KHÔNG rename/patch/index — ghi lý do) → §8.11 ĐÓNG TRỌN**.
+> Baseline giờ: core **388** · tui **148** · providers 852 · security 36 · ~2123 test · **31 cờ** · 18 tool.
+> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k / §8.7 index freshness / §8.8 sandbox edge. (Ngỏ: §8.10 in-tool progress callback; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -693,11 +693,15 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   parse trùng). Surface `agency status`. Test `tool-docs-compact.test.ts` (5: verbose-off byte / compact Args + hết boilerplate /
   ngắn hơn hẳn / hardened default on / optional `?`+type). core 381→386, **31 cờ**.
 
-**(E) Hoàn chỉnh/độ rõ (minor, KHÔNG bug).** `grep_file` (1 file) vs `grep_search` (workspace recursive + gitignore +
-  case/regex/limit) **distinct thật** (đã verify) nhưng tên dễ nhầm → cân nhắc đổi tên rõ (`search_in_file`/`search_workspace`).
-  Ứng viên hoàn chỉnh (tuỳ chọn): tool **unified-diff/patch** (sửa nhiều hunk ÍT token hơn rewrite cả file — bổ sung
-  `batch_edit`/`ast_edit`); **search dựa index** (`grep_search` đang walk lại cây mỗi lần — `loadIndex` đã có, dùng để
-  nhanh + ít token + kết quả tốt hơn). Tra "Canonical Homes" trước khi thêm tool.
+**(E) Hoàn chỉnh/độ rõ (minor, KHÔNG bug). ← ✅ XONG (2026-06-02, commit `00f5312`) → §8.11 ĐÓNG TRỌN**
+- **✅ ĐÃ LÀM (an toàn):** `grep_file` (1 file) vs `grep_search` (workspace recursive) distinct thật nhưng tên dễ nhầm → **clarify
+  mô tả cross-reference** (mỗi tool nêu scope + trỏ tool kia) để model tự chọn đúng. Behaviour-preserving (chỉ wording mô tả,
+  auto-advertise; KHÔNG cờ — cùng class với steering write_file ở append_file). Test `tool-harness.test.ts` +2. core 386→388.
+- **❌ CỐ Ý KHÔNG LÀM (assessed, ghi lý do):** (a) **đổi tên** `search_in_file`/`search_workspace` — ripple TOOL_ALIASES +
+  narration set + semantic-orchestration + security-escalation + vỡ recorded-trace/model emit tên cũ = chi-phí > lợi clarity biên,
+  KHÔNG behavior-preserving; clarify mô tả đạt mục tiêu an toàn hơn. (b) **patch/unified-diff tool** — TRÙNG `batch_edit` (đã
+  atomic multi-hunk search/replace 1 file) → vi phạm chống-trùng-lặp. (c) **index-backed search** — rủi ro correctness (index
+  stale bỏ sót file mới ghi); grep_search đọc tươi + honor gitignore là đúng.
 
 > **Thứ tự §8.11:** B (caching — token win lớn nhất) → C (5-approaches) → D → E. Cờ cho thay đổi prompt; tái dùng catalog
 > `capabilities`/adapter interface; test + `pnpm verify` xanh. **A + B (reorder + Anthropic cache_control, cờ
