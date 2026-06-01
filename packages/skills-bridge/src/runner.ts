@@ -1,17 +1,29 @@
-import {
-  appendAudit,
-  requiresApproval,
-} from "@agency/core/approval";
-import { EventBus } from "@agency/core";
 import { execa } from "execa";
 import { join } from "node:path";
 import { BUILTIN_SCRIPTS } from "./builtins.js";
 import { loadPluginTools } from "./registry.js";
 
+/** Context handed to {@link RunToolOptions.onBeforeRun} before a tool executes. */
+export interface RunToolGateContext {
+  toolName: string;
+  writesArtifacts: boolean;
+  yes: boolean;
+  projectRoot?: string;
+}
+
 export interface RunToolOptions {
   cwd?: string;
   yes?: boolean;
   projectRoot?: string;
+  /**
+   * Optional approval-gate hook, invoked once before the script runs. The bridge
+   * is pure mechanism (run the Python script); the CALLER injects policy here —
+   * warn/audit when a write-capable tool runs without explicit approval. Keeping
+   * the policy in the caller (the CLI) is why this package no longer imports
+   * `@agency/core` (that back-edge formed a `core ↔ skills-bridge` package import
+   * cycle). Absent ⇒ the script just runs.
+   */
+  onBeforeRun?: (ctx: RunToolGateContext) => void;
 }
 
 export interface RunToolResult {
@@ -83,30 +95,12 @@ export async function runTool(
   const reg = loadPluginTools(skillsRoot);
   const tool = reg.tools.find((t) => t.name === toolName);
   if (!tool) throw new Error(`Unknown tool: ${toolName}`);
-  if (
-    requiresApproval(toolName, tool.safety_policy.writes_artifacts) &&
-    !opts.yes
-  ) {
-    const warnMsg = `Security Warning: Tool ${toolName} executed without explicit approval.`;
-    process.stderr.write(`${warnMsg}\n`);
-    void EventBus.getInstance().publish("system:warning", { message: warnMsg });
-
-    if (opts.projectRoot) {
-      appendAudit(opts.projectRoot, {
-        action: "tool",
-        tool: toolName,
-        approved: true,
-      });
-    }
-  } else {
-    if (opts.projectRoot) {
-      appendAudit(opts.projectRoot, {
-        action: "tool",
-        tool: toolName,
-        approved: true,
-      });
-    }
-  }
+  opts.onBeforeRun?.({
+    toolName,
+    writesArtifacts: tool.safety_policy.writes_artifacts,
+    yes: Boolean(opts.yes),
+    projectRoot: opts.projectRoot,
+  });
   return execPythonScript(skillsRoot, tool.script, argv, opts);
 }
 

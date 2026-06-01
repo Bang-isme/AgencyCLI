@@ -28,10 +28,29 @@ describe("runTool", () => {
     expect(mockedExeca).not.toHaveBeenCalled();
   });
 
-  it("runs the tool with a warning when writes_artifacts without yes", async () => {
+  it("invokes the onBeforeRun gate with tool context, then runs the tool", async () => {
     mockedExeca.mockResolvedValue({
       exitCode: 0,
       stdout: "warning-ok",
+      stderr: "",
+    } as Awaited<ReturnType<typeof execa>>);
+
+    const onBeforeRun = vi.fn();
+    const result = await runTool(FIXTURE, "write_stub", [], { onBeforeRun });
+
+    // The bridge is pure mechanism: it hands the caller's gate the tool context
+    // (so the CLI can enforce approval/audit) and then runs the script.
+    expect(onBeforeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: "write_stub", yes: false })
+    );
+    expect(result.exitCode).toBe(0);
+    expect(mockedExeca).toHaveBeenCalled();
+  });
+
+  it("runs without a gate when no onBeforeRun hook is provided", async () => {
+    mockedExeca.mockResolvedValue({
+      exitCode: 0,
+      stdout: "ok",
       stderr: "",
     } as Awaited<ReturnType<typeof execa>>);
 

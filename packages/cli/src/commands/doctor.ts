@@ -11,6 +11,7 @@ import {
 } from "@agency/core";
 import { runTool, resolvePythonBin, loadManifestSkills, skillMdPath } from "@agency/skills-bridge";
 import { out, handleError } from "../utils.js";
+import { pluginApprovalGate } from "../plugin-approval-gate.js";
 
 type CheckStatus = "ok" | "warn" | "fail";
 
@@ -156,7 +157,7 @@ export function registerDoctor(program: Command) {
                 skillsRoot,
                 "pack_health",
                 ["--skills-root", skillsRoot, "--format", "json"],
-                { yes: true }
+                { yes: true, onBeforeRun: pluginApprovalGate }
               );
               try {
                 packHealth = JSON.parse(res.stdout);

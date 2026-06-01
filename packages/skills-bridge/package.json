@@ -19,7 +19,6 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@agency/core": "workspace:*",
     "execa": "^9.0.0",
     "zod": "^3.23.0"
   },

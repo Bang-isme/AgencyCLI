@@ -252,9 +252,6 @@ importers:
 
   packages/skills-bridge:
     dependencies:
-      '@agency/core':
-        specifier: workspace:*
-        version: link:../core
       execa:
         specifier: ^9.0.0
         version: 9.6.1

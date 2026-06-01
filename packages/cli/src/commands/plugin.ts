@@ -8,6 +8,7 @@ import {
   runTool,
 } from "@agency/skills-bridge";
 import { handleError } from "../utils.js";
+import { pluginApprovalGate } from "../plugin-approval-gate.js";
 
 interface PluginToolsSchemaMeta {
   schema_version?: string;
@@ -59,7 +60,7 @@ async function runPluginValidate(skillsRoot: string): Promise<number> {
   const argv = ["--plugin-root", pluginRoot];
 
   const { exitCode, stdout, stderr } = validateTool
-    ? await runTool(skillsRoot, validateTool.name, argv, { yes: true })
+    ? await runTool(skillsRoot, validateTool.name, argv, { yes: true, onBeforeRun: pluginApprovalGate })
     : await runBuiltinScript(skillsRoot, "plugin_validate", argv);
 
   if (stdout) process.stdout.write(stdout + (stdout.endsWith("\n") ? "" : "\n"));
