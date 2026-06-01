@@ -71,6 +71,11 @@ export {
 } from "./retriever.js";
 
 export {
+  type Embedder,
+  LocalDeterministicEmbedder,
+} from "./embedder.js";
+
+export {
   PolicyEngine,
   GraphIntegritySupervisor,
   RecoverySupervisor,

@@ -142,4 +142,39 @@ describe("Phase 1: Persistent SQLite Memory Integration Tests", () => {
     const mine = warnings.filter((e) => String(e?.payload ?? "").includes(sessionId));
     expect(mine.length).toBeGreaterThan(0);
   });
+
+  it("with AGENCY_MEMORY_SEMANTIC off (legacy), writes NO vectors (byte-identical recall path)", () => {
+    delete process.env.AGENCY_MEMORY_SEMANTIC;
+    safeAddEpisode(tempProjectRoot, "sess-legacy", "Some goal", 0, "user_input", "some content");
+    expect(getDb(tempProjectRoot).queryVectors().length).toBe(0);
+  });
+
+  it("with AGENCY_MEMORY_SEMANTIC on, embeds episodes into vectors and recalls them", async () => {
+    const prev = process.env.AGENCY_MEMORY_SEMANTIC;
+    process.env.AGENCY_MEMORY_SEMANTIC = "1";
+    try {
+      safeAddEpisode(
+        tempProjectRoot,
+        "sess-sem-a",
+        "Implement the rate limiter middleware",
+        0,
+        "tool_call:write_file",
+        "Added a token bucket rate limiter to api/middleware.ts"
+      );
+
+      // Write path: the episode was embedded into a recallable vector.
+      const vectors = getDb(tempProjectRoot).queryVectors();
+      expect(vectors.length).toBeGreaterThan(0);
+      expect(vectors[0]!.session_id).toBe("sess-sem-a");
+
+      // Read path: recall from a brand-new session surfaces it (hybrid retriever).
+      const recall = await loadHistoricalMemories(tempProjectRoot, "rate limiter middleware", "sess-sem-b");
+      expect(recall).toContain("Implement the rate limiter middleware");
+      expect(recall).toContain("tool_call:write_file");
+      expect(recall).not.toContain("sess-sem-b");
+    } finally {
+      if (prev === undefined) delete process.env.AGENCY_MEMORY_SEMANTIC;
+      else process.env.AGENCY_MEMORY_SEMANTIC = prev;
+    }
+  });
 });

@@ -1,5 +1,15 @@
-import { getDb, EpisodicStore } from "@agency/memory";
+import { createHash } from "node:crypto";
+import {
+  getDb,
+  EpisodicStore,
+  VectorStore,
+  GraphStore,
+  HybridRetriever,
+  LocalDeterministicEmbedder,
+  type Embedder,
+} from "@agency/memory";
 import { EventBus } from "../events/event-bus.js";
+import { getRuntimeFlags } from "../runtime/flags.js";
 
 /**
  * Maximum characters of formatted memory injected into the system prompt. Each
@@ -11,9 +21,54 @@ import { EventBus } from "../events/event-bus.js";
 const RECALL_CHAR_BUDGET = 6000;
 
 /**
- * Loads relevant historical episodes matching the current userPrompt via FTS5
- * along with the most recent chronological episodes from OTHER sessions, both
- * via the typed store API (no raw SQL), bounded by {@link RECALL_CHAR_BUDGET}.
+ * One process-wide local deterministic embedder (no network/key/model file).
+ * Lazily built so the cost is paid only when semantic recall is enabled. Behind
+ * the {@link Embedder} interface so a provider-backed embedder can be swapped in
+ * later. See {@link LocalDeterministicEmbedder}.
+ */
+let embedder: Embedder | undefined;
+function getEmbedder(): Embedder {
+  if (!embedder) embedder = new LocalDeterministicEmbedder();
+  return embedder;
+}
+
+/** A stable, upsert-safe vector id for an episode (content hash keeps distinct calls distinct). */
+function vectorIdFor(sessionId: string, turnIndex: number, actionSignature: string, content: string): string {
+  const h = createHash("sha1").update(content).digest("hex").slice(0, 8);
+  return `${sessionId}:${turnIndex}:${actionSignature}:${h}`;
+}
+
+/** The fields the recall block formats — present top-level on an Episode, in `metadata` on a vector hit. */
+interface EpisodeLike {
+  id?: number | string;
+  session_id?: string;
+  turn_index?: number;
+  action_signature?: string;
+  goal?: string;
+  content?: string;
+  created_at?: number;
+  metadata?: any;
+}
+
+function displayFields(rec: EpisodeLike) {
+  const meta = rec.metadata ?? {};
+  return {
+    session_id: rec.session_id ?? meta.session_id ?? "",
+    turn_index: rec.turn_index ?? meta.turn_index ?? 0,
+    action_signature: rec.action_signature ?? meta.action_signature ?? "",
+    goal: rec.goal ?? meta.goal ?? "",
+    content: rec.content ?? "",
+    created_at: rec.created_at ?? meta.created_at ?? Date.now(),
+  };
+}
+
+/**
+ * Loads relevant historical episodes from past sessions, bounded by
+ * {@link RECALL_CHAR_BUDGET}. With `memorySemantic` off (legacy) this is keyword
+ * FTS + chronological recency via the typed store API. With it on, relevance
+ * comes from the {@link HybridRetriever} (semantic vector + FTS reciprocal-rank
+ * fusion + recency/boosting), and recency is still appended so an unrelated
+ * prompt still surfaces recent context. Never throws.
  */
 export async function loadHistoricalMemories(
   projectRoot: string,
@@ -23,31 +78,30 @@ export async function loadHistoricalMemories(
   try {
     const db = getDb(projectRoot);
     const store = new EpisodicStore(db);
+    const semantic = getRuntimeFlags().memorySemantic;
 
-    // 1. Relevant episodes matching the prompt's keywords (FTS5), past sessions only.
-    const ftsMatches = store.searchEpisodesByGoal(userPrompt);
-
-    // 2. Most-recent episodes from OTHER sessions (typed recency recall — replaces
-    //    the previous raw `(db as any).db` SQL that bypassed the store).
+    // Most-recent episodes from OTHER sessions (typed recency recall — shared by
+    // both paths; replaces the previous raw `(db as any).db` SQL).
     const recentEpisodes = store.getRecentAcrossSessions(currentSessionId, 10);
 
     const formattedEpisodes: string[] = [];
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     let usedChars = 0;
     let budgetHit = false;
 
-    const formatEpisode = (ep: any) => {
-      if (budgetHit || !ep.id || seen.has(ep.id)) return;
-      seen.add(ep.id);
+    const formatRecord = (rec: EpisodeLike): void => {
+      if (budgetHit) return;
+      const f = displayFields(rec);
+      if (!f.session_id || f.session_id === currentSessionId) return; // past sessions only
+      const key = `${f.session_id}:${f.turn_index}:${f.action_signature}`;
+      if (seen.has(key)) return;
+      seen.add(key);
 
-      const dateStr = new Date(ep.created_at).toISOString().split("T")[0];
-      const goalStr = ep.goal.length > 80 ? ep.goal.slice(0, 80) + "..." : ep.goal;
-      const contentSnippet = ep.content.length > 150 ? ep.content.slice(0, 150) + "..." : ep.content;
+      const dateStr = new Date(f.created_at).toISOString().split("T")[0];
+      const goalStr = f.goal.length > 80 ? f.goal.slice(0, 80) + "..." : f.goal;
+      const contentSnippet = f.content.length > 150 ? f.content.slice(0, 150) + "..." : f.content;
+      const line = `- [Date: ${dateStr}, Session: ${f.session_id}, Turn: ${f.turn_index}, Goal: "${goalStr}", Action: ${f.action_signature}]\n  Content: ${contentSnippet.replace(/\s+/g, " ").trim()}`;
 
-      const line = `- [Date: ${dateStr}, Session: ${ep.session_id}, Turn: ${ep.turn_index}, Goal: "${goalStr}", Action: ${ep.action_signature}]\n  Content: ${contentSnippet.replace(/\s+/g, " ").trim()}`;
-
-      // Stop before exceeding the recall budget (keep what we have; never drop
-      // the leading line mid-way once at least one episode is included).
       if (usedChars + line.length > RECALL_CHAR_BUDGET && formattedEpisodes.length > 0) {
         budgetHit = true;
         return;
@@ -56,14 +110,34 @@ export async function loadHistoricalMemories(
       usedChars += line.length;
     };
 
-    // Ingest FTS matches first (highest relevance), filtering out the current session.
-    ftsMatches
-      .filter((m: any) => m.session_id !== currentSessionId)
-      .slice(0, 10)
-      .forEach(formatEpisode);
+    // 1. Relevance: HybridRetriever (semantic) or plain FTS (legacy).
+    if (semantic) {
+      try {
+        const retriever = new HybridRetriever(store, new VectorStore(db), new GraphStore(db));
+        const queryVector = getEmbedder().embed(userPrompt);
+        const ranked = retriever.retrieve(queryVector, userPrompt, { limit: 12, maxTokens: 4000 });
+        for (const r of ranked) {
+          if (r.source) formatRecord(r.source as EpisodeLike);
+        }
+      } catch {
+        // Semantic recall is purely additive — on any failure (e.g. a dimension
+        // mismatch from a foreign vector) fall back to the keyword path below.
+        store
+          .searchEpisodesByGoal(userPrompt)
+          .filter((m) => m.session_id !== currentSessionId)
+          .slice(0, 10)
+          .forEach(formatRecord);
+      }
+    } else {
+      store
+        .searchEpisodesByGoal(userPrompt)
+        .filter((m) => m.session_id !== currentSessionId)
+        .slice(0, 10)
+        .forEach(formatRecord);
+    }
 
-    // Then chronological recency episodes.
-    recentEpisodes.forEach(formatEpisode);
+    // 2. Chronological recency (newest from other sessions), regardless of match.
+    recentEpisodes.forEach(formatRecord);
 
     if (formattedEpisodes.length === 0) {
       return "";
@@ -71,7 +145,7 @@ export async function loadHistoricalMemories(
 
     return [
       "The following are relevant past activities and actions recorded in the persistent SQLite memory from past sessions:",
-      ...formattedEpisodes
+      ...formattedEpisodes,
     ].join("\n");
   } catch (err) {
     return "";
@@ -79,8 +153,11 @@ export async function loadHistoricalMemories(
 }
 
 /**
- * Idempotently and safely adds a turn/action episode to the persistent SQLite database.
- * Failures are silenced to prevent breaking main chat turn execution.
+ * Idempotently and safely adds a turn/action episode to the persistent SQLite
+ * database. When `memorySemantic` is on, also writes a local-embedding vector so
+ * the episode is recallable by semantic similarity (best-effort; a vector
+ * failure never blocks the episode write). Failures are surfaced as a
+ * `system:warning` but never thrown, so a memory write can't break a chat turn.
  */
 export function safeAddEpisode(
   projectRoot: string,
@@ -101,6 +178,30 @@ export function safeAddEpisode(
       content,
       { created_at: Date.now() }
     );
+
+    // Semantic index: embed the goal + content so similarity recall can find
+    // this episode later. Best-effort and isolated — a vector failure (e.g. a
+    // dimension mismatch) must not lose the episode we just persisted.
+    if (getRuntimeFlags().memorySemantic) {
+      try {
+        const emb = getEmbedder();
+        new VectorStore(db).insert({
+          id: vectorIdFor(sessionId, turnIndex, actionSignature, content),
+          tenant_id: "default",
+          session_id: sessionId,
+          memory_type: "episodic",
+          state: "ACTIVE",
+          vector: emb.embed(`${goal}\n${content}`),
+          content,
+          metadata: { session_id: sessionId, turn_index: turnIndex, action_signature: actionSignature, goal, created_at: Date.now() },
+          embedding_model: emb.id,
+          embedding_dimension: emb.dimension,
+          lamport_timestamp: 0,
+        });
+      } catch {
+        // Vector indexing is an enhancement, not a guarantee — swallow.
+      }
+    }
   } catch (err) {
     // The write failed (disk full, corrupt DB, ENFILE, schema drift, ...).
     // Swallowing it keeps the chat turn alive — persisting a memory must never

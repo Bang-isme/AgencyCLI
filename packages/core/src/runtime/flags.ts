@@ -42,6 +42,12 @@ export interface RuntimeFlags {
   memoryMaxEpisodes: number;
   /** Hard ceiling on vector rows before quota eviction. */
   memoryMaxVectors: number;
+  /**
+   * Semantic memory recall: embed episodes (local deterministic embedder) on
+   * persist and recall via the HybridRetriever (vector + FTS reciprocal-rank
+   * fusion + recency). Off → keyword FTS + recency only (the legacy path).
+   */
+  memorySemantic: boolean;
   /** Timeout (ms) for a single MCP JSON-RPC request (0 = none). Prevents a hung server cascading. */
   mcpRequestTimeoutMs: number;
   /** Route dispatches by capability/health instead of the hardcoded requested role. */
@@ -155,6 +161,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     memoryGc: parseBool(env.AGENCY_MEMORY_GC, hardened),
     memoryMaxEpisodes: parseInt10(env.AGENCY_MEMORY_MAX_EPISODES, 50_000),
     memoryMaxVectors: parseInt10(env.AGENCY_MEMORY_MAX_VECTORS, 50_000),
+    // Behaviour-changing (writes vectors on persist + changes recall ranking)
+    // → off in legacy (keyword FTS + recency only), on in hardened.
+    memorySemantic: parseBool(env.AGENCY_MEMORY_SEMANTIC, hardened),
     // Purely protective (a hung server should always time out) → on by default everywhere.
     mcpRequestTimeoutMs: parseInt10(env.AGENCY_MCP_REQUEST_TIMEOUT_MS, 30_000),
     // Behaviour-changing (can re-route a dispatch away from the requested agent)

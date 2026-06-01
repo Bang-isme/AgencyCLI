@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getDb, closeAllDbs } from "../db.js";
-import { VectorStore } from "../vector-store.js";
+import { VectorStore, computeCosineSimilarity } from "../vector-store.js";
+import { LocalDeterministicEmbedder } from "../embedder.js";
 import { EpisodicStore } from "../episodic-store.js";
 import { IngestionPipeline } from "../ingestion.js";
 import { SecurityHardening } from "../security.js";
@@ -67,6 +68,28 @@ describe("Memory Subsystem Unit Tests", () => {
     expect(limited[0]!.session_id).not.toBe("session-current");
 
     closeAllDbs();
+  });
+
+  it("LocalDeterministicEmbedder is deterministic, fixed-dimension, normalized, and lexically discriminative", () => {
+    const emb = new LocalDeterministicEmbedder(256);
+
+    // Deterministic: same text → identical vector.
+    const a1 = emb.embed("the quick brown fox jumps over the lazy dog");
+    const a2 = emb.embed("the quick brown fox jumps over the lazy dog");
+    expect(a1).toEqual(a2);
+    expect(a1).toHaveLength(256);
+
+    // L2-normalized (unit length, within float tolerance).
+    const norm = Math.sqrt(a1.reduce((s, x) => s + x * x, 0));
+    expect(norm).toBeCloseTo(1, 5);
+
+    // Discriminative: texts sharing words are closer than disjoint ones.
+    const shared = emb.embed("the quick brown dog runs fast");
+    const disjoint = emb.embed("airplane engine maintenance schedule report");
+    expect(computeCosineSimilarity(a1, shared)).toBeGreaterThan(computeCosineSimilarity(a1, disjoint));
+
+    // Empty text → zero vector (no NaNs from normalizing).
+    expect(emb.embed("").every((x) => x === 0)).toBe(true);
   });
 
   it("should perform vector insert and query similarity correctly", () => {

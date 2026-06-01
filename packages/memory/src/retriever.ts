@@ -128,6 +128,10 @@ export class HybridRetriever {
         metadata,
         type,
         explanation,
+        // Expose the richest matched source record (vector entry or episode) so
+        // callers can format domain-specific fields without this generic
+        // retriever having to know about them. Vector hits win when both exist.
+        source: vecMatch ?? ftsMatch,
       });
     }
 

@@ -83,6 +83,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Max parallel agents", value: String(f.maxParallelAgents), keys: ["maxParallelAgents"] },
     { label: "MCP request timeout", value: f.mcpRequestTimeoutMs > 0 ? `${f.mcpRequestTimeoutMs}ms` : "off", keys: ["mcpRequestTimeoutMs"] },
     { label: "Memory GC", value: f.memoryGc ? `on (episodes≤${f.memoryMaxEpisodes}, vectors≤${f.memoryMaxVectors})` : "off", keys: ["memoryGc", "memoryMaxEpisodes", "memoryMaxVectors"] },
+    { label: "Semantic recall", value: f.memorySemantic ? "on (vector + FTS hybrid)" : "off (keyword FTS only)", keys: ["memorySemantic"] },
     { label: "Capability routing", value: onOff(f.capabilityRouting), keys: ["capabilityRouting"] },
     { label: "Checkpoint strict", value: f.checkpointStrict ? "on (reject corrupt)" : "off (warn + load)", keys: ["checkpointStrict"] },
     { label: "Atomic rollback", value: onOff(f.atomicRollback), keys: ["atomicRollback"] },
