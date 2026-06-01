@@ -402,8 +402,9 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > (providers 850 · core 351 · tui 116). **CẬP NHẬT 2026-06-01 (HEAD `aa14e48`): sau P0 đã xong tiếp §8.5 paste ✅ ·
 > §8.11-A/B/C token-efficiency ✅ (prompt-cache reorder + Anthropic cache_control + soften 5-approaches) · 2 runtime fix
 > từ ảnh user ✅ (tool `append_file` cho file lớn + egress `fonts.gstatic.com`) · **§8.10 loop/resume ✅ (2026-06-01: notice
-> resume khi chạm maxLoops, cờ `AGENCY_RESUME_CONTINUATION`)**. Baseline giờ: core **373** · providers 852 ·
-> security 36 · ~2084 test · **30 cờ** · 18 tool. ▶ FRONTIER: §8.10 TUI realtime activity (A/B/D/E/C, CHƯA code) · §8.4 ảnh · §8.11-D/E.**
+> resume khi chạm maxLoops, cờ `AGENCY_RESUME_CONTINUATION`)** · **§8.10-A realtime tool narration ✅ (2026-06-02: emitThought
+> tại main-turn tool loop → status line realtime, dùng cờ sẵn `cognitionStream`)**. Baseline giờ: core **381** · providers 852 ·
+> security 36 · ~2092 test · **30 cờ** · 18 tool. ▶ FRONTIER: §8.10-B/D/E/C (status-phase từ event, gộp 4 bề mặt + dedup 3 render, progress per-tool) · §8.4 ảnh · §8.11-D/E.**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -531,6 +532,18 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > `√ exec · list_dir · completed` / `▶ exec · read · SPEC.md (lines 1–300)` / `√ … completed`, status `‖ Writing·· ·
 > 8m39s · 10.3k tokens`. User: "model **nghĩ gì** thì thấy rồi, nhưng **đang làm gì** chưa realtime tốt; TUI/UX còn
 > yếu, chưa chuyên nghiệp". Dưới đây chẩn đoán từ SOURCE THẬT (đừng điều tra lại), mỗi lỗi SỰ THẬT→LỖI→SỬA(+file).
+
+> **✅ §8.10-A SLICE 1 ĐÃ XONG (2026-06-02, commit `710abb0`) — realtime status qua narration:** wire `emitThought`
+> (producer narration canonical) tại main-turn tool loop CẢ 2 path (`stream.ts`+`orchestrator.ts`): khi KHÔNG agentId
+> (main turn) → emit thought dựng từ tool name + `stepLabel` cấu trúc (KHÔNG regex) qua helper MỚI `describeToolActivity`
+> (`turn-helpers.ts`, category-level 5 bucket: read→Reading / search→Searching / edit→Editing / exec→Running /
+> dispatch→Spawning subagent; phân biệt CỐ Ý với `SemanticTranslator` richer của TUI — core không import được TUI).
+> `App.tsx` ĐÃ subscribe `thought:emitted`→`emitHeartbeat`→status line + CognitionPanel → status giờ phản ánh REALTIME
+> "đang làm gì" thay vì kẹt "Writing". KHÔNG event mới / cờ mới / dead-producer: gate bằng cờ SẴN CÓ `cognitionStream`
+> (off-legacy no-op byte-identical / on-hardened). Test `tool-activity-narration.test.ts` (8). core 373→381. **CÒN LẠI
+> §8.10:** (B) lái `activityPhase`/label theo event (status hiện vẫn dựa `heartbeat.message` — đã realtime, nhưng phase-tree
+> chưa); (D) gộp 4 bề mặt; (E) dedup 3 render `SystemActivityLine`/`formatSystemActivityLine`/`toConciseTelemetry`; (C)
+> progress per-tool + sửa inline-trace nhãn sai (`lastToolTargets` global-Map vỡ parallel — vẫn ở nhánh text-parse, chưa đụng).
 
 **(A) Main turn KHÔNG có event tool có cấu trúc — UI phải regex-parse text English (gốc lớn nhất).**
 - **SỰ THẬT.** Main turn báo hiệu tool bằng cách **nhồi text người-đọc** vào stream LLM:
