@@ -442,6 +442,29 @@ Oversized events whose payload was spilled to disk are counted as `skipped` (the
 
 ---
 
+### `agency replay-regression [trace]`
+Drive the §2.5 behaviour-trace regression engine (`benchmark.runRegressionReplay`) over a recorded trace from `.agency/traces/` (produced when `AGENCY_TRACE_RECORD` is set). `[trace]` is a file path or a bare sessionId. Exits non-zero on a malformed trace or a detected behavioural drift.
+
+```
+agency replay-regression --list                         # list recorded traces
+agency replay-regression <trace>                         # validate a trace is replay-ready
+agency replay-regression <candidate> --baseline <ref>    # regression: candidate vs baseline
+```
+
+**Modes:**
+- **validate** (no `--baseline`) — load + replay the trace through the real engine and confirm it is well-formed and fully consumable (surfaces corrupt/partial/non-trace files). Not an agent regression on its own.
+- **regression** (`--baseline <ref>`) — replay the candidate's recorded tool-call sequence against the baseline's recorded outputs; a tool call the baseline never recorded (`[Replay Deviation]`) or a baseline output the candidate didn't reproduce (unconsumed) is flagged as drift. Needs no LLM responses — both runs are already on disk.
+
+**Options:**
+- `--baseline <ref>` — reference trace to check the candidate against
+- `--list` — list recorded traces under `.agency/traces/`
+- `--project-root <path>` — Project root directory
+- `--json` — Emit the result as JSON
+
+Full §2.5 follow-up: re-executing the live agent against a baseline (needs recording LLM responses too — the trace currently holds only tool I/O + timings).
+
+---
+
 ## TUI Slash Commands (Interactive Mode Only)
 
 | Command | Action |

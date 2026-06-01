@@ -552,7 +552,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `types.ts` | `BenchmarkTask`, `BenchmarkResult` |
 | `tasks.ts` | 3 default tasks: `fileAnalysisTask`, `astSearchTask`, `scriptCompilationTask` |
 | `runner.ts` | `runBenchmarkTask()`, `runBenchmarkSuite()` — isolated workspace execution |
-| `regression.ts` | `runRegressionReplay()` — replay telemetry traces for regression detection |
+| `regression.ts` | `runRegressionReplay()` + `loadTraceFile()` — replay telemetry traces for regression detection (driven by `agency replay-regression`) |
 
 ---
 
@@ -592,11 +592,11 @@ This document provides a **module-level** reference for every one of the 16 pack
 | File | Purpose |
 |------|---------|
 | `index.ts` | `#!/usr/bin/env node` entry — dispatches TUI or registers commands |
-| `register.ts` | `registerCommands(program)` — aggregates all 21 command registrations |
+| `register.ts` | `registerCommands(program)` — aggregates all 26 command registrations |
 | `tui-launch.ts` | `resolveTuiLaunch(argv)` — TUI vs headless decision logic |
 | `resolve-project.ts` | `resolveProjectRoot()` — workspace root resolution |
 
-### 25 Commands
+### 26 Commands
 
 | Command | File | Purpose |
 |---------|------|---------|
@@ -615,6 +615,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `memory` | `commands/memory.ts` | Memory status / build / genome |
 | `plugin` | `commands/plugin.ts` | Validate / tools / schema for plugins |
 | `replay` | `commands/replay.ts` | Replay + verify the durable event journal (§2.5) |
+| `replay-regression` | `commands/replay-regression.ts` | Replay a recorded behaviour trace; `--baseline` checks a candidate reproduces the baseline's tool behaviour (§2.5) |
 | `route` | `commands/route.ts` | Prompt routing only (no LLM call) |
 | `routing` | `commands/routing.ts` | Manage routing weights + feedback |
 | `run` | `commands/run.ts` | Execute shell commands with sandbox |
@@ -666,7 +667,7 @@ home here.
 | Capability-driven agent routing + health/utilization | `core/src/agents/agent-registry.ts` | The deleted `DomainSpecialistRegistry` duplicated this. |
 | Task/worker liveness — lease heartbeat, stall→fail, crash-resume | `LeaseManager` + `core/src/task/runner.ts` (`acquireLease`/`renewLease`/`checkExpired`) + `checkpoint.ts` + bootstrap auto-resume | The deleted `LongRunnerManager` duplicated this (plus SIGINT/SIGTERM shutdown, already live in tui/security/browser). A tier-6 *detached cross-process* runner, if ever built, belongs here on `LeaseManager`. |
 | Durable event journal + replay verification | `core/src/events/event-journal.ts` + `events/replay-engine.ts` (`verifyJournalReplay`, `replaySessionJournal`) | Path convention lives only in `EventJournal.resolvePath`. |
-| Behaviour-trace record/replay (§2.5) | record: `@agency/telemetry` `ActiveTelemetryTracker` (wired via `core/src/chat/trace-recorder.ts`); replay/regression: telemetry `ReplayEngine` + `@agency/benchmark` `runRegressionReplay` | One trace format (`DeterministicExecutionTrace`). Don't build a second tracker/replayer — extend these. |
+| Behaviour-trace record/replay (§2.5) | record: `@agency/telemetry` `ActiveTelemetryTracker` (wired via `core/src/chat/trace-recorder.ts`); replay/regression: telemetry `ReplayEngine` + `@agency/benchmark` `runRegressionReplay`, driven by the `agency replay-regression` command (`cli/commands/replay-regression.ts`) | One trace format (`DeterministicExecutionTrace`). Don't build a second tracker/replayer/driver — extend these. The cli driver derives its types structurally from `runRegressionReplay` but declares `@agency/telemetry` (leaf) so tsc resolves the trace type. |
 | Memory lifecycle / GC / secret redaction | `@agency/memory` | Flag-gated from core via setter (no core-flag import — avoids a dependency cycle). |
 | Model catalog + cost resolution | `@agency/providers` (`model-catalog.ts`) + governance cost resolver | One price table; `matchModelKey` is shared with `resolveModelSpec`. |
 | TUI severity glyph/colour | `tui/src/utils/severity.ts` (`thoughtSeverity*`) | Consolidated from CognitionPanel + ExecutionPanel. |

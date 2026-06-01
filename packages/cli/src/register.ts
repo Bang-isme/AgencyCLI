@@ -24,6 +24,7 @@ import { registerSetup } from "./commands/setup.js";
 import { registerStatus } from "./commands/status.js";
 import { registerHandover } from "./commands/handover.js";
 import { registerReplay } from "./commands/replay.js";
+import { registerReplayRegression } from "./commands/replay-regression.js";
 
 export function registerCommands(program: Command) {
   registerAgents(program);
@@ -51,5 +52,6 @@ export function registerCommands(program: Command) {
   registerStatus(program);
   registerHandover(program);
   registerReplay(program);
+  registerReplayRegression(program);
 }
 

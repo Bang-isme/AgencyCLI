@@ -187,9 +187,20 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   recordTurn + save cuối lượt) → ghi `.agency/traces/<sessionId>.json`. Cờ `AGENCY_TRACE_RECORD` opt-in
   (off cả 2 profile — có overhead per-tool; off = recorder null = byte-identical). core thêm dep
   `@agency/telemetry` (leaf, 0 dep → không cycle). Test: `trace-recorder.test.ts` (+3).
-- **Còn lại (full §2.5):** lệnh replay-regression (`agency` chạy `runRegressionReplay` trên trace đã ghi) +
-  re-execute agent thật (cần ghi thêm LLM response — trace hiện chỉ có tool I/O + timings). Xây TRÊN
-  producer + consumer sẵn có — không nhân đôi.
+- **Lệnh replay-regression ĐÃ WIRE (2026-06-01).** Driver live cho regression engine: lệnh
+  **`agency replay-regression [trace]`** (`cli/commands/replay-regression.ts`) lái
+  `benchmark.runRegressionReplay` + `loadTraceFile` (TÁI DÙNG, không impl mới) trên trace đã ghi ở
+  `.agency/traces/`. 2 chế độ: **validate** (1 trace → xác nhận well-formed + replay-ready, bắt
+  corrupt/partial/non-trace) và **regression** (`--baseline <ref>` → replay tool-call của candidate trên
+  recorded outputs của baseline; tool baseline chưa ghi `[Replay Deviation]` hoặc output baseline chưa
+  tái hiện = drift → exit≠0). **KHÔNG cần LLM response** vì cả 2 run đã nằm trên đĩa. `--list` liệt kê
+  trace. Thuần additive (lệnh mới → legacy≡hardened → KHÔNG cờ). Types lấy structural từ
+  `runRegressionReplay` nhưng cli khai `@agency/telemetry` (leaf) để tsc resolve trace type — không cycle.
+  Guard biên: pre-validate shape TRƯỚC khi vào `runRegressionReplay` (catch của nó gọi
+  `getUnconsumedCount()`→`toolOutputs.length`, sẽ tự ném trên trace hỏng). Test: `replay-regression.test.ts`
+  (+6: list / validate / non-trace-fail / match / drift / deviation). `pnpm verify` xanh (cli 550→556).
+- **Còn lại (full §2.5):** re-execute agent thật (cần ghi thêm LLM response — trace hiện chỉ có tool I/O +
+  timings). Xây TRÊN producer + consumer + driver sẵn có — không nhân đôi.
 
 ---
 
