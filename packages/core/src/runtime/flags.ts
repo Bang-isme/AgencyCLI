@@ -129,6 +129,18 @@ export interface RuntimeFlags {
    * (loop/resume robustness).
    */
   resumeContinuation: boolean;
+  /**
+   * Render the built-in tool docs in the system prompt compactly — one
+   * `Args: \`a\`, \`b?\`` line per tool listing arg names (with `?` for optional
+   * and a type suffix only when it isn't the default string) — instead of a
+   * verbose `- \`<a>\`: Parameter of type string.` line per arg. The system
+   * prompt is sent every turn, and the per-arg "Parameter of type string."
+   * boilerplate (~1109 tokens of tool docs total) is pure waste — the model only
+   * needs the arg names + which are optional + non-string types. MCP tool docs
+   * (which carry per-arg descriptions) stay verbose. Off in legacy (verbose docs
+   * preserved byte-identical), on in hardened. Roadmap §8.11-D.
+   */
+  compactToolDocs: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -245,5 +257,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // exhaustion → changes the returned text + next-turn history) → off in legacy
     // (the generic truncation notice preserved byte-identical), on in hardened.
     resumeContinuation: parseBool(env.AGENCY_RESUME_CONTINUATION, hardened),
+    // Behaviour-changing (shortens the per-turn tool docs → fewer prompt tokens)
+    // → off in legacy (verbose docs byte-identical), on in hardened.
+    compactToolDocs: parseBool(env.AGENCY_COMPACT_TOOL_DOCS, hardened),
   };
 }

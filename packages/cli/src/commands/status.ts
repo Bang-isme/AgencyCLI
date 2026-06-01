@@ -96,6 +96,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Prompt cache prefix", value: f.promptCachePrefix ? "on (static-first → provider prefix cache)" : "off", keys: ["promptCachePrefix"] },
     { label: "Soft approaches", value: f.softApproaches ? "on (scale to a few, not exactly 5)" : "off (exactly 5)", keys: ["softApproaches"] },
     { label: "Resume continuation", value: f.resumeContinuation ? "on (resume notice on loop-limit)" : "off (generic truncation notice)", keys: ["resumeContinuation"] },
+    { label: "Compact tool docs", value: f.compactToolDocs ? "on (terse args, fewer prompt tokens)" : "off (verbose per-arg)", keys: ["compactToolDocs"] },
   ];
 }
 

@@ -4,11 +4,35 @@ import type { ChatMessage } from "./orchestrator.js";
 import { registry } from "../skill/tool-harness.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 
-function formatToolDocs(): string {
+/** Resolve a built-in (zod) arg's optional flag + display type. */
+function describeZodArg(val: unknown): { isOptional: boolean; typeStr: string } {
+  let isOptional = false;
+  let typeStr = "string";
+  let currentType = val as any;
+  if (currentType?._def && currentType._def.typeName === "ZodOptional") {
+    isOptional = true;
+    currentType = currentType._def.innerType;
+  }
+  if (currentType?._def && currentType._def.typeName === "ZodUnion") {
+    typeStr = "string | number";
+  } else if (currentType?._def && currentType._def.typeName === "ZodBoolean") {
+    typeStr = "boolean";
+  }
+  return { isOptional, typeStr };
+}
+
+// §8.11-D: the system prompt is re-sent every turn, and the built-in tool docs
+// repeat a `- <arg>: Parameter of type string.` line for every arg of every tool
+// (~1109 tokens of tool docs). `compact` collapses each built-in tool's args to a
+// single `Args: \`a\`, \`b?\`` line (names + `?` for optional + a type suffix only
+// when it isn't the default string) — the schema the model actually needs, far
+// fewer tokens. MCP tools (which carry per-arg descriptions worth keeping) stay
+// verbose in both modes. Off → the verbose form, byte-identical to legacy.
+function formatToolDocs(compact: boolean): string {
   const tools = registry.listTools();
   return tools.map((tool, idx) => {
     const lines = [`${idx + 1}. \`${tool.name}\`: ${tool.description}`];
-    
+
     // Check if dynamic MCP tool schema exists
     const mcpSchema = (tool as any).mcpSchema;
     if (mcpSchema && mcpSchema.properties) {
@@ -24,23 +48,18 @@ function formatToolDocs(): string {
     } else {
       const shape = (tool.schema as any).shape;
       if (shape && Object.keys(shape).length > 0) {
-        lines.push("   Arguments:");
-        for (const [key, val] of Object.entries(shape)) {
-          let isOptional = false;
-          let typeStr = "string";
-          
-          let currentType = val as any;
-          if (currentType._def && currentType._def.typeName === "ZodOptional") {
-            isOptional = true;
-            currentType = currentType._def.innerType;
+        if (compact) {
+          const parts = Object.entries(shape).map(([key, val]) => {
+            const { isOptional, typeStr } = describeZodArg(val);
+            return `\`${key}${isOptional ? "?" : ""}\`${typeStr !== "string" ? `: ${typeStr}` : ""}`;
+          });
+          lines.push(`   Args: ${parts.join(", ")}`);
+        } else {
+          lines.push("   Arguments:");
+          for (const [key, val] of Object.entries(shape)) {
+            const { isOptional, typeStr } = describeZodArg(val);
+            lines.push(`   - \`<${key}>\`${isOptional ? " (optional)" : ""}: Parameter of type ${typeStr}.`);
           }
-          if (currentType._def && currentType._def.typeName === "ZodUnion") {
-            typeStr = "string | number";
-          } else if (currentType._def && currentType._def.typeName === "ZodBoolean") {
-            typeStr = "boolean";
-          }
-          
-          lines.push(`   - \`<${key}>\`${isOptional ? " (optional)" : ""}: Parameter of type ${typeStr}.`);
         }
       }
     }
@@ -118,7 +137,7 @@ export function buildSystemPrompt(
     "3. Once you output a tool call, execution will pause, the tool will run, and you will receive the tool's result in the next turn as a User message so you can continue your task.",
     "",
     "AVAILABLE TOOLS:",
-    formatToolDocs(),
+    formatToolDocs(flags.compactToolDocs),
     "",
   ];
   const variableTail = [
