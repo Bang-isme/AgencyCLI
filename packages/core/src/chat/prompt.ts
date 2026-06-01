@@ -28,8 +28,11 @@ function describeZodArg(val: unknown): { isOptional: boolean; typeStr: string } 
 // when it isn't the default string) — the schema the model actually needs, far
 // fewer tokens. MCP tools (which carry per-arg descriptions worth keeping) stay
 // verbose in both modes. Off → the verbose form, byte-identical to legacy.
-function formatToolDocs(compact: boolean): string {
-  const tools = registry.listTools();
+function formatToolDocs(compact: boolean, fileMemoryOn: boolean): string {
+  // The `remember` tool is only advertised when curated markdown memory is on, so
+  // the legacy prompt is byte-identical (the tool stays registered/executable, it
+  // just isn't offered to the model). All other tools are always advertised.
+  const tools = registry.listTools().filter((t) => fileMemoryOn || t.name !== "remember");
   return tools.map((tool, idx) => {
     const lines = [`${idx + 1}. \`${tool.name}\`: ${tool.description}`];
 
@@ -123,6 +126,13 @@ export function buildSystemPrompt(
     "To ensure every workflow stays on track to the right goal and leverages its past working timeline without losing context:",
     "1. TIMELINE ALIGNMENT: Utilize the `### SYSTEM HISTORICAL MEMORIES` to reconstruct the exact chronological timeline of past steps. Never repeat actions or edits that have already succeeded or been ruled out.",
     ...approachesRule,
+    ...(flags.fileMemory
+      ? [
+          "",
+          "### PERSISTENT MEMORY PROTOCOL",
+          "You keep a durable, curated memory across sessions. Recalled entries appear in `### SYSTEM HISTORICAL MEMORIES`: treat every `user`/`feedback` memory as a STANDING instruction. When you learn something worth keeping for a FUTURE session — a user preference or instruction, a project decision, or a non-obvious finding (a root cause, a deliberate trade-off, a constraint not derivable from the code) — save it with the `remember` tool (a one-line `description`, the `content`, and a `type`: user|feedback|project|reference). Do NOT save what the code or git history already records, or what only matters to the current turn.",
+        ]
+      : []),
     "",
     "",
     "### SYSTEM TOOL CALLS PROTOCOL",
@@ -137,7 +147,7 @@ export function buildSystemPrompt(
     "3. Once you output a tool call, execution will pause, the tool will run, and you will receive the tool's result in the next turn as a User message so you can continue your task.",
     "",
     "AVAILABLE TOOLS:",
-    formatToolDocs(flags.compactToolDocs),
+    formatToolDocs(flags.compactToolDocs, flags.fileMemory),
     "",
   ];
   const variableTail = [

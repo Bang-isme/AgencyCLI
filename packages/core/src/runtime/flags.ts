@@ -141,6 +141,17 @@ export interface RuntimeFlags {
    * preserved byte-identical), on in hardened. Roadmap §8.11-D.
    */
   compactToolDocs: boolean;
+  /**
+   * Curated cross-session markdown memory (`.agency/memory/`): inject the agent's
+   * saved memories into the prompt's `### SYSTEM HISTORICAL MEMORIES` block
+   * (index + relevant topic bodies; `user`/`feedback` always surfaced as standing
+   * instructions) AND advertise + enable the `remember` tool so the agent can
+   * deliberately save durable facts (preferences, decisions, "don't re-investigate"
+   * findings) as human-readable markdown — distinct from the automatic, opaque
+   * SQLite episodic store. Off in legacy (no markdown recall, `remember` not
+   * advertised → byte-identical prompt), on in hardened.
+   */
+  fileMemory: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -260,5 +271,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Behaviour-changing (shortens the per-turn tool docs → fewer prompt tokens)
     // → off in legacy (verbose docs byte-identical), on in hardened.
     compactToolDocs: parseBool(env.AGENCY_COMPACT_TOOL_DOCS, hardened),
+    // Behaviour-changing (injects curated markdown memory into the prompt +
+    // advertises the `remember` tool) → off in legacy (no markdown recall, tool
+    // not advertised → byte-identical), on in hardened.
+    fileMemory: parseBool(env.AGENCY_FILE_MEMORY, hardened),
   };
 }

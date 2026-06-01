@@ -76,6 +76,16 @@ export {
 } from "./embedder.js";
 
 export {
+  MarkdownMemoryStore,
+  parseMemoryFile,
+  serializeMemoryFile,
+  slugifyMemoryName,
+  type MemoryRecord,
+  type MemoryType,
+  type MemoryRecallOptions,
+} from "./markdown-memory.js";
+
+export {
   PolicyEngine,
   GraphIntegritySupervisor,
   RecoverySupervisor,

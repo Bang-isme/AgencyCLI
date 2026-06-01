@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import {
   getDb,
   EpisodicStore,
@@ -6,6 +7,7 @@ import {
   GraphStore,
   HybridRetriever,
   LocalDeterministicEmbedder,
+  MarkdownMemoryStore,
   type Embedder,
 } from "@agency/memory";
 import { EventBus } from "../events/event-bus.js";
@@ -71,6 +73,41 @@ function displayFields(rec: EpisodeLike) {
  * prompt still surfaces recent context. Never throws.
  */
 export async function loadHistoricalMemories(
+  projectRoot: string,
+  userPrompt: string,
+  currentSessionId: string
+): Promise<string> {
+  // Curated markdown memory (flag-gated). Prepended ahead of the auto-episode
+  // recall because it is higher-signal — deliberately-saved facts and standing
+  // user/feedback instructions vs the noisy per-tool episode log. Best-effort.
+  const fileMemoryBlock = loadFileMemoryBlock(projectRoot, userPrompt);
+
+  const episodeBlock = await loadEpisodeRecallBlock(projectRoot, userPrompt, currentSessionId);
+
+  return [fileMemoryBlock, episodeBlock].filter(Boolean).join("\n\n");
+}
+
+/** The curated markdown-memory recall block ("" when off / empty / on error). */
+function loadFileMemoryBlock(projectRoot: string, userPrompt: string): string {
+  if (!getRuntimeFlags().fileMemory) return "";
+  try {
+    const store = new MarkdownMemoryStore(join(projectRoot, ".agency", "memory"));
+    return store.recall({
+      query: userPrompt,
+      // Reuse the same local embedder the SQLite recall uses when semantic recall
+      // is on → semantic ranking of memories; otherwise keyword overlap.
+      embedder: getRuntimeFlags().memorySemantic ? getEmbedder() : undefined,
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The automatic SQLite episodic recall block (the legacy behaviour, unchanged).
+ * Returns "" when there is nothing to recall. Never throws.
+ */
+async function loadEpisodeRecallBlock(
   projectRoot: string,
   userPrompt: string,
   currentSessionId: string

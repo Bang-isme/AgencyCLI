@@ -15,6 +15,7 @@ import { loadIgnoreFilter } from "../index/gitignore-parser.js";
 import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure, resetCircuitBreaker } from "../chat/circuit-breaker.js";
 import { z } from "zod";
 import { getModelSpec } from "@agency/providers";
+import { MarkdownMemoryStore, type MemoryType } from "@agency/memory";
 import { ToolRegistry } from "@agency/tooling";
 import { ApprovalPolicyEngine, ApprovalRequiredError } from "../approval/index.js";
 import { EventBus } from "../events/event-bus.js";
@@ -379,6 +380,39 @@ registry.register({
       return `Success: Appended ${contentArg.length} characters to "${pathArg}"${existedBefore ? "" : " (created)"}${sizeNote}`;
     } catch (err: any) {
       return `Error appending to file: ${err.message || String(err)}`;
+    }
+  }
+});
+
+// 2c. remember — save a durable fact to curated cross-session markdown memory
+registry.register({
+  name: "remember",
+  description:
+    "Save a durable fact to your curated cross-session memory (.agency/memory/), so it persists and is recalled in future sessions. Use it deliberately for things worth keeping: a user preference or instruction (type 'user'/'feedback'), a project decision or non-obvious finding (type 'project'), or a pointer to an external resource (type 'reference'). Do NOT save what the code/git already records or what only matters to this turn. Re-using an existing `name` updates that memory.",
+  category: "write",
+  schema: z.object({
+    description: z.string(),
+    content: z.string(),
+    type: z.optional(z.union([z.literal("user"), z.literal("feedback"), z.literal("project"), z.literal("reference")])),
+    name: z.optional(z.string()),
+  }),
+  execute: async (args: any, context: any) => {
+    const { projectRoot } = context;
+    const description = (args.description || "").trim();
+    const content = (args.content || "").trim();
+    if (!description) return "Error: 'description' is required for remember (a one-line summary).";
+    if (!content) return "Error: 'content' is required for remember (the fact to save).";
+    try {
+      const store = new MarkdownMemoryStore(resolve(projectRoot, ".agency", "memory"));
+      const slug = store.upsert({
+        name: args.name,
+        description,
+        type: args.type as MemoryType | undefined,
+        body: content,
+      });
+      return `Success: Saved memory "${slug}" (type: ${args.type || "project"}). It will be recalled in future sessions.`;
+    } catch (err: any) {
+      return `Error saving memory: ${err.message || String(err)}`;
     }
   }
 });
