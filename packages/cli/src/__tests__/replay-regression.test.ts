@@ -146,4 +146,42 @@ describe("agency replay-regression", () => {
     expect(parsed.success).toBe(false);
     expect(parsed.error).toContain("[Replay Deviation]");
   });
+
+  // §2.5 re-execution: re-derive tool calls from the recorded completions via the
+  // real parseToolCalls and verify they match what actually ran.
+  const RESP_VIEW = { text: '<tool_call name="view_file"><path>a.ts</path></tool_call>', finishReason: "tool_calls", timestamp: 1 };
+  const RESP_DONE = { text: "all done", finishReason: "stop", timestamp: 2 };
+
+  it("re-execute: completions that re-derive the recorded tool calls succeed (exit 0)", () => {
+    const root = newRoot();
+    seedTrace(root, "s1", traceWithLlm("s1", [VIEW], [RESP_VIEW, RESP_DONE]));
+    const result = run(root, ["s1", "--reexecute"]);
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout) as { mode: string; success: boolean; derived: number; recorded: number };
+    expect(parsed.mode).toBe("reexecute");
+    expect(parsed.success).toBe(true);
+    expect(parsed.derived).toBe(1);
+    expect(parsed.recorded).toBe(1);
+  });
+
+  it("re-execute: a completion that re-derives a different tool flags drift (exit 1)", () => {
+    const root = newRoot();
+    // Recorded a write_file, but the completion parses to view_file → harness drift.
+    seedTrace(root, "s1", traceWithLlm("s1", [WRITE], [RESP_VIEW]));
+    const result = run(root, ["s1", "--reexecute"]);
+    expect(result.status).toBe(1);
+    const parsed = JSON.parse(result.stdout) as { success: boolean; deviation?: string };
+    expect(parsed.success).toBe(false);
+    expect(parsed.deviation).toContain("diverged");
+  });
+
+  it("re-execute: a trace with no recorded completions reports it (exit 1)", () => {
+    const root = newRoot();
+    seedTrace(root, "s1", trace("s1", [VIEW])); // no llmResponses
+    const result = run(root, ["s1", "--reexecute"]);
+    expect(result.status).toBe(1);
+    const parsed = JSON.parse(result.stdout) as { success: boolean; error?: string };
+    expect(parsed.success).toBe(false);
+    expect(parsed.error).toContain("no recorded llmResponses");
+  });
 });

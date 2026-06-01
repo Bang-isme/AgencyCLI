@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { loadTraceFile, runRegressionReplay } from "@agency/benchmark";
+import { parseToolCalls } from "@agency/core";
 import { resolveProjectRoot } from "../resolve-project.js";
 import { out, exitOk, exitFail, handleError } from "../utils.js";
 
@@ -43,6 +44,73 @@ function replaySequenceOf(source: RegressionTrace): RegressionExecutor {
       engine.interceptLlmResponse(entry.text);
     }
   };
+}
+
+/** Stable JSON for argument comparison (key order shouldn't matter). */
+function canonicalArgs(args: Record<string, any>): string {
+  const keys = Object.keys(args ?? {}).sort();
+  return JSON.stringify(keys.map((k) => [k, args[k]]));
+}
+
+interface ReexecResult {
+  success: boolean;
+  derived: number;
+  recorded: number;
+  deviation?: string;
+  error?: string;
+}
+
+/**
+ * Roadmap §2.5 re-execution: re-derive the tool-call sequence from the recorded
+ * model completions using the REAL `parseToolCalls`, and assert it matches the
+ * tool calls actually executed (`toolOutputs`). This verifies the harness's
+ * interpret-the-model→dispatch-tools step is deterministic and consistent with
+ * what ran — a regression in `parseToolCalls` or tool-name handling surfaces
+ * here. It runs NO tools and has no side effects (the safe core of "re-execute
+ * the agent"); a full live re-run via a ReplayProvider would additionally need
+ * to intercept tool execution, the gate and episode writes.
+ */
+function reexecuteTrace(trace: RegressionTrace): ReexecResult {
+  const responses = trace.llmResponses ?? [];
+  const recorded = trace.toolOutputs ?? [];
+  if (responses.length === 0) {
+    return {
+      success: false,
+      derived: 0,
+      recorded: recorded.length,
+      error: "trace has no recorded llmResponses to re-execute (record with AGENCY_TRACE_RECORD=1 on a build that captures completions)",
+    };
+  }
+
+  // Re-derive tool calls from the recorded completions, in order.
+  const derived: { name: string; arguments: Record<string, any> }[] = [];
+  for (const r of responses) {
+    for (const tc of parseToolCalls(r.text ?? "")) derived.push(tc);
+  }
+
+  const max = Math.max(derived.length, recorded.length);
+  for (let i = 0; i < max; i++) {
+    const d = derived[i];
+    const rec = recorded[i];
+    if (!d || !rec) {
+      return {
+        success: false,
+        derived: derived.length,
+        recorded: recorded.length,
+        deviation: `count mismatch: re-derived ${derived.length} tool call(s) from the completions vs ${recorded.length} recorded as executed`,
+      };
+    }
+    if (d.name !== rec.toolName || canonicalArgs(d.arguments) !== canonicalArgs(rec.arguments)) {
+      return {
+        success: false,
+        derived: derived.length,
+        recorded: recorded.length,
+        deviation: `tool #${i + 1} diverged: re-parsed "${d.name}" vs recorded "${rec.toolName}"`,
+      };
+    }
+  }
+
+  return { success: true, derived: derived.length, recorded: recorded.length };
 }
 
 function assertTraceShape(trace: RegressionTrace): void {
@@ -145,13 +213,14 @@ export function registerReplayRegression(program: Command) {
         "With --baseline, check a candidate trace reproduces the baseline's tool behaviour.",
     )
     .option("--baseline <ref>", "Reference trace to check the candidate against (regression mode)")
+    .option("--reexecute", "Re-derive tool calls from the recorded completions and verify they match what ran")
     .option("--list", "List recorded traces under .agency/traces/")
     .option("--project-root <path>", "Project root directory")
     .option("--json", "Emit the result as JSON to stdout")
     .action(
       async (
         traceRef: string | undefined,
-        options: { baseline?: string; list?: boolean; projectRoot?: string; json?: boolean },
+        options: { baseline?: string; reexecute?: boolean; list?: boolean; projectRoot?: string; json?: boolean },
       ) => {
         try {
           const projectRoot = resolveProjectRoot(options.projectRoot);
@@ -172,6 +241,32 @@ export function registerReplayRegression(program: Command) {
           }
           const candidate = await loadTraceFile(candidatePath);
           const candidateErr = traceShapeError(candidate, candidatePath);
+
+          if (options.reexecute) {
+            // Re-execution mode: re-derive the tool sequence from the recorded
+            // completions via the real parser and check it matches what ran.
+            const r = candidateErr
+              ? ({ success: false, derived: 0, recorded: 0, error: candidateErr } as ReexecResult)
+              : reexecuteTrace(candidate);
+
+            if (options.json) {
+              console.log(JSON.stringify({ mode: "reexecute", trace: candidatePath, ...r }, null, 2));
+            } else if (r.success) {
+              out.result([
+                { key: "Re-execution", value: "deterministic — completions re-derive the recorded tool calls" },
+                { key: "Tool calls", value: `${r.derived} re-derived = ${r.recorded} recorded` },
+              ]);
+            } else {
+              out.failure({
+                title: "Re-execution diverged from the recorded run",
+                consequence: r.error ?? r.deviation ?? "re-derived tool calls do not match what was executed",
+                recovery: `inspect ${candidatePath} (the harness parse/dispatch may have changed)`,
+              });
+            }
+            if (r.success) exitOk();
+            exitFail();
+            return;
+          }
 
           if (options.baseline) {
             // Regression mode: does the candidate reproduce the baseline's recorded
