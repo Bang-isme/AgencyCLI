@@ -411,7 +411,7 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > freshness — xóa changedFiles fast-path dead+buggy)** · **§8.8 ✅ (2026-06-02: self-kill HARD-refuse — báo user `c03b9a2`;
 > DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`; **§8.8-A turn-loop
 > HARD-break trên circuit-breaker trip + §8.8-B tolerate malformed `</tool_call>` wrappers `64e945a`** → §8.8 ĐÓNG TRỌN)**.
-> Baseline giờ: core **403** · tui **148** · providers 852 · security **38** · ~2141 test · **31 cờ** · 18 tool.
+> Baseline giờ: core **403** · tui **148** · providers 852 · security **39** · ~2142 test · **31 cờ** · 18 tool.
 > ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
@@ -558,6 +558,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   (`name='x' `) + whitespace trong close tag (`</tool_call >`, `</ tool_call>`). SUPERSET nghiêm của canonical → output đúng parse byte-identical;
   call recoverable hết bị nuốt im (nuốt → model tưởng đã chạy tool mà chưa → restart-from-scratch). No-close-tag (truncated) CỐ Ý KHÔNG recover
   (không có ranh giới body an toàn). Test `circuit-breaker-hardbreak.test.ts` (+3) + `tool-harness.test.ts` (+4). core 396→403. **→ §8.8 ĐÓNG TRỌN.**
+- **✅ Egress allowlist — reputable read-only CDNs (commit `010880a`):** tiếp `aa14e48` (fonts.gstatic), default whitelist (`security/egress-proxy.ts`)
+  thêm `cdn.jsdelivr.net`/`unpkg.com`/`cdnjs.cloudflare.com`/`esm.sh` (host cụ thể, KHÔNG wildcard) — agent scaffold web hay tham chiếu, GET-only static
+  asset (exfil risk tối thiểu). Per-project vẫn thêm ở `.agency/security/egress-whitelist.json`. Test `egress-proxy.test.ts` +1 (CDN allowed; lookalike
+  vẫn block — matchGlob exact cho non-wildcard). security 38→39.
 - **CÒN NGỎ (ưu tiên thấp):** native-mode security-warning mạnh hơn; tool-handler edge khác (đa số đã chắc: truncate scale window,
   invokeSafe không throw, file-write atomic — đã verify).
 
