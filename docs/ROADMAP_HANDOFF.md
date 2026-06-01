@@ -522,12 +522,74 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   architecture↔cycles (module), package↔cycles, deps↔imports hygiene. **Mỗi tính năng mới ở §8 phải đi kèm: tái dùng
   canonical home, cờ nếu đổi hành vi, test, cập nhật docs + memory** — đúng nhịp slice của chiến dịch.
 
+### 8.10 — TUI realtime activity & telemetry CHƯA chuyên nghiệp  ← 🟠 P1 (user báo 2026-06-01, CHẨN ĐOÁN, chưa code)
+> **Bối cảnh user.** Ảnh chụp: panel "▼ Cognition & execution traces" hiện `▶ exec · list_dir · short video` /
+> `√ exec · list_dir · completed` / `▶ exec · read · SPEC.md (lines 1–300)` / `√ … completed`, status `‖ Writing·· ·
+> 8m39s · 10.3k tokens`. User: "model **nghĩ gì** thì thấy rồi, nhưng **đang làm gì** chưa realtime tốt; TUI/UX còn
+> yếu, chưa chuyên nghiệp". Dưới đây chẩn đoán từ SOURCE THẬT (đừng điều tra lại), mỗi lỗi SỰ THẬT→LỖI→SỬA(+file).
+
+**(A) Main turn KHÔNG có event tool có cấu trúc — UI phải regex-parse text English (gốc lớn nhất).**
+- **SỰ THẬT.** Main turn báo hiệu tool bằng cách **nhồi text người-đọc** vào stream LLM:
+  `formatToolCallNotice` (`chat/stream.ts:70`) → `handlers.onDelta("⚡ [SYSTEM: Executing tool \"X\" on Y...]")`, và
+  notice hoàn tất `onDelta("⚡ [SYSTEM: Tool \"X\" completed with result length: N…]")` (`stream.ts:~428`). TUI **regex
+  parse lại** chuỗi đó: `conversation/TraceTelemetry.tsx` (`toConciseTelemetry`/`SystemActivityLine`/
+  `formatSystemActivityLine`) + `partitionStreamContent` lọc `traceLines` từ `cleanedContent`, rồi
+  `utils/conversation/tool-labels.ts` (`getToolAlias`/`getGroundedTargetName`/`getSemanticToolOperation`) dựng nhãn.
+  Event **CÓ CẤU TRÚC** (`subagent:progress`) CHỈ phát khi `agentId` set (`stream.ts:416/436`, `orchestrator.ts:391/411`)
+  → tức **chỉ subagent**; main turn (không agentId) KHÔNG phát gì. (`tool:executed` có khai nhưng chỉ dùng trong 1 test,
+  KHÔNG publish live.)
+- **LỖI.** Vòng lặp **lossy** structured (`tc.name`,`tc.arguments`,status) → English → regex → structured. Hậu quả thấy
+  trong ảnh: (1) **nhãn sai** `list_dir · short video` — `list_dir` không có path nên `formatToolCallNotice` rơi nhánh
+  "with arguments {JSON}", `getGroundedTargetName` lấy **first string value** của JSON args (dòng 76-78) = "short video"
+  (text task, KHÔNG phải path); (2) **2 dòng mỗi tool** (`▶ … exec` rồi `√ … completed`) thay vì 1 dòng chuyển
+  running→done; (3) tương quan started↔completed qua **global `lastToolTargets` Map keyed theo toolName** (`TraceTelemetry.tsx:15`)
+  → vỡ khi parallel tool / cùng tên.
+- **SỬA.** Phát **event tool-lifecycle có cấu trúc cho MAIN turn** (tái dùng EventBus, KHÔNG kênh thứ 5): hoặc mở rộng
+  `subagent:progress` để main turn fire với agentId tổng hợp ("main"/sessionId), hoặc publish `tool:started`/`tool:completed`
+  mang `{callId, toolName, args/target, status, durationMs, resultLength}`. TUI tiêu thụ structured → nhãn lấy thẳng từ
+  `tc.arguments` (không regex), **1 dòng/tool** transition theo `callId`, bỏ `lastToolTargets`. Giữ text `[SYSTEM:…]` CHỈ cho
+  context của LLM, UI KHÔNG phụ thuộc parse nó. Cân nhắc dùng `events/cognition.ts emitThought` (producer narration canonical
+  đã có) cho điểm emit tool — hiện THIẾU đúng điểm này.
+
+**(B) Status line "Writing·· 8m39s" KHÔNG phản ánh tool đang chạy (đúng "đang làm gì chưa realtime").**
+- **SỰ THẬT.** `ToolActivity.tsx` hiện `getPhaseLabel(activityPhase)`, override bằng `heartbeat.message` nếu < 10s. Nhưng
+  `activityPhase` (`App.tsx`) chỉ set "routing"(1483)→"writing"(1568/1584)→"idle" — **KHÔNG có** set theo tool
+  (grep `setActivityPhase`: 0 chỗ "reading"/"editing"/"validating" do tool). Heartbeat chỉ cập nhật khi `thought:emitted`
+  (App.tsx:547), mà main-turn tool **không emit thought** → trong 8 phút đọc file, status kẹt "Writing".
+- **SỬA.** Lái `activityPhase`/label từ event (A): read/view→"Reading", grep/find→"Searching", write/edit→"Editing",
+  exec→"Running", subagent→worker label → status phản ánh thực tại realtime. Nguồn duy nhất, không đoán.
+
+**(C) Tool chỉ hiện SAU khi model sinh xong XML; không có progress trong-tool.**
+- **SỰ THẬT.** Notice inject SAU `parseToolCalls(currentText)` (sau khi nhận đủ lời model), rồi tool chạy. Trong lúc model
+  sinh dài (phần lớn 8m39s) KHÔNG có feedback per-tool; tool chậm (grep/đọc file lớn) không có progress nội bộ → cảm giác treo.
+- **SỬA (sau A/B).** Với event cấu trúc + label realtime, hiển thị "running" có spinner + elapsed per-tool; cân nhắc heartbeat
+  định kỳ trong tool dài. (Liên quan lag ConPTY đã ghi Phần 1 — KHÔNG block host.)
+
+**(D) 4 bề mặt "đang xảy ra gì" chồng chéo (mùi trùng lặp kiến trúc).**
+- **SỰ THẬT.** (1) inline trace per-message qua text-parse (`Conversation.tsx`+`TraceTelemetry`); (2) subagent structured →
+  `globalWorkerTracker` → `SubagentPanel`/`ToolActivity`; (3) **`ExecutionPanel.tsx` cây phase HARDCODE** (PLAN/EXECUTE/VERIFY +
+  subtask GIẢ "inspect routing"/"apply patches"/"compile application" — KHÔNG phải hoạt động thật, chỉ suy từ `activityPhase`);
+  (4) `CognitionPanel` (thoughts). 4 cơ chế, không cái nào authoritative; (3) là telemetry GIẢ.
+- **SỬA.** Chốt 1 nguồn sự thật (event A) cho "đang làm gì"; `CognitionPanel` giữ cho "đang nghĩ gì". Bỏ/thay subtask giả của
+  `ExecutionPanel` bằng event thật hoặc gỡ panel. Tra "Canonical Homes" trước khi thêm.
+
+**(E) Logic render trùng 3 bản.** `SystemActivityLine` (component) ≈ `formatSystemActivityLine` (function) trong
+  `TraceTelemetry.tsx` gần **byte-identical** (pattern 1-7 lặp) + `toConciseTelemetry` là biến thể thứ 3 cùng map
+  SYSTEM-line→UI. **SỬA:** gộp về 1 mapping canonical (nếu giữ nhánh text-parse làm fallback). Behavior-preserving.
+
+> **Thứ tự đề xuất §8.10:** A (event cấu trúc main turn — gốc) → B (lái phase/status từ event) → D/E (gộp bề mặt + dedup render)
+> → C (progress per-tool). Cờ nếu đổi hành vi (`flags.ts`); tái dùng EventBus + `emitThought` + canonical homes; test +
+> `pnpm verify` xanh. **ĐÂY LÀ VIỆC P1 KẾ (cùng/đan với §8.4 ảnh tuỳ ưu tiên user).**
+
 ### Thứ tự đề xuất cho session sau
 **~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.
-**▶ NEXT = §8.4 ảnh đa tầng:** `ChatMessage.content: string|ContentPart[]` additive (default string =
-byte-identical); adapter openai-compatible map `image_url` CHỈ khi `getModelSpec(model).capabilities.vision`
-(tái dùng gate năng lực catalog, không đoán); estimator §8.3 ĐÃ đếm token ảnh sẵn (`IMAGE_PART_TOKENS`); TUI
-đính ảnh (path qua `@` đã có resolve IMG badge — tận dụng, không dựng lại). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →
+**▶ NEXT P1 — 2 nhánh (user ưu tiên):**
+- **§8.10 TUI realtime activity** (user báo trực tiếp 2026-06-01, "đang làm gì chưa realtime + UX chưa chuyên nghiệp"):
+  event tool-lifecycle cấu trúc cho main turn (gốc A) → lái status/phase realtime (B) → gộp 4 bề mặt + dedup 3 bản render
+  (D/E) → progress per-tool (C). Xem §8.10 ở trên (đã chẩn đoán từ source).
+- **§8.4 ảnh đa tầng:** `ChatMessage.content: string|ContentPart[]` additive (default string = byte-identical); adapter
+  openai-compatible map `image_url` CHỈ khi `getModelSpec(model).capabilities.vision`; estimator §8.3 ĐÃ đếm token ảnh sẵn
+  (`IMAGE_PART_TOKENS`); TUI đính ảnh (path qua `@` đã có resolve IMG badge — tận dụng). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →
 sync docs/memory.
 
 > **Lưu ý cho session sau (di chứng + theo dõi):** (1) `updateModelOverride` trong reactive vẫn GHI ĐĨA
