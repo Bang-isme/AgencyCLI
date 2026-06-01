@@ -163,11 +163,43 @@ Here is my decision:
       );
       expect(res).toContain("Error: File not found");
     });
+
+    it("append_file builds a large file incrementally (write first chunk, then append)", async () => {
+      // This is the supported path for a file too big for one write_file call —
+      // the model splits it into chunks instead of resorting to shell escaping.
+      const first = await executeTool("write_file", { path: "big.html", content: "<html>\n" }, tempDir);
+      expect(first).toContain("Success: File written successfully");
+
+      const second = await executeTool("append_file", { path: "big.html", content: "<body>part2</body>\n" }, tempDir);
+      expect(second).toContain("Success: Appended");
+      expect(second).not.toContain("(created)"); // already existed
+
+      const third = await executeTool("append_file", { path: "big.html", content: "</html>\n" }, tempDir);
+      expect(third).toContain("Success: Appended");
+
+      expect(readFileSync(join(tempDir, "big.html"), "utf8")).toBe(
+        "<html>\n<body>part2</body>\n</html>\n"
+      );
+    });
+
+    it("append_file creates the file when it does not yet exist", async () => {
+      const res = await executeTool("append_file", { path: "fresh.txt", content: "line1\n" }, tempDir);
+      expect(res).toContain("Success: Appended");
+      expect(res).toContain("(created)");
+      expect(readFileSync(join(tempDir, "fresh.txt"), "utf8")).toBe("line1\n");
+    });
+
+    it("append_file requires a path (rejected by schema validation)", async () => {
+      const res = await executeTool("append_file", { content: "x" }, tempDir);
+      expect(res).toContain("Error");
+      expect(res).toContain("path");
+    });
   });
 
   describe("isFileWritingTool", () => {
-    it("flags content-writing tools (incl. ast_edit), not read-only ones", () => {
+    it("flags content-writing tools (incl. ast_edit + append_file), not read-only ones", () => {
       expect(isFileWritingTool("write_file")).toBe(true);
+      expect(isFileWritingTool("append_file")).toBe(true);
       expect(isFileWritingTool("edit_file")).toBe(true);
       expect(isFileWritingTool("ast_edit")).toBe(true);
       expect(isFileWritingTool("read_file")).toBe(false);

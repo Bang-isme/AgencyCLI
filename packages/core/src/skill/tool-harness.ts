@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, statSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, appendFileSync, readdirSync, unlinkSync, renameSync, statSync, mkdirSync } from "node:fs";
 import {
   replaceFunctionBody,
   replaceMethodBody,
@@ -151,6 +151,7 @@ export const toolApprovalEngine = new ApprovalPolicyEngine();
  */
 const APPROVAL_GATED_TOOLS = new Set([
   "write_file",
+  "append_file",
   "edit_file",
   "batch_edit",
   "ast_edit",
@@ -167,7 +168,7 @@ const APPROVAL_GATED_TOOLS = new Set([
  * the non-stream and stream turn paths stay in sync — they previously inlined an
  * identical `name === "write_file" || ...` check.
  */
-const FILE_WRITING_TOOLS = new Set(["write_file", "edit_file", "batch_edit", "ast_edit"]);
+const FILE_WRITING_TOOLS = new Set(["write_file", "append_file", "edit_file", "batch_edit", "ast_edit"]);
 export function isFileWritingTool(name: string): boolean {
   return FILE_WRITING_TOOLS.has(name);
 }
@@ -306,7 +307,8 @@ registry.register({
 // 2. write_file
 registry.register({
   name: "write_file",
-  description: "Write full content to a new or existing file.",
+  description:
+    "Write (overwrite) full content to a new or existing file. For a LARGE file whose content would exceed one response, write the first portion here, then add the remaining portions with `append_file` across multiple turns — never split file content across shell commands (echo/Add-Content/heredoc), whose quoting/escaping is unreliable.",
   category: "write",
   schema: z.object({
     path: z.string(),
@@ -323,6 +325,40 @@ registry.register({
       return `Success: File written successfully to "${pathArg}" (${contentArg.length} characters)`;
     } catch (err: any) {
       return `Error writing file: ${err.message || String(err)}`;
+    }
+  }
+});
+
+// 2b. append_file — build a large file incrementally without shell escaping
+registry.register({
+  name: "append_file",
+  description:
+    "Append content to the END of a file (creates it if missing). Use this to build a large file in chunks when a single write_file would be truncated by the response length limit: call write_file for the first part, then append_file for each remaining part. Reliable for any content (code, quotes, special chars) — unlike shell heredocs/Add-Content.",
+  category: "write",
+  schema: z.object({
+    path: z.string(),
+    content: z.string(),
+  }),
+  execute: async (args: any, context: any) => {
+    const { projectRoot } = context;
+    const pathArg = args.path || "";
+    const contentArg = args.content || "";
+    if (!pathArg) return "Error: 'path' argument is required for append_file.";
+    const filePath = resolve(projectRoot, pathArg);
+    try {
+      const existedBefore = existsSync(filePath);
+      appendFileSync(filePath, contentArg, "utf8");
+      const totalChars = (() => {
+        try {
+          return statSync(filePath).size;
+        } catch {
+          return undefined;
+        }
+      })();
+      const sizeNote = totalChars !== undefined ? `; file now ${totalChars} bytes` : "";
+      return `Success: Appended ${contentArg.length} characters to "${pathArg}"${existedBefore ? "" : " (created)"}${sizeNote}`;
+    } catch (err: any) {
+      return `Error appending to file: ${err.message || String(err)}`;
     }
   }
 });

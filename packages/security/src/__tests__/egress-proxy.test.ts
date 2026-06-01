@@ -42,6 +42,20 @@ describe("EgressFilterProxy Security Hardening", () => {
     await proxy.stop();
   });
 
+  it("allows Google Fonts (CSS host + the gstatic binary host it references) without broadening egress", async () => {
+    const proxy = new EgressFilterProxy({ projectRoot: tempDir });
+    await proxy.start();
+    // fonts.googleapis.com (the @font-face CSS) is covered by *.googleapis.com…
+    expect((proxy as any).isAllowed("fonts.googleapis.com")).toBe(true);
+    // …and fonts.gstatic.com (the font binaries that CSS references) is now paired,
+    // so a generated page using Google Fonts no longer half-loads + alarms.
+    expect((proxy as any).isAllowed("fonts.gstatic.com")).toBe(true);
+    // but the addition is specific — other gstatic hosts stay blocked.
+    expect((proxy as any).isAllowed("www.gstatic.com")).toBe(false);
+    expect((proxy as any).isAllowed("evil.com")).toBe(false);
+    await proxy.stop();
+  });
+
   it("should merge custom whitelists from egress-whitelist.json", async () => {
     const securityDir = join(tempDir, ".agency", "security");
     mkdirSync(securityDir, { recursive: true });

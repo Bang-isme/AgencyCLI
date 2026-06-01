@@ -753,12 +753,12 @@ So this doesn't get re-derived each session. Verified 2026-06-01.
 5. **Compaction** — `compactTurnHistory` trims the middle of a long history before it overflows the window (flag `contextCompaction`).
 
 ### Built-in tools (single registry)
-`registry = new ToolRegistry()` (from `@agency/tooling`) in `skill/tool-harness.ts` — **one registry**, no second tool table. 17 tools:
+`registry = new ToolRegistry()` (from `@agency/tooling`) in `skill/tool-harness.ts` — **one registry**, no second tool table. 18 tools:
 
 | Category | Tools |
 |---|---|
 | read | `read_file`, `list_dir`, `grep_file` (one file), `grep_search` (recursive), `find_files`, `file_info`, `git_summary`, `git_diff` |
-| write (approval-gated) | `write_file`, `edit_file` (text replace), `ast_edit` (real-TS-AST structural; see Canonical Homes), `delete_file`, `move_file`, `create_directory`, `batch_edit` |
+| write (approval-gated) | `write_file`, `append_file` (append to end; build a large file in chunks when one write_file would be truncated — never via shell heredocs), `edit_file` (text replace), `ast_edit` (real-TS-AST structural; see Canonical Homes), `delete_file`, `move_file`, `create_directory`, `batch_edit` |
 | compile | `execute_command` (sandboxed shell) |
 | other | `dispatch_subagent` (spawns a specialist via the orchestrator) |
 

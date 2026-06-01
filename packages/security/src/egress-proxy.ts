@@ -52,7 +52,14 @@ export class EgressFilterProxy {
       "files.pythonhosted.org",
       "*.cargo.io",
       "github.com",
-      "*.github.com"
+      "*.github.com",
+      // Common web assets — Google Fonts serves its CSS from fonts.googleapis.com
+      // (already covered by *.googleapis.com) and the font binaries it references
+      // from fonts.gstatic.com. Allowing only the former left every generated page
+      // that uses Google Fonts half-loaded plus an alarming egress "SECURITY
+      // WARNING"; pairing the two removes that false positive for a ubiquitous,
+      // reputable dev resource without broadening egress generally.
+      "fonts.gstatic.com"
     ];
 
     const whitelistPath = join(this.options.projectRoot, ".agency", "security", "egress-whitelist.json");
