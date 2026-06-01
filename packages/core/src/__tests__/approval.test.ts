@@ -205,17 +205,30 @@ describe("runShellCommand", () => {
     expect(result.stdout.trim()).toBe("ok");
   });
 
-  it("allows self-killing node commands with warning instead of blocking", async () => {
+  it("HARD-refuses a node-killing command even with yes (never executes → no TUI suicide)", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "agency-shell-"));
     dirs.push(projectRoot);
-    const result = await runShellCommand(projectRoot, "echo self-killing-test", { yes: true });
-    expect(result.exitCode).toBe(0);
+    // `taskkill /IM node.exe` would kill Agency's own process — must be refused,
+    // not merely warned-about-then-run. `yes:true` (what execute_command passes)
+    // must NOT bypass it.
+    await expect(
+      runShellCommand(projectRoot, "taskkill /F /IM node.exe 2>nul && npm run dev", { yes: true })
+    ).rejects.toThrow(/self-termination/i);
   });
 
-  it("allows self-killing PID commands with warning instead of blocking", async () => {
+  it("HARD-refuses killing the agent's own PID even with yes", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "agency-shell-"));
     dirs.push(projectRoot);
-    const result = await runShellCommand(projectRoot, "echo self-killing-pid-test", { yes: true });
+    await expect(
+      runShellCommand(projectRoot, `kill -9 ${process.pid}`, { yes: true })
+    ).rejects.toThrow(/self-termination/i);
+  });
+
+  it("still runs an ordinary command (no false positive on safe shell)", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "agency-shell-"));
+    dirs.push(projectRoot);
+    const result = await runShellCommand(projectRoot, "echo ok", { yes: true });
     expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe("ok");
   });
 });

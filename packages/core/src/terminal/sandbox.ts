@@ -48,10 +48,23 @@ export async function runShellCommand(
   command: string,
   opts: RunShellOptions = {}
 ): Promise<RunShellResult> {
+  // HARD refusal — a command that kills Agency's own Node.js process (the CLI/TUI
+  // running this very turn) or its PID/PPID is self-terminating; approval cannot
+  // make it safe, so it is NEVER executed — not even with `yes` (the model's
+  // execute_command passes yes:true, so this is the only line of defence). The
+  // old code merely printed a "Blocked command" warning and then ran it anyway,
+  // which would kill the agent the moment such a command was approved. The
+  // message steers the model to the safe path instead of leaving it stuck.
   if (isSelfKillingCommand(command)) {
-    const warnMsg = `Security Warning: Command attempts to terminate the active Node.js TUI CLI process or parent process group. Blocked command: "${command}"`;
-    process.stderr.write(`${warnMsg}\n`);
-    void EventBus.getInstance().publish("system:warning", { message: warnMsg });
+    const msg =
+      `Refused (self-termination): this command would kill Agency's own Node.js process — the CLI/TUI you are running inside — and end the session, so it is never executed. ` +
+      `\`taskkill /IM node.exe\`, \`killall node\`, \`pkill node\`, and killing this PID/PPID all hit EVERY Node process, including this one. ` +
+      `Safe alternatives: (1) to (re)start a dev server, just run it (e.g. \`npm run dev\`) — Agency auto-detaches long-running dev servers to the background, so you do NOT need to kill the old one first; ` +
+      `(2) to free a specific port, kill only that listener's PID, e.g. \`netstat -ano | findstr :3000\` then \`taskkill /F /PID <pid>\` (never \`/IM node.exe\`).`;
+    process.stderr.write(`${msg}\n`);
+    void EventBus.getInstance().publish("system:warning", { message: msg });
+    appendAudit(projectRoot, { action: "shell", command, approved: false });
+    throw new ApprovalRequiredError(msg);
   }
 
   // Security clearance check
