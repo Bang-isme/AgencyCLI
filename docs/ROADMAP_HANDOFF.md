@@ -406,9 +406,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > tại main-turn tool loop → status line realtime, dùng cờ sẵn `cognitionStream`)** · **§8.10-B/D ✅ (2026-06-02: lái
 > `activityPhase` từ thought qua `activityPhaseFromThought` → status hết kẹt "Writing" >10s; bỏ subtask GIẢ ExecutionPanel →
 > activity thật)** · **§8.10-E ✅ (parser canonical) · §8.10-C ✅ (2026-06-02: diệt nhãn sai `getGroundedTargetName` + gỡ
-> `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN**.
-> Baseline giờ: core **381** · tui **148** · providers 852 · security 36 · ~2116 test · **30 cờ** · 18 tool.
-> ▶ FRONTIER: §8.4 ảnh/multimodal · §8.11-D/E (tool-docs rút gọn arg → grep rename/patch/index-search). P2: §8.6/8.7/8.8.**
+> `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (2026-06-02: compact tool-docs args, cờ
+> `AGENCY_COMPACT_TOOL_DOCS`)**.
+> Baseline giờ: core **386** · tui **148** · providers 852 · security 36 · ~2121 test · **31 cờ** · 18 tool.
+> ▶ FRONTIER: §8.11-E (grep_file/grep_search rename rõ + patch tool/index-search) · §8.4 ảnh/multimodal (cần vision key verify e2e). P2: §8.6/8.7/8.8.**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -566,7 +567,12 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > **✅ §8.10-C ĐÃ XONG (2026-06-02, commit `fba316c`) → §8.10 ĐÓNG TRỌN:** 2 bug inline-trace, TUI-only. (1) **Nhãn sai**
 > (`list_dir · short video`): `getGroundedTargetName` (`tool-labels.ts`) khi args JSON KHÔNG có path/command field thì fallback
 > "first string value" → vớ nhầm free-text (task description). Giờ nhận thêm `TargetFile`/`AbsolutePath`/`SearchPath`/
-> `DirectoryPath`, hết thì trả "" (không đoán). (2) **Correlation vỡ parallel**: started→completed nối qua module-global Map
+> `DirectoryPath`, hết thì trả "" (không đoán).
+>
+> **▶ §8.11-D ✅ ĐÃ XONG (2026-06-02, commit `b40b1a6`):** rút gọn tool-docs args (cờ `AGENCY_COMPACT_TOOL_DOCS`) — xem §8.11(D)
+> bên dưới. **CÒN LẠI §8.11:** (E) đổi tên `grep_file`/`grep_search` cho rõ + ứng viên patch tool / index-backed search.
+>
+> (2) **Correlation vỡ parallel**: started→completed nối qua module-global Map
 > `lastToolTargets` keyed theo toolName → 2 tool song song/cùng tên ghi đè. Map THỰC RA vestigial — reader DUY NHẤT là nhánh
 > completed non-expanded của `SystemActivityLine`, mà caller DUY NHẤT (Conversation.tsx:1359) luôn `expandedTui={true}`
 > (dùng alias+char-count, KHÔNG target). Gỡ Map + set(exec) + get(completed) → hết state chia sẻ → hết collision.
@@ -678,9 +684,14 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   từ 1 `const flags`). Test `prompt-cache-order.test.ts` +4 (legacy verbatim / on dropped exactly-5 / hardened default on /
   independent of cache flag). core 360→364, **29 flag**, surface `agency status` (`buildFlagRows` "Soft approaches").
 
-**(D) Tool-docs re-list args 18 tool mỗi turn (~1109 token).  ← 🟢 biên (sau B). [Việc kế của §8.11]**
-- SỰ THẬT. `formatToolDocs` (`prompt.ts:6`) liệt mọi tool + mọi arg mỗi turn. SỬA (sau khi B cache xong, lợi biên):
-  rút gọn arg cho tool hiển nhiên, hoặc chỉ liệt arg cho tool ít rõ. Behavior-cẩn-thận (model cần biết schema).
+**(D) Tool-docs re-list args 18 tool mỗi turn (~1109 token).  ← ✅ XONG (2026-06-02, commit `b40b1a6`)**
+- SỰ THẬT. `formatToolDocs` (`prompt.ts`) liệt mọi tool + mọi arg mỗi turn, mỗi arg 1 dòng `- \`<x>\`: Parameter of
+  type string.` → boilerplate "Parameter of type string." lặp = phí thuần (model chỉ cần TÊN arg + optional + type khác-string).
+- **✅ SỬA.** Cờ MỚI `AGENCY_COMPACT_TOOL_DOCS`/`compactToolDocs` (off-legacy verbose byte-identical / on-hardened): gộp args
+  built-in mỗi tool thành 1 dòng `Args: \`a\`, \`b?\`: boolean` (tên + `?` optional + type-suffix CHỈ khi khác string). MCP tool
+  (có per-arg description đáng giữ) GIỮ verbose cả 2 mode. Trích `describeZodArg` (optional/type) dùng chung verbose+compact (không
+  parse trùng). Surface `agency status`. Test `tool-docs-compact.test.ts` (5: verbose-off byte / compact Args + hết boilerplate /
+  ngắn hơn hẳn / hardened default on / optional `?`+type). core 381→386, **31 cờ**.
 
 **(E) Hoàn chỉnh/độ rõ (minor, KHÔNG bug).** `grep_file` (1 file) vs `grep_search` (workspace recursive + gitignore +
   case/regex/limit) **distinct thật** (đã verify) nhưng tên dễ nhầm → cân nhắc đổi tên rõ (`search_in_file`/`search_workspace`).
