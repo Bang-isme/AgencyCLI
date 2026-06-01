@@ -444,9 +444,10 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `write-queue.ts` | `WriteQueue` — serialized promise gate for SQLite |
 | `ingestion.ts` | `IngestionPipeline` — text chunking + secret detection |
 | `vector-store.ts` | `VectorStore.search()` — cosine similarity, dimension enforcement |
-| `episodic-store.ts` | `EpisodicStore` — session/turn episodic memory |
+| `episodic-store.ts` | `EpisodicStore` — session/turn episodic memory (incl. `getRecentAcrossSessions` cross-session recency recall) |
+| `embedder.ts` | `Embedder` interface + `LocalDeterministicEmbedder` (feature-hashing, offline/deterministic) — feeds the semantic recall path |
 | `graph-store.ts` | `GraphStore` — BFS shortest path, edge CRUD |
-| `retriever.ts` | `HybridRetriever` — 5-phase pipeline: semantic → FTS → RRF → boosting → packing |
+| `retriever.ts` | `HybridRetriever` — 5-phase pipeline: semantic → FTS → RRF → boosting → packing (exposes `source`); WIRED into live recall via `core/chat/memory-integration.ts` (flag `memorySemantic`) |
 | `lifecycle.ts` | `CrdtMerger` (LWW-CRDT), `PolicyEngine` (TTL), `GraphIntegritySupervisor` (cycle breaking), `RecoverySupervisor` (shadow backup) |
 | `cache.ts` | `MemoryCache<K,V>` — LRU (500 entries, 5min TTL) |
 | `audit.ts` | `AuditLog` — mutation journal + rollback |

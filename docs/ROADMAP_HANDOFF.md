@@ -165,6 +165,14 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   `compactTurnHistory`, phần JSONL persistence trùng với TUI `sessions/store.ts` live) là dead-duplicate
   0 call-site → **đã xóa** cùng `DomainSpecialistRegistry`. Compaction live giờ CHỈ nằm ở
   `compactTurnHistory` (không còn lớp delegate trung gian).
+- **Bound + chunk summarizer (2026-06-01, cont'd 19, commit `b42e82d`):** trước đây tóm tắt CẢ middle trong
+  1 call cap 300 token → với task dài, **prompt tóm tắt có thể tự tràn** window (đúng lỗi compaction sinh ra để
+  tránh) + 1 bản tóm tắt cho span vô hạn rất lossy. `summarizeMiddle` giờ bound mỗi call ≤ `maxInputChars`
+  (default 8000): vừa → 1 call (như cũ); quá → chia chunk vừa budget, tóm từng chunk, rồi gộp phân tầng (cũng
+  bound, fallback nối chuỗi). Prompt tóm tắt KHÔNG còn tràn được; case nhỏ thường gặp byte-identical; không
+  bao giờ ném. Test `context-compaction.test.ts` (5→6). **Còn lại:** running-summary XUYÊN LƯỢT (chỉ tóm phần
+  MỚI thay vì cả middle mỗi lượt → khử O(n) cost) cần luồn history qua session store — follow-up; in-loop
+  compaction vẫn để sau, reactive context-limit handler vẫn là lưới mid-loop.
 
 ### 2.4 — Tầng tool chắc hơn  ← 🟡 PHẦN LỚN ĐÃ CÓ (2026-05-31)
 - **Sửa file diff/patch chính xác — ĐÃ WIRE.** `ast-compiler` (`utils/`, AST TypeScript THẬT — `ts.createSourceFile`, không regex) trước chỉ dùng nhẹ ở `approval-policy-engine` (risk-sim), CHƯA là tool model gọi được. Giờ phơi thành tool **`ast_edit`** (`skill/tool-harness.ts`): `rename_symbol` / `replace_function_body` / `replace_method_body` / `modify_import` / `delete_node` / `insert_function` — tái dùng nguyên các hàm ast-compiler (không nhân đôi logic edit), bổ sung cho `edit_file` (text replace) chứ không thay. Auto-quảng bá cho model qua `registry.listTools()` → `buildSystemPrompt` (không cần sửa prompt cứng). Approval-gated (category write). Test: `tool-harness.test.ts` (+5).
@@ -276,6 +284,15 @@ hết hạn, google rate-limit; nvidia chạy được — nên đo thật tốt
   (`compactTurnHistory`, cạnh `system:warning`) → `retrieval`/`retrieval`/`adaptation`. Gate vẫn tập trung
   trong `emitThought` → off legacy = byte-identical. Test `cognition-stream.test.ts` (+3). `pnpm verify`
   xanh (core 329→332, ~1992).
+- **Memory recall chuyên nghiệp hoá (2026-06-01, cont'd 19):** recall đa-session từng (a) CHẾT ở CLI —
+  `resolveSessionId` rơi về hằng `"sess-cli"` nên mọi run đụng 1 id, lọc `session_id != current` loại sạch →
+  agent CLI không bao giờ nhớ lại run trước (fix: id duy nhất per-process, `0fe6371`); (b) dùng raw SQL
+  `(db as any).db` (fix: typed `recentEpisodesAcrossSessions`); (c) bỏ phí `HybridRetriever` (semantic vector +
+  FTS RRF + boosting + packing) — 0 consumer live vì không ai sinh embedding. Đã wire `LocalDeterministicEmbedder`
+  (feature-hashing, offline, deterministic → giữ tính reproducible cho eval/replay; sau interface `Embedder` để
+  thay provider sau) vào write-path (embed episode → vector) + read-path (recall qua HybridRetriever), cờ
+  `AGENCY_MEMORY_SEMANTIC` off legacy/on hardened (`ffd0ae8`). Giờ tier-3/4 recall thật sự là hybrid, không chỉ
+  keyword.
 - **Bảng sức khỏe:** agent nào hay lỗi (registry health từ slice 5 đã làm), MCP nào hay timeout,
   memory phình tới đâu (telemetry đã có).
 - **Cảnh báo:** vượt budget, crash-loop, tỉ lệ lỗi tăng đột biến.
