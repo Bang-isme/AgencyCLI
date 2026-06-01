@@ -170,9 +170,12 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   tránh) + 1 bản tóm tắt cho span vô hạn rất lossy. `summarizeMiddle` giờ bound mỗi call ≤ `maxInputChars`
   (default 8000): vừa → 1 call (như cũ); quá → chia chunk vừa budget, tóm từng chunk, rồi gộp phân tầng (cũng
   bound, fallback nối chuỗi). Prompt tóm tắt KHÔNG còn tràn được; case nhỏ thường gặp byte-identical; không
-  bao giờ ném. Test `context-compaction.test.ts` (5→6). **Còn lại:** running-summary XUYÊN LƯỢT (chỉ tóm phần
-  MỚI thay vì cả middle mỗi lượt → khử O(n) cost) cần luồn history qua session store — follow-up; in-loop
-  compaction vẫn để sau, reactive context-limit handler vẫn là lưới mid-loop.
+  bao giờ ném. Test `context-compaction.test.ts` (5→6).
+- **Running-summary XUYÊN LƯỢT ĐÃ XONG (2026-06-01, cont'd 20, commit `19cf875`):** `compactTurnHistory` nhận
+  `cacheKey` (session id); lượt sau mà middle chỉ MỞ RỘNG middle đã tóm trước → chỉ tóm phần MỚI gộp vào summary cũ
+  → O(new) thay vì O(all). Prefix-validate theo scope (không phục vụ summary cũ/lệch); không cacheKey → không cache →
+  byte-identical. Cả 2 turn path truyền `resolveSessionId`. Test `context-compaction.test.ts` (6→7). **Còn lại:**
+  in-loop compaction (nén ngay trong outer tool-loop) vẫn để sau; reactive context-limit handler vẫn là lưới mid-loop.
 
 ### 2.4 — Tầng tool chắc hơn  ← 🟡 PHẦN LỚN ĐÃ CÓ (2026-05-31)
 - **Sửa file diff/patch chính xác — ĐÃ WIRE.** `ast-compiler` (`utils/`, AST TypeScript THẬT — `ts.createSourceFile`, không regex) trước chỉ dùng nhẹ ở `approval-policy-engine` (risk-sim), CHƯA là tool model gọi được. Giờ phơi thành tool **`ast_edit`** (`skill/tool-harness.ts`): `rename_symbol` / `replace_function_body` / `replace_method_body` / `modify_import` / `delete_node` / `insert_function` — tái dùng nguyên các hàm ast-compiler (không nhân đôi logic edit), bổ sung cho `edit_file` (text replace) chứ không thay. Auto-quảng bá cho model qua `registry.listTools()` → `buildSystemPrompt` (không cần sửa prompt cứng). Approval-gated (category write). Test: `tool-harness.test.ts` (+5).
@@ -223,9 +226,13 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   `unconsumedLlmResponses` thêm vào result). `providerSeed` (đã có sẵn) chính là để re-run seeded ra completion
   y hệt. Test mở rộng tại chỗ: telemetry 4→9, benchmark 14→18, cli +3, core trace-recorder LLM round-trip.
   `pnpm verify` xanh (~2006→~2018). Dữ liệu LLM-response giờ ĐƯỢC DÙNG NGAY (driver tiêu thụ/kiểm — không treo).
-- **Còn lại (full §2.5):** re-execute agent THẬT — chạy lại `runChatTurn` qua một **ReplayProvider** (`LlmProvider`
-  trả `llmResponses` đã ghi theo thứ tự) + seam intercept tool, để tái dùng vòng turn THẬT (không nhân đôi loop).
-  Dữ liệu LLM-response (slice này) là tiền đề — giờ đã sẵn. Xây TRÊN producer + consumer + driver sẵn có.
+- **Re-execution (nhân lõi AN TOÀN) ĐÃ WIRE (2026-06-01, cont'd 20, commit `20021fb`).** `agency replay-regression
+  --reexecute`: re-derive chuỗi tool-call từ `llmResponses` đã ghi bằng `parseToolCalls` THẬT rồi đối chiếu
+  `toolOutputs` (tool đã chạy) → regression ở parser/dispatch lộ ra (drift→exit 1). Deterministic + KHÔNG side-effect
+  (không chạy tool/gate/episode). Tái dùng `parseToolCalls`, không nhân đôi. Test cli replay-regression (+3).
+- **Còn lại (full live re-run, KHÔNG bắt buộc):** chạy lại `runChatTurn` THẬT qua `ReplayProvider` + seam intercept
+  tool/gate/episode để re-run vòng turn thật với 0 LLM-call. Surface CAO (phải chặn cả tool-exec, gate, ghi episode)
+  → giá trị biên so với re-execution lõi đã có; để ngỏ, KHÔNG xây vội.
 
 ---
 

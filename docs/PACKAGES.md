@@ -614,7 +614,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `memory` | `commands/memory.ts` | Memory status / build / genome |
 | `plugin` | `commands/plugin.ts` | Validate / tools / schema for plugins |
 | `replay` | `commands/replay.ts` | Replay + verify the durable event journal (§2.5) |
-| `replay-regression` | `commands/replay-regression.ts` | Replay a recorded behaviour trace; `--baseline` checks a candidate reproduces the baseline's tool calls **and** LLM completions (§2.5) |
+| `replay-regression` | `commands/replay-regression.ts` | Replay a recorded behaviour trace; `--baseline` checks a candidate reproduces the baseline's tool calls **and** LLM completions; `--reexecute` re-derives tool calls from the recorded completions via the real `parseToolCalls` and verifies they match what ran (§2.5) |
 | `route` | `commands/route.ts` | Prompt routing only (no LLM call) |
 | `routing` | `commands/routing.ts` | Manage routing weights + feedback |
 | `run` | `commands/run.ts` | Execute shell commands with sandbox |
