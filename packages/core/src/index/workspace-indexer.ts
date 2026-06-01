@@ -14,7 +14,6 @@ import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import { loadIgnoreFilter, isAlwaysSkipped, IgnoreFilter } from "./gitignore-parser.js";
 import { detectLanguage, isBinaryExtension } from "./language-map.js";
-import { loadSymbolGraph } from "./incremental-indexer.js";
 
 /** Default skip dirs (kept for backward compat with sync API) */
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".agency"]);
@@ -61,7 +60,6 @@ export interface IndexOptions {
   maxFiles?: number;
   respectGitignore?: boolean;
   contentHash?: boolean;
-  changedFiles?: string[];
 }
 
 /* ── Helpers ── */
@@ -419,65 +417,20 @@ function root(projectRoot: string): string {
 }
 
 /**
- * Async incremental update — only re-hash changed files.
+ * Async incremental update — re-walk the tree (cheap) but only re-hash files
+ * whose mtime/size changed, keeping the prior content hash otherwise. Re-walking
+ * is what keeps the index FRESH: new files are added, deleted/renamed-away files
+ * drop out, and changed files are re-hashed. (A prior "only touch the paths in
+ * `changedFiles`" fast-path was removed — it was never wired to any caller, it
+ * silently failed to ADD newly-created files since it iterated only the existing
+ * entries, and it skipped only the cheap directory walk while the expensive part,
+ * hashing, is already incremental here.)
  */
 export async function incrementalUpdateAsync(
   projectRoot: string,
   opts: IndexOptions = {}
 ): Promise<WorkspaceIndex> {
   const existing = loadIndex(projectRoot);
-
-  if (opts.changedFiles && opts.changedFiles.length > 0 && existing) {
-    const symbolGraph = loadSymbolGraph(projectRoot);
-    const targets = new Set<string>(opts.changedFiles.map(toPosixPath));
-    const toUpdate = new Set<string>(targets);
-
-    // Track monorepo boundary dependents by tracing imports
-    for (const [filePath, fileData] of Object.entries(symbolGraph.files)) {
-      const posixPath = toPosixPath(filePath);
-      if (toUpdate.has(posixPath)) continue;
-
-      if (fileData.imports) {
-        for (const imp of fileData.imports) {
-          const isDependent = Array.from(targets).some((t) => {
-            return t.includes(imp.module) || (imp.module.startsWith(".") && posixPath.includes(imp.module));
-          });
-          if (isDependent) {
-            toUpdate.add(posixPath);
-            break;
-          }
-        }
-      }
-    }
-
-    // Re-stat and re-hash only modified files + their dependents
-    const updatedFiles: IndexEntry[] = [];
-    for (const entry of existing.files) {
-      const posixPath = toPosixPath(entry.path);
-      if (toUpdate.has(posixPath)) {
-        const fullPath = join(projectRoot, entry.path);
-        if (existsSync(fullPath)) {
-          const stat = statSync(fullPath);
-          const headHash = hashFileHead(fullPath);
-          updatedFiles.push({
-            path: entry.path,
-            mtimeMs: stat.mtimeMs,
-            size: stat.size,
-            contentHash: headHash,
-            language: detectLanguage(entry.path),
-          });
-        }
-      } else {
-        updatedFiles.push(entry);
-      }
-    }
-
-    return {
-      ...existing,
-      generatedAt: new Date().toISOString(),
-      files: updatedFiles,
-    };
-  }
 
   const fresh = await buildIndexAsync(projectRoot, opts);
   if (!existing) return fresh;

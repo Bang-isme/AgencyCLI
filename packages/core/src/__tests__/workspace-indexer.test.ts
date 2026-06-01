@@ -1,106 +1,72 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { describe, expect, it, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { incrementalUpdateAsync } from "../index/workspace-indexer.js";
-import { loadSymbolGraph } from "../index/incremental-indexer.js";
+import { incrementalUpdateAsync, writeIndex } from "../index/workspace-indexer.js";
 
-vi.mock("node:fs", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs")>();
-  return {
-    ...original,
-    existsSync: vi.fn(),
-    statSync: vi.fn(),
-    readFileSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
+/**
+ * §8.7 — index freshness. `incrementalUpdateAsync` must keep the on-disk index
+ * faithful to the workspace across the three mutations that matter for the
+ * context pack's retrieval: a NEW file appears, an existing file CHANGES, and a
+ * file is DELETED. (Regression guard: the removed `changedFiles` fast-path only
+ * iterated the existing entries, so it could never add a newly-created file —
+ * exactly the file the model just wrote and needs to see next turn.)
+ */
+
+describe("Workspace Indexer — incremental freshness (§8.7)", () => {
+  let root: string;
+
+  afterEach(() => {
+    if (root && existsSync(root)) rmSync(root, { recursive: true, force: true });
+  });
+
+  const setup = (): void => {
+    root = mkdtempSync(join(tmpdir(), "agency-idx-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "a.ts"), "export const a = 1;\n", "utf8");
+    writeFileSync(join(root, "src", "b.ts"), "export const b = 2;\n", "utf8");
   };
-});
 
-vi.mock("../index/incremental-indexer.js", () => ({
-  loadSymbolGraph: vi.fn(),
-}));
+  it("adds a newly-created file on the next incremental update", async () => {
+    setup();
+    writeIndex(root, await incrementalUpdateAsync(root)); // baseline: a.ts, b.ts
 
-const mockedExistsSync = vi.mocked(existsSync);
-const mockedStatSync = vi.mocked(statSync);
-const mockedReadFileSync = vi.mocked(readFileSync);
-const mockedLoadSymbolGraph = vi.mocked(loadSymbolGraph);
+    writeFileSync(join(root, "src", "c.ts"), "export const c = 3;\n", "utf8"); // NEW
 
-afterEach(() => {
-  vi.clearAllMocks();
-});
+    const updated = await incrementalUpdateAsync(root);
+    const paths = updated.files.map((f) => f.path);
+    expect(paths).toContain("src/c.ts"); // the new file is indexed
+    expect(paths).toContain("src/a.ts");
+    expect(paths).toContain("src/b.ts");
+  });
 
-describe("Workspace Indexer - Smart Incremental", () => {
-  it("only updates specified changed files and their package dependents", async () => {
-    const root = "/fake/project";
+  it("drops a deleted file on the next incremental update", async () => {
+    setup();
+    writeIndex(root, await incrementalUpdateAsync(root));
 
-    mockedExistsSync.mockReturnValue(true);
+    rmSync(join(root, "src", "b.ts"));
 
-    mockedReadFileSync.mockImplementation((path: any) => {
-      if (typeof path === "string" && (path.endsWith("index.json") || path.endsWith("index.json.tmp"))) {
-        return JSON.stringify({
-          version: 1,
-          root,
-          generatedAt: "2026-05-26T00:00:00.000Z",
-          files: [
-            { path: "src/a.ts", mtimeMs: 10, size: 100, contentHash: "hash-a" },
-            { path: "src/b.ts", mtimeMs: 10, size: 100, contentHash: "hash-b" },
-            { path: "src/c.ts", mtimeMs: 10, size: 100, contentHash: "hash-c" },
-          ],
-        });
-      }
-      return "new file content mock";
-    });
+    const updated = await incrementalUpdateAsync(root);
+    const paths = updated.files.map((f) => f.path);
+    expect(paths).not.toContain("src/b.ts"); // deleted file drops out
+    expect(paths).toContain("src/a.ts");
+  });
 
-    mockedLoadSymbolGraph.mockReturnValue({
-      version: 1,
-      files: {
-        "src/a.ts": {
-          filePath: "src/a.ts",
-          hash: "hash-a",
-          symbols: [],
-          imports: [],
-        },
-        "src/b.ts": {
-          filePath: "src/b.ts",
-          hash: "hash-b",
-          symbols: [],
-          imports: [{ name: "foo", module: "src/a.ts" }], // b.ts depends on a.ts
-        },
-        "src/c.ts": {
-          filePath: "src/c.ts",
-          hash: "hash-c",
-          symbols: [],
-          imports: [], // c.ts is independent
-        },
-      },
-    });
+  it("re-hashes a file whose content changed, keeping the hash of an unchanged one", async () => {
+    setup();
+    const base = await incrementalUpdateAsync(root);
+    writeIndex(root, base);
+    const aHash0 = base.files.find((f) => f.path === "src/a.ts")?.contentHash;
+    const bHash0 = base.files.find((f) => f.path === "src/b.ts")?.contentHash;
+    expect(aHash0).toBeDefined();
 
-    mockedStatSync.mockReturnValue({
-      mtimeMs: 20,
-      size: 150,
-    } as any);
+    // Change a.ts (different length → different size → re-hash); leave b.ts.
+    writeFileSync(join(root, "src", "a.ts"), "export const a = 1; // edited, longer now\n", "utf8");
 
-    // a.ts changed!
-    const res = await incrementalUpdateAsync(root, {
-      changedFiles: ["src/a.ts"],
-    });
-
-    // Should update a.ts AND its dependent b.ts, but leave c.ts untouched!
-    expect(res).toBeDefined();
-    const fileA = res.files.find(f => f.path === "src/a.ts");
-    const fileB = res.files.find(f => f.path === "src/b.ts");
-    const fileC = res.files.find(f => f.path === "src/c.ts");
-
-    expect(fileA).toBeDefined();
-    expect(fileA?.size).toBe(150);
-    expect(fileA?.contentHash).not.toBe("hash-a");
-
-    expect(fileB).toBeDefined();
-    expect(fileB?.size).toBe(150);
-    expect(fileB?.contentHash).not.toBe("hash-b");
-
-    expect(fileC).toBeDefined();
-    expect(fileC?.size).toBe(100);
-    expect(fileC?.contentHash).toBe("hash-c");
+    const updated = await incrementalUpdateAsync(root);
+    const aEntry = updated.files.find((f) => f.path === "src/a.ts");
+    const bEntry = updated.files.find((f) => f.path === "src/b.ts");
+    expect(aEntry?.contentHash).not.toBe(aHash0); // changed file re-hashed
+    expect(bEntry?.contentHash).toBe(bHash0); // unchanged file keeps its hash
   });
 });
