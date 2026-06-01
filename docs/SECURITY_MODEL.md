@@ -235,6 +235,8 @@ agency run "npm install" \
 
 A domain-allowlist proxy for outbound network access. `matchGlob(domain, pattern)` supports wildcard patterns (e.g. `*.example.com`); requests to domains outside the allowlist are blocked. Configured via `EgressFilterProxyOptions`.
 
+The built-in default allowlist covers the hosts an autonomous coding agent legitimately needs: LLM provider APIs, package registries (npm/pypi/cargo), GitHub, and ubiquitous **read-only** dev asset hosts — Google Fonts (`fonts.googleapis.com` via `*.googleapis.com` + `fonts.gstatic.com`) and the major static CDNs (`cdn.jsdelivr.net`, `unpkg.com`, `cdnjs.cloudflare.com`, `esm.sh`). These were added because blocking them left agent-generated web pages half-loaded with an alarming "SECURITY WARNING"; they serve GET-only static assets (no data-storing endpoint), so the exfiltration risk the proxy guards against stays minimal. Entries are specific hosts, not broad wildcards. Per-project additions go in `.agency/security/egress-whitelist.json` (merged with the defaults).
+
 ### ProcessJail
 
 Restricts the capabilities of spawned child processes (e.g. environment scrubbing, working-directory confinement) so sandboxed commands cannot escalate beyond their granted clearance.

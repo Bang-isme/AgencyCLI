@@ -56,6 +56,19 @@ describe("EgressFilterProxy Security Hardening", () => {
     await proxy.stop();
   });
 
+  it("allows ubiquitous read-only dev CDNs (jsdelivr/unpkg/cdnjs/esm.sh) but nothing broader", async () => {
+    const proxy = new EgressFilterProxy({ projectRoot: tempDir });
+    await proxy.start();
+    expect((proxy as any).isAllowed("cdn.jsdelivr.net")).toBe(true);
+    expect((proxy as any).isAllowed("unpkg.com")).toBe(true);
+    expect((proxy as any).isAllowed("cdnjs.cloudflare.com")).toBe(true);
+    expect((proxy as any).isAllowed("esm.sh")).toBe(true);
+    // Specific hosts only — a lookalike / unrelated cloudflare host stays blocked.
+    expect((proxy as any).isAllowed("evil.jsdelivr.net.attacker.com")).toBe(false);
+    expect((proxy as any).isAllowed("workers.cloudflare.com")).toBe(false);
+    await proxy.stop();
+  });
+
   it("should merge custom whitelists from egress-whitelist.json", async () => {
     const securityDir = join(tempDir, ".agency", "security");
     mkdirSync(securityDir, { recursive: true });

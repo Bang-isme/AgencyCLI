@@ -59,7 +59,18 @@ export class EgressFilterProxy {
       // that uses Google Fonts half-loaded plus an alarming egress "SECURITY
       // WARNING"; pairing the two removes that false positive for a ubiquitous,
       // reputable dev resource without broadening egress generally.
-      "fonts.gstatic.com"
+      "fonts.gstatic.com",
+      // Ubiquitous, reputable, read-only dev CDNs (static JS/CSS/asset hosting).
+      // A coding agent that scaffolds web apps routinely references these; blocking
+      // them produced the same half-loaded-page + scary "SECURITY WARNING" the
+      // Google Fonts case did. They serve GET-only static assets (no data-storing
+      // endpoint), so the exfiltration risk this proxy guards against is minimal.
+      // Specific hosts, not broad wildcards; per-project needs go in
+      // .agency/security/egress-whitelist.json.
+      "cdn.jsdelivr.net",
+      "unpkg.com",
+      "cdnjs.cloudflare.com",
+      "esm.sh"
     ];
 
     const whitelistPath = join(this.options.projectRoot, ".agency", "security", "egress-whitelist.json");
