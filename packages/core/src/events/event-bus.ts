@@ -40,6 +40,14 @@ export class EventBus {
   private currentQueueBytes = 0;
   private isDraining = false;
 
+  // In-flight async spill writes, keyed by refId. Lets tests (and offline
+  // forensics) await the real write completion instead of racing existsSync
+  // against a half-flushed file. Entries self-delete once the write+close
+  // resolves, so this stays empty in steady state and never grows unbounded.
+  // Production never awaits these — the spill stays fire-and-forget off the
+  // publish hot path.
+  private pendingSpills = new Map<string, Promise<void>>();
+
   // Optional durable mirror. When attached, every accepted event is appended
   // synchronously so a crash cannot lose the in-memory tail. Defaults to off
   // to preserve legacy (memory-only) behaviour.
@@ -64,6 +72,7 @@ export class EventBus {
     this.currentQueueBytes = 0;
     this.isDraining = false;
     this.durableSink = null;
+    this.pendingSpills.clear();
   }
 
   /**
@@ -179,7 +188,15 @@ export class EventBus {
         refId,
         summary: `Truncated large payload. Original size: ${payloadSize} bytes.`
       });
-      void this.spillLargePayload(refId, payloadStr);
+      // Fire-and-forget off the publish hot path, but keep a handle so callers
+      // that need the forensic payload (tests, offline tooling) can await the
+      // real write completion. The handle self-removes once the write resolves.
+      const spillId = refId;
+      const spill = this.spillLargePayload(spillId, payloadStr).finally(() => {
+        this.pendingSpills.delete(spillId);
+      });
+      this.pendingSpills.set(spillId, spill);
+      void spill;
     }
 
     const prio = this.getPriority(action);
@@ -236,6 +253,21 @@ export class EventBus {
    */
   public getJournal(): ReplayEvent[] {
     return [...this.journal];
+  }
+
+  /**
+   * Resolves once the async spill for `refId` has fully flushed and closed on
+   * disk (or immediately if it already completed / was never oversized).
+   *
+   * Production code never needs this — the spill is intentionally fire-and-forget
+   * off the publish hot path. It exists so tests and offline forensics can await
+   * the real write completion instead of racing `existsSync`/`readFileSync`
+   * against a half-flushed file (which surfaces as `Unexpected end of JSON input`
+   * under heavy concurrent load). It never throws: the underlying spill swallows
+   * its own errors.
+   */
+  public async awaitSpill(refId: string): Promise<void> {
+    await this.pendingSpills.get(refId);
   }
 
   private cleanupDeduplicationCache(now: number): void {

@@ -84,14 +84,17 @@ describe("EventBus Subsystem", () => {
     expect(received[0].payload.length).toBeLessThan(1024);
 
     // The original is recoverable from the fire-and-forget spill file. The spill
-    // is an eventual async write (fs/promises), so poll with a generous budget
-    // (~4s) — it exits as soon as the file appears, so the normal case stays
-    // fast; the wide ceiling keeps it from flaking under heavy concurrent load
-    // (e.g. `pnpm -r test` saturating the CPU across all packages).
+    // is an eventual async write (fs/promises), so await the bus's real
+    // write-completion signal rather than racing existsSync against a
+    // half-flushed file — existsSync goes true the moment writeFile opens the
+    // fd, before the bytes are flushed and closed, which under heavy concurrent
+    // load (e.g. `pnpm -r test` saturating the CPU across all packages) let a
+    // truncated read surface as `Unexpected end of JSON input`. awaitSpill
+    // resolves only after writeFile has flushed AND closed, so the read below is
+    // deterministic. This does not touch the production async-spill behaviour:
+    // publish still spills fire-and-forget off the hot path (no sync write).
+    await eventBus.awaitSpill(delivered.refId!);
     const spillPath = join(".agency", "large-payloads", `${delivered.refId}.json`);
-    for (let i = 0; i < 400 && !existsSync(spillPath); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
     expect(existsSync(spillPath)).toBe(true);
     const spilled = JSON.parse(readFileSync(spillPath, "utf8")) as { blob: string };
     expect(spilled.blob).toBe(big);
