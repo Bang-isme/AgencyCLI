@@ -581,6 +581,52 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > → C (progress per-tool). Cờ nếu đổi hành vi (`flags.ts`); tái dùng EventBus + `emitThought` + canonical homes; test +
 > `pnpm verify` xanh. **ĐÂY LÀ VIỆC P1 KẾ (cùng/đan với §8.4 ảnh tuỳ ưu tiên user).**
 
+### 8.11 — Harness & built-in tools: ĐÚNG + ĐỦ + ÍT TOKEN (audit 2026-06-01)
+> **Bối cảnh user.** "Đảm bảo harness đúng + đầy đủ built-in tools, tools hoạt động xịn, **ít token cho mọi model**
+> mà vẫn nhanh + chất lượng cao." Audit từ source thật (17 tool trong 1 `ToolRegistry`, auto-advertise qua
+> `registry.listTools()`→`buildSystemPrompt`). Mỗi mục đo được, SỰ THẬT→LỖI→SỬA(+file).
+
+**(A) `truncateToolResult` model-aware scaling CHẾT (built-but-unwired) — ✅ ĐÃ SỬA (commit `a550bd2`).**
+- SỰ THẬT/LỖI: `skill/tool-harness.ts` gọi `require("@agency/providers")` trong **module ESM** → throw, bị
+  try/catch nuốt → MỌI model rơi default ~30K chars (đo: 200k/16k/no-model đều 30040). Model nhỏ (≤16K) nhận
+  full result → nguy cơ tràn (họ §8); "scale theo window" trong docs là SAI.
+- SỬA: import static `getModelSpec` (providers leaf, no cycle) + re-tune token-conscious: nhỏ (<32K, bắt cả model
+  báo 16385) → 8K; lớn (≥200K) → **48K (KHÔNG còn 400K-char/~100K-token dump** — truncation note đã bảo model lấy
+  thêm qua `read_file` ranges); medium → 32K. +4 test regression. ÍT token + an toàn tràn.
+
+**(B) KHÔNG có prompt caching — ĐÒN BẨY TOKEN LỚN NHẤT bị bỏ lỡ.  ← 🔴 ưu tiên token**
+- SỰ THẬT. grep `cache_control|prompt_cache|ephemeral` trong `packages/providers` = **RỖNG**. System prompt cố định đo
+  được **~2069 token/turn** (tool-docs 1109 + prose ~960), GỬI MỖI TURN + contextPack + history. `buildSystemPrompt`
+  (`chat/prompt.ts`) xếp **VARIABLE lên ĐẦU**: `anchorBlock` (goal pillars từ user msg) + `intent/workflow` (dòng 66-70)
+  trước protocol+tool-docs (STATIC).
+- LỖI. (a) Anthropic không gắn `cache_control:{type:"ephemeral"}` → mỗi turn trả FULL giá input cho phần static
+  (đáng ra cache ~10% giá). (b) OpenAI-compatible (NVIDIA/openrouter/deepseek) có **automatic prefix caching** nhưng
+  CẦN prefix ổn định — đặt VARIABLE lên đầu **phá** prefix cache → 0% hit. Đây là token phí lớn nhất cho hội thoại dài.
+- SỬA. (1) Reorder `buildSystemPrompt`: **STATIC prefix trước** (protocol + tool-docs) → rồi anchorBlock (ổn định/phiên)
+  → contextPack/memories/user-question (variable) cuối. Bật automatic prefix-cache cho mọi openai-compatible, 0 thêm code.
+  (2) Adapter Anthropic gắn `cache_control` block cuối system (verify cần BYOK key — đo cache-hit). **Cờ nếu đổi prompt
+  order** (legacy giữ nguyên). Đây là cách "ít token cho TẤT CẢ model" trực tiếp nhất.
+
+**(C) "5-APPROACHES RULE" ép 5 hướng mỗi turn planning — phí OUTPUT token + formulaic.  ← 🟡**
+- SỰ THẬT. `chat/prompt.ts:77-78` ép "MUST outline exactly 5 distinct approaches ... sort by recommendation ... pros/cons,
+  success criteria, next command" cho MỌI đề xuất planning/architecture.
+- LỖI. Task đơn giản cũng phải đẻ 5 hướng = tốn output token (đắt hơn input) + cứng nhắc, có khi giảm chất lượng (lan man).
+- SỬA. Mềm hoá ("vài hướng riêng biệt sắp theo khuyến nghị khi đề xuất chiến lược") hoặc gate theo độ phức tạp/disclosure.
+  Cờ vì đổi hành vi output. Giữ chất lượng cho task khó, bớt token cho task dễ.
+
+**(D) Tool-docs re-list args 17 tool mỗi turn (~1109 token).  ← 🟢 biên (sau B).**
+- SỰ THẬT. `formatToolDocs` (`prompt.ts:6`) liệt mọi tool + mọi arg mỗi turn. SỬA (sau khi B cache xong, lợi biên):
+  rút gọn arg cho tool hiển nhiên, hoặc chỉ liệt arg cho tool ít rõ. Behavior-cẩn-thận (model cần biết schema).
+
+**(E) Hoàn chỉnh/độ rõ (minor, KHÔNG bug).** `grep_file` (1 file) vs `grep_search` (workspace recursive + gitignore +
+  case/regex/limit) **distinct thật** (đã verify) nhưng tên dễ nhầm → cân nhắc đổi tên rõ (`search_in_file`/`search_workspace`).
+  Ứng viên hoàn chỉnh (tuỳ chọn): tool **unified-diff/patch** (sửa nhiều hunk ÍT token hơn rewrite cả file — bổ sung
+  `batch_edit`/`ast_edit`); **search dựa index** (`grep_search` đang walk lại cây mỗi lần — `loadIndex` đã có, dùng để
+  nhanh + ít token + kết quả tốt hơn). Tra "Canonical Homes" trước khi thêm tool.
+
+> **Thứ tự §8.11:** B (caching — token win lớn nhất) → C (5-approaches) → D → E. Cờ cho thay đổi prompt; tái dùng catalog
+> `capabilities`/adapter interface; test + `pnpm verify` xanh. A đã xong.
+
 ### Thứ tự đề xuất cho session sau
 **~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.
 **▶ NEXT P1 — 2 nhánh (user ưu tiên):**
