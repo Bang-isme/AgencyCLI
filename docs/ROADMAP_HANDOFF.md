@@ -408,9 +408,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > activity thật)** · **§8.10-E ✅ (parser canonical) · §8.10-C ✅ (2026-06-02: diệt nhãn sai `getGroundedTargetName` + gỡ
 > `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (compact tool-docs args, cờ
 > `AGENCY_COMPACT_TOOL_DOCS`) · §8.11-E ✅ (clarify grep mô tả cross-ref) → §8.11 ĐÓNG TRỌN** · **§8.7 ✅ (2026-06-02: index
-> freshness — xóa changedFiles fast-path dead+buggy, full-merge path đúng new/deleted/changed)**.
-> Baseline giờ: core **390** · tui **148** · providers 852 · security 36 · ~2125 test · **31 cờ** · 18 tool.
-> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key) / §8.8 sandbox edge (ưu tiên thấp). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload; promote hardened→default cần BYOK eval + user OK.)**
+> freshness — xóa changedFiles fast-path dead+buggy)** · **§8.8 ✅ (2026-06-02: self-kill HARD-refuse — báo user `c03b9a2`;
+> DockerSandbox timeout+output-cap parity native `71cbe78`)**.
+> Baseline giờ: core **391** · tui **148** · providers 852 · security **38** · ~2129 test · **31 cờ** · 18 tool.
+> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -522,13 +523,25 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 - **CÒN NGỎ (P2, không bug):** (2) `isIndexStale` 5min — hợp lý, chưa đụng; (3) retrieval QUALITY (chọn đúng file vào pack, họ §8.6);
   (4) re-index đồng bộ trong dispatch = ứng viên offload worker-thread (surface cao).
 
-### 8.8 — Sandbox + built-in tools: rà path + edge-case  ← 🟢 P2
-- **SỰ THẬT.** `security/sandbox.ts`: ưu tiên **docker** (`isDockerAvailable`, `host.docker.internal`, proxy) + fallback
-  **native** (`--sandbox-mode native`), cleanup Windows `taskkill /F /T`. Built-in tools: **18** tool trong 1 `ToolRegistry`
-  (audit cont'd 12 ở 17; +`append_file` 2026-06-01), auto-advertise, approval-gated.
-- **KIỂM.** (1) docker-unreachable → thông báo rõ + không treo (đã có message); (2) native mode cảnh báo bảo mật đủ mạnh?
-  (3) tool handler edge: truncate (đã scale theo window), lỗi surface (invokeSafe không throw), file-write atomic (đã verify).
-  Đa số đã chắc — đây là rà soát hồi quy, ưu tiên thấp.
+### 8.8 — Sandbox + built-in tools: rà path + edge-case  ← ✅ 2 lỗi THẬT đã sửa (2026-06-02)
+- **SỰ THẬT.** `security/sandbox.ts`: ưu tiên **docker** + fallback **native** (`--sandbox-mode native`). Self-kill guard ở
+  `core/terminal/sandbox.ts` + `approval/policy.ts isSelfKillingCommand`.
+- **✅ LỖI 1 — SELF-KILL "Blocked" mà KHÔNG chặn (báo user, commit `c03b9a2`):** model chạy `taskkill /F /IM node.exe … && npm
+  run dev` để restart dev server. `isSelfKillingCommand` bắt đúng (giết MỌI node.exe gồm chính TUI) nhưng `runShellCommand` chỉ
+  in `Security Warning … Blocked command` rồi **chạy tiếp**. Tệ hơn: `execute_command` gọi `runShellCommand(..., {yes:true})`
+  hardcode → bypass approval gate → lệnh self-kill **THỰC SỰ CHẠY → tự sát TUI giữa turn**. SỬA: self-kill **HARD-refuse** ở đầu
+  `runShellCommand` (throw TRƯỚC mọi exec, `yes` KHÔNG bypass — đây là phòng tuyến DUY NHẤT vì execute_command yes:true);
+  message chỉ lối an toàn (chỉ chạy `npm run dev` — đã auto-detach; free port thì kill theo PID `netstat…findstr` + `taskkill
+  /F /PID`, ĐỪNG `/IM node.exe`); audit denied. Detection giữ nguyên (kill PID CỤ THỂ khác vẫn cho — đúng lối an toàn). Viết lại
+  2 test placeholder (`echo self-killing-test` vô hại) thành lệnh self-kill THẬT + assert refuse-cả-khi-yes + 1 test no-false-positive. core 390→391.
+- **✅ LỖI 2 — DockerSandbox thiếu timeout + output-cap (commit `71cbe78`):** NativeSandbox có timeout (kill sau `options.timeout`,
+  default 5min) + cap stdout/stderr (50MB/10MB) chống OOM; **DockerSandbox KHÔNG có cả hai** (`options.timeout` bị bỏ qua →
+  container treo chạy vô hạn; output không giới hạn → OOM); `terminal/sandbox.ts` chỉ forward limit cho native. SỬA: DockerSandbox
+  thêm timeout (timer → `docker rm -f` + kill child + resolve exit 124/timedOut; clear khi close/abort/dev-server-detach) +
+  output-cap (`[TRUNCATED]` + event), giống native; forward `timeout`/`maxStdoutBytes`/`maxStderrBytes`/`onEvent` xuống docker.
+  Test `sandbox.test.ts` +2 (hung→124+timeout event; stdout vượt cap→truncated). security 36→38.
+- **CÒN NGỎ (ưu tiên thấp):** native-mode security-warning mạnh hơn; tool-handler edge khác (đa số đã chắc: truncate scale window,
+  invokeSafe không throw, file-write atomic — đã verify).
 
 ### 8.9 — Bảo trì & MỞ RỘNG (mục tiêu xuyên suốt của user)  ← 🟢 nền
 - **Điểm mở rộng đã có (giữ + tài liệu hoá, đừng phá):** provider mới → thêm adapter sau interface `LlmProvider` +
