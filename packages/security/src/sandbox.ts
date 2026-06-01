@@ -562,10 +562,13 @@ export class DockerSandbox implements Sandbox {
       });
 
       let aborted = false;
+      let timedOut = false;
+      let timer: NodeJS.Timeout | null = null;
       let detachTimer: NodeJS.Timeout | null = null;
       let isDetached = false;
 
       const cleanup = () => {
+        if (timer) clearTimeout(timer);
         if (detachTimer) clearInterval(detachTimer);
         if (this.options.signal) {
           this.options.signal.removeEventListener("abort", onAbort);
@@ -621,32 +624,119 @@ export class DockerSandbox implements Sandbox {
       };
       activeProcesses.add(processRef);
 
+      // Timeout — a hung container (one that is NOT a dev server and never exits)
+      // must not run forever. The NativeSandbox had this; Docker silently ignored
+      // `options.timeout`. On timeout we force-remove the container, kill the
+      // docker client child, and resolve with exit 124 (mirrors native).
+      const timeoutVal = this.options.timeout !== undefined ? this.options.timeout : 300_000;
+
       let stdout = "";
       let stderr = "";
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      let stdoutTruncated = false;
+      let stderrTruncated = false;
+
+      // Output caps — an unbounded container log would grow memory without limit.
+      const maxStdout = this.options.maxStdoutBytes ?? 50 * 1024 * 1024; // 50MB
+      const maxStderr = this.options.maxStderrBytes ?? 10 * 1024 * 1024; // 10MB
 
       child.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString();
-        if (!this.options.capture) {
+        if (stdoutTruncated) return;
+        if (stdoutBytes + chunk.length > maxStdout) {
+          stdoutTruncated = true;
+          const allowed = maxStdout - stdoutBytes;
+          if (allowed > 0) {
+            stdout += chunk.slice(0, allowed).toString();
+            stdoutBytes += allowed;
+          }
+          stdout += "\n[TRUNCATED stdout]";
+          this.options.onEvent?.({
+            type: "output-truncated",
+            timestamp: Date.now(),
+            detail: `Stdout exceeded limit of ${maxStdout} bytes`,
+          });
+          child.stdout?.destroy();
+        } else {
+          stdout += chunk.toString();
+          stdoutBytes += chunk.length;
+        }
+        if (!this.options.capture && !stdoutTruncated) {
           process.stdout.write(chunk);
         }
       });
 
       child.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
-        if (!this.options.capture) {
+        if (stderrTruncated) return;
+        if (stderrBytes + chunk.length > maxStderr) {
+          stderrTruncated = true;
+          const allowed = maxStderr - stderrBytes;
+          if (allowed > 0) {
+            stderr += chunk.slice(0, allowed).toString();
+            stderrBytes += allowed;
+          }
+          stderr += "\n[TRUNCATED stderr]";
+          this.options.onEvent?.({
+            type: "output-truncated",
+            timestamp: Date.now(),
+            detail: `Stderr exceeded limit of ${maxStderr} bytes`,
+          });
+          child.stderr?.destroy();
+        } else {
+          stderr += chunk.toString();
+          stderrBytes += chunk.length;
+        }
+        if (!this.options.capture && !stderrTruncated) {
           process.stderr.write(chunk);
         }
       });
+
+      if (timeoutVal > 0) {
+        timer = setTimeout(() => {
+          timedOut = true;
+          this.options.onEvent?.({
+            type: "timeout",
+            timestamp: Date.now(),
+            detail: `Execution timed out after ${timeoutVal}ms`,
+          });
+          try {
+            spawnSync("docker", ["rm", "-f", containerName], { stdio: "ignore" });
+          } catch {}
+          if (child.pid && !child.killed) {
+            try {
+              if (process.platform === "win32") {
+                spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore" });
+              } else {
+                try {
+                  process.kill(-child.pid, "SIGKILL");
+                } catch {
+                  child.kill("SIGKILL");
+                }
+              }
+            } catch {}
+          }
+          this.options.onEvent?.({
+            type: "process-killed",
+            timestamp: Date.now(),
+            detail: "Container force-removed due to timeout",
+          });
+          cleanup();
+          resolve({ exitCode: 124, stdout, stderr, timedOut: true, stdoutTruncated, stderrTruncated });
+        }, timeoutVal);
+      }
 
       const startCheckDelay = 1500;
       const checkInterval = 500;
 
       const runDetachCheck = () => {
-        if (aborted || child.killed || isDetached) return;
+        if (aborted || timedOut || child.killed || isDetached) return;
 
         if (isDevServerPattern(command, stdout, stderr)) {
           isDetached = true;
           if (detachTimer) clearInterval(detachTimer);
+          // A backgrounded dev server is expected to keep running → cancel the
+          // timeout so it isn't force-removed after timeoutVal.
+          if (timer) clearTimeout(timer);
 
           // Discard subsequent logs to prevent memory leaks and EPIPE blockages
           child.stdout?.removeAllListeners("data");
@@ -690,12 +780,14 @@ export class DockerSandbox implements Sandbox {
       });
 
       child.on("close", (code: number | null) => {
-        if (aborted) return;
+        if (aborted || timedOut) return;
         cleanup();
         resolve({
           exitCode: code ?? 1,
           stdout,
           stderr,
+          stdoutTruncated,
+          stderrTruncated,
         });
       });
     });

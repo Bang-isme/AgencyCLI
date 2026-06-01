@@ -123,6 +123,12 @@ export async function runShellCommand(
       memoryLimit: opts.dockerMemoryLimit,
       cpuLimit: opts.dockerCpuLimit,
       capture: opts.capture ?? false,
+      // Honour the same robustness limits native already used — a hung or
+      // log-flooding container must time out / be capped, not run forever.
+      timeout: opts.timeout,
+      maxStdoutBytes: opts.maxStdoutBytes,
+      maxStderrBytes: opts.maxStderrBytes,
+      onEvent: opts.onSandboxEvent,
       onSecurityAlert,
       securityLevel: maxSecurityLevel,
       strictMode: maxSecurityLevel === SecurityLevel.Level5_Privileged,

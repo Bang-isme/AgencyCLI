@@ -394,5 +394,88 @@ describe("Sandbox Suite", () => {
       expect(runArgs).toContain("-c");
       expect(runArgs).toContain("npm install");
     });
+
+    it("times out a hung container with exit 124 (Docker honours options.timeout like native)", async () => {
+      // docker info → exit 0; docker run → a child that never closes (hung).
+      let callCount = 0;
+      const stdoutStream = new Readable({ read() {} });
+      const stderrStream = new Readable({ read() {} });
+      const dockerInfo = {
+        on: vi.fn((event: string, cb: any) => {
+          if (event === "close") setTimeout(() => cb(0), 5);
+          return dockerInfo;
+        }),
+      };
+      const dockerRun = {
+        stdout: stdoutStream,
+        stderr: stderrStream,
+        killed: false,
+        on: vi.fn(() => dockerRun), // never emits close → hung
+      };
+      mockSpawn.mockImplementation(() => {
+        callCount++;
+        return (callCount === 1 ? dockerInfo : dockerRun) as any;
+      });
+
+      const events: any[] = [];
+      const sandbox = new DockerSandbox({
+        projectRoot: "d:\\test-project",
+        capture: true,
+        networkDisabled: true, // no egress proxy port to bind in the test
+        timeout: 50,
+        onEvent: (ev) => events.push(ev),
+      });
+
+      const result = await sandbox.execute("sleep 999");
+      expect(result.timedOut).toBe(true);
+      expect(result.exitCode).toBe(124);
+      expect(events.some((e) => e.type === "timeout")).toBe(true);
+    });
+
+    it("truncates container stdout beyond maxStdoutBytes", async () => {
+      let callCount = 0;
+      const stdoutStream = new Readable({ read() {} });
+      const stderrStream = new Readable({ read() {} });
+      const dockerInfo = {
+        on: vi.fn((event: string, cb: any) => {
+          if (event === "close") setTimeout(() => cb(0), 5);
+          return dockerInfo;
+        }),
+      };
+      let closeCb: any = null;
+      const dockerRun = {
+        stdout: stdoutStream,
+        stderr: stderrStream,
+        killed: false,
+        on: vi.fn((event: string, cb: any) => {
+          if (event === "close") closeCb = cb;
+          return dockerRun;
+        }),
+      };
+      mockSpawn.mockImplementation(() => {
+        callCount++;
+        return (callCount === 1 ? dockerInfo : dockerRun) as any;
+      });
+
+      const events: any[] = [];
+      const sandbox = new DockerSandbox({
+        projectRoot: "d:\\test-project",
+        capture: true,
+        networkDisabled: true,
+        maxStdoutBytes: 10,
+        timeout: 0, // disable timeout for this test
+        onEvent: (ev) => events.push(ev),
+      });
+
+      const executePromise = sandbox.execute("cat bigfile");
+      stdoutStream.push("1234567890abcdef"); // 16 bytes > 10
+      setTimeout(() => closeCb?.(0), 10);
+
+      const result = await executePromise;
+      expect(result.stdoutTruncated).toBe(true);
+      expect(result.stdout).toContain("[TRUNCATED stdout]");
+      expect(result.stdout.slice(0, 10)).toBe("1234567890");
+      expect(events.some((e) => e.type === "output-truncated")).toBe(true);
+    });
   });
 });
