@@ -376,3 +376,114 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   Commit kết thúc message bằng trailer `Co-Authored-By`. CI kích hoạt khi có remote GitHub (hiện local-only).
 - **Bắt đầu session sau:** đọc HARDENING_HANDOFF.md §5 (banner **LATEST** → git history + verify gate +
   §2.3 compaction + audit wired-or-dead; top pick = wire-or-delete 1 module dead, hoặc đo eval corpus khó hơn).
+
+---
+
+## 8. HƯỚNG MỚI — chất lượng runtime + đa phương thức + bảo trì/mở rộng (2026-06-01)
+
+> **Bối cảnh.** User gặp crash thật khi chạy BYOK (NVIDIA NIM `minimaxai/minimax-m2.7`):
+> `nvidia API error: This model's maximum context length is 196608 tokens. However, your messages
+> resulted in 197270 tokens` — DÙ harness đã in `Auto-reducing context window from 197270 to 128515`.
+> Tức là phần "auto-reduce" **chạy nhưng KHÔNG hiệu lực**. User yêu cầu tập trung: memory, sandbox,
+> built-in tools, đọc ĐÚNG thông số từ `models.json`, thêm **gửi ảnh** + **paste input dài không gãy UI**,
+> rà soát chỗ chưa đúng + cải thiện THẬT, và đảm bảo **tính bảo trì + mở rộng** để sau tích hợp thêm.
+> Mục này là **chẩn đoán từ source thật** + hướng sửa; **chưa code** (session sau làm). Mỗi item ghi
+> rõ SỰ THẬT → LỖI/THIẾU → SỬA (+ file) → chống trùng lặp.
+
+### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← 🔴 P0 (gây crash)
+- **SỰ THẬT.** `chat/stream.ts:288-328` + `chat/orchestrator.ts:~296-330` bắt `isContextLimitError`, giảm
+  `contextWindow` override (`newLimit`), rồi **chỉ** `turnHistory[0].content = repackContextAndSystemPrompt(...)`
+  (chỉ pack lại SYSTEM prompt) → `continue` retry.
+- **LỖI.** Phần token lớn nằm ở `turnHistory[1..n]` (lượt hội thoại + tool results + paste dài + file đọc vào),
+  KHÔNG phải system prompt. Pack lại system prompt giảm vài k token; phần thân vẫn 197k → API vẫn từ chối →
+  retry vô ích tới khi hết `maxAttempts` rồi `throw`. (cont'd-21 đã ghi nhận "reactive handler chỉ thu *window*,
+  không thu *conversation*" — đây chính là chỗ chưa đóng.)
+- **SỬA.** Helper DÙNG CHUNG mới trong `chat/turn-helpers.ts` (ví dụ `reduceHistoryToFit(turnHistory, newLimit, ctx)`)
+  gọi bởi CẢ stream.ts + orchestrator.ts (KHÔNG copy-paste): (1) pack lại system prompt như cũ; (2) **nén/cắt thân**
+  — tái dùng `compactTurnHistory` (canonical, §2.3) để tóm phần giữa, NẾU còn quá → cắt tool-result lớn nhất /
+  bỏ lượt cũ nhất, **lặp tới khi `estimateMessagesTokens(turnHistory) <= newLimit*safety`**; (3) chỉ retry khi đã
+  THẬT SỰ vừa (assert estimate ≤ limit TRƯỚC khi gửi). Reactive này là lưới cuối; proactive là 8.3.
+
+### 8.2 — Đọc SAI thông số model từ `models.json` (catalog không biết provider)  ← 🔴 P0
+- **SỰ THẬT.** `models.json` ở `packages/providers/models.json` (KHÔNG ở gốc repo — sửa mọi tham chiếu cũ).
+  `model-catalog.ts` `matchModelKey(model, keys)` (dòng 58) lấy `base = id.split("/").pop()` rồi match trên
+  **bare model id** vào index gộp PHẲNG mọi provider. `minimax-m2.7` tồn tại dưới NHIỀU provider với context KHÁC
+  nhau: `ollama-cloud/minimax-m2.7`=**196608** (đúng như lỗi NVIDIA), `302ai/MiniMax-M2.7`=**204800**,
+  `fireworks/minimax-m2p7`=196608. Không có `nvidia/...` trong file.
+- **LỖI.** Lookup **không biết provider của user** → `minimaxai/minimax-m2.7` (NVIDIA) khớp nhầm entry provider khác
+  (vd 204800) → budget cho phép tới ~204800 → gửi 197270 → NVIDIA (giới hạn THẬT 196608) từ chối. Đây đúng "thông
+  tin model có vẻ sai" user nói. (Tương tự rủi ro cho cost/capabilities khi gộp phẳng.)
+- **SỬA.** Catalog **provider-aware**: thread `providerId` vào `getModelSpec`→`getCatalogSpec(model, providerId?)`;
+  index thêm key `"<provider>/<model>"` (không chỉ bare); lookup theo thứ tự: (a) entry đúng provider của user, (b)
+  nếu provider user không có trong file → trong các entry cùng bare-id **chọn CONSERVATIVE = context NHỎ NHẤT** (an
+  toàn budget, không bao giờ over-allow), (c) cuối mới tới CANONICAL_PROVIDERS. Giữ `matchModelKey` cho fallback bare.
+  Test: thêm case minimax đa-provider → assert NVIDIA ra 196608, không phải 204800.
+
+### 8.3 — Token estimator ƯỚC THIẾU (gây overflow + nén trễ)  ← 🔴 P0 (đi kèm 8.1/8.2)
+- **SỰ THẬT.** `providers/error-parser.ts:71` `estimateMessagesTokens` = `Σ content.length / 4 + msgs*5`. Lỗi NVIDIA:
+  ước 192627 nhưng THẬT 197270 (thiếu ~2.4%). Dùng ở `turn-helpers.ts:328` (ngưỡng compaction) + 2 reactive handler.
+- **LỖI.** (a) `len/4` lạc quan cho code/JSON/tool-result nhiều ký tự đặc biệt/non-ASCII → ước THẤP hơn thật →
+  budget tưởng vừa khi KHÔNG vừa, và compaction proactive kích **trễ**. (b) Giả định `content` luôn là string → vỡ khi
+  thêm multimodal (8.4). (c) Bỏ qua overhead role/tool-call structure.
+- **SỬA.** Estimator phải ** err HIGH** (ước dư, an toàn): tỉ lệ bảo thủ hơn (vd `len/3.5` cho phần code, hoặc nhân
+  margin ~1.1) + cộng overhead role/structural + xử lý `content` non-string (đếm phần text của multimodal). Nguyên tắc:
+  thà nén sớm còn hơn tràn. Giữ 1 hàm canonical (đừng tạo estimator thứ 2). Có thể để 1 cờ tinh chỉnh ratio.
+
+### 8.4 — Gửi ảnh / đa phương thức (multimodal)  ← 🟡 P1 (tính năng mới user yêu cầu)
+- **SỰ THẬT.** `providers/types.ts:29` `ChatMessage.content: string` (THUẦN text). Adapter (`adapters/openai-compatible.ts`)
+  **không** xử lý `image_url`/base64/vision (grep rỗng). NHƯNG catalog ĐÃ phát hiện năng lực: `entryToCatalogSpec` set
+  `capabilities.vision = attachment || input.includes("image"|"pdf")` — tức "biết model nào nhận ảnh" nhưng KHÔNG có
+  đường ống gửi ảnh (detection có, plumbing chưa → built-but-unwired một nửa).
+- **SỬA (đa tầng, làm sau khi P0 xong).** (1) Mở rộng `ChatMessage.content: string | ContentPart[]` (`ContentPart =
+  {type:"text",text} | {type:"image",url|base64,mimeType}`) — additive, default string giữ byte-identical; (2) adapter
+  openai-compatible map ContentPart→`content:[{type:"text"...},{type:"image_url",image_url:{url}}]` CHỈ khi
+  `getModelSpec(model).capabilities.vision` (gate bằng năng lực catalog — tái dùng, không đoán); model không vision →
+  fallback (mô tả text / từ chối rõ ràng); (3) estimator (8.3) đếm token ảnh thô (vd hằng/ảnh); (4) TUI: affordance đính
+  ảnh (path / paste ảnh từ clipboard → đọc file → base64). Giữ provider-agnostic qua interface adapter (mở rộng dễ).
+
+### 8.5 — Paste input DÀI làm gãy UI (TUI composer)  ← 🟡 P1 (user yêu cầu)
+- **SỰ THẬT.** Input ở `tui/components/PromptComposer.tsx` + `ComposerBlock.tsx` (Ink). Paste 1 khối lớn → Ink/Yoga
+  re-layout toàn khung theo từng ký tự + 1 dòng dài cực kỳ → giật/gãy frame (cùng họ lag ConPTY đã ghi ở Phần 1 (TUI)).
+- **SỬA.** (1) Bật **bracketed-paste** (gom cả khối thành 1 sự kiện thay vì N keypress); (2) **cap chiều cao composer**
+  + cuộn nội bộ (không để input cao vô hạn đẩy vỡ layout); (3) với paste CỰC dài → đề nghị biến thành **attachment**
+  (lưu nội dung, hiện placeholder `[pasted 12.4k chars]`, nội dung thật vào turn — không render hết ra khung). Đo lại
+  bằng `verify`/chạy TUI thật. Tái dùng tiện ích width/truncate sẵn có (`tui/utils`), đừng tự viết lại.
+
+### 8.6 — Memory recall: kiểm CHẤT LƯỢNG thật (không chỉ "chạy")  ← 🟢 P2
+- **SỰ THẬT.** Đã hardened nhiều (cont'd 19): fix recall đa-session, GC/quota/decay, secret-redact, wire `HybridRetriever`
+  + `LocalDeterministicEmbedder` (feature-hashing, offline/deterministic, sau interface `Embedder`), cờ `AGENCY_MEMORY_SEMANTIC`.
+- **THIẾU.** `LocalDeterministicEmbedder` là **placeholder** (feature-hashing → recall ngữ nghĩa YẾU, chỉ giữ tính
+  reproducible cho eval/replay). Chưa đo recall có thật sự surface đúng ký ức hữu ích trong phiên thật. Đường nâng cấp ĐÃ
+  có sẵn: cắm **provider-embedder thật** sau interface `Embedder` (vd embeddings API), gate riêng để KHÔNG phá determinism
+  của eval (eval/replay dùng local). **SỬA:** thêm bài đo recall (precision@k trên corpus episode), rồi cân nhắc provider-embedder
+  optional. Interface `Embedder` chính là điểm mở rộng — giữ nguyên, chỉ thêm impl.
+
+### 8.7 — Codebase indexing: kiểm incremental + độ tươi  ← 🟢 P2
+- **SỰ THẬT.** `index/workspace-indexer.ts` (`buildIndex`/`incrementalUpdateAsync`/`isIndexStale`/`writeIndex`/`loadIndex`);
+  ĐÃ wired vào context pack: `context/pack.ts:63 loadIndex` trong `buildContextPack` → index THỰC SỰ nuôi prompt (retrieval live).
+- **KIỂM.** (1) `incrementalUpdateAsync` có bỏ sót file đổi/đổi tên/xoá không (đối chiếu mtime/hash)? (2) `isIndexStale` ngưỡng
+  hợp lý? (3) index có chọn ĐÚNG file liên quan vào pack không (chất lượng retrieval, không chỉ có-mặt)? (4) re-index đồng bộ
+  trong dispatch là ứng viên offload worker-thread (đã ghi Phần 1). Đây là kiểm-chứng + cải thiện, không phải wiring.
+
+### 8.8 — Sandbox + built-in tools: rà path + edge-case  ← 🟢 P2
+- **SỰ THẬT.** `security/sandbox.ts`: ưu tiên **docker** (`isDockerAvailable`, `host.docker.internal`, proxy) + fallback
+  **native** (`--sandbox-mode native`), cleanup Windows `taskkill /F /T`. Built-in tools: 17 tool trong 1 `ToolRegistry`
+  (đã audit cont'd 12), auto-advertise, approval-gated.
+- **KIỂM.** (1) docker-unreachable → thông báo rõ + không treo (đã có message); (2) native mode cảnh báo bảo mật đủ mạnh?
+  (3) tool handler edge: truncate (đã scale theo window), lỗi surface (invokeSafe không throw), file-write atomic (đã verify).
+  Đa số đã chắc — đây là rà soát hồi quy, ưu tiên thấp.
+
+### 8.9 — Bảo trì & MỞ RỘNG (mục tiêu xuyên suốt của user)  ← 🟢 nền
+- **Điểm mở rộng đã có (giữ + tài liệu hoá, đừng phá):** provider mới → thêm adapter sau interface `LlmProvider` +
+  entry `models.json`; tool mới → `registry.register` (tự advertise qua `formatToolDocs`); skill/agent mới → cập nhật
+  manifest/seed (guard skills↔manifest + agents↔prompt/seed bắt drift); behavior mới → cờ trong `flags.ts` (surface ở
+  `agency status`, guard flags↔status); embedder mới → impl interface `Embedder`; dep mới → guard deps↔imports + package↔cycles.
+- **6 GUARD hiện có** (chạy trong `pnpm verify`) là xương sống bảo trì: skills↔manifest, agents↔prompt/seed, flags↔status,
+  architecture↔cycles (module), package↔cycles, deps↔imports hygiene. **Mỗi tính năng mới ở §8 phải đi kèm: tái dùng
+  canonical home, cờ nếu đổi hành vi, test, cập nhật docs + memory** — đúng nhịp slice của chiến dịch.
+
+### Thứ tự đề xuất cho session sau
+**P0 (1 slice, cùng gốc "không tràn"):** 8.2 (catalog provider-aware → contextWindow ĐÚNG) + 8.3 (estimator err-high) +
+8.1 (reactive cắt thân, helper dùng chung) — làm CÙNG nhau vì cùng trị crash overflow; có test BYOK đa-provider + một test
+mô phỏng history lớn → assert không gửi quá `newLimit`. **P1:** 8.5 (paste dài) rồi 8.4 (ảnh, đa tầng). **P2:** 8.6/8.7/8.8.
+Mỗi bước: `pnpm verify` xanh → commit `master` → sync docs/memory.
