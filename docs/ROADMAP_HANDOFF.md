@@ -399,7 +399,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > reactive trước đây khi `parsedLimit >= oldLimit` áp `oldLimit*0.8` MỖI vòng + `updateModelOverride`
 > ghi đè ĐĨA → minimax tụt 196608→…→**16887** kẹt trong `~/.agency/config.json` (đã dọn override hỏng
 > của user; KHÔNG đụng API key). Giờ honor limit thật từ provider + cắt thân. `pnpm verify` xanh 16/16
-> (providers 850 · core 351 · tui 116). **P1 kế: §8.5 paste dài → §8.4 ảnh.**
+> (providers 850 · core 351 · tui 116). **CẬP NHẬT 2026-06-01 (HEAD `aa14e48`): sau P0 đã xong tiếp §8.5 paste ✅ ·
+> §8.11-A/B/C token-efficiency ✅ (prompt-cache reorder + Anthropic cache_control + soften 5-approaches) · 2 runtime fix
+> từ ảnh user ✅ (tool `append_file` cho file lớn + egress `fonts.gstatic.com`). Baseline giờ: core 367 · providers 852 ·
+> security 36 · ~2078 test · 29 cờ · 18 tool. ▶ FRONTIER: §8.10 TUI realtime (+ độ bền loop/resume) · §8.4 ảnh · §8.11-D/E.**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -507,8 +510,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 
 ### 8.8 — Sandbox + built-in tools: rà path + edge-case  ← 🟢 P2
 - **SỰ THẬT.** `security/sandbox.ts`: ưu tiên **docker** (`isDockerAvailable`, `host.docker.internal`, proxy) + fallback
-  **native** (`--sandbox-mode native`), cleanup Windows `taskkill /F /T`. Built-in tools: 17 tool trong 1 `ToolRegistry`
-  (đã audit cont'd 12), auto-advertise, approval-gated.
+  **native** (`--sandbox-mode native`), cleanup Windows `taskkill /F /T`. Built-in tools: **18** tool trong 1 `ToolRegistry`
+  (audit cont'd 12 ở 17; +`append_file` 2026-06-01), auto-advertise, approval-gated.
 - **KIỂM.** (1) docker-unreachable → thông báo rõ + không treo (đã có message); (2) native mode cảnh báo bảo mật đủ mạnh?
   (3) tool handler edge: truncate (đã scale theo window), lỗi surface (invokeSafe không throw), file-write atomic (đã verify).
   Đa số đã chắc — đây là rà soát hồi quy, ưu tiên thấp.
@@ -583,7 +586,7 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 
 ### 8.11 — Harness & built-in tools: ĐÚNG + ĐỦ + ÍT TOKEN (audit 2026-06-01)
 > **Bối cảnh user.** "Đảm bảo harness đúng + đầy đủ built-in tools, tools hoạt động xịn, **ít token cho mọi model**
-> mà vẫn nhanh + chất lượng cao." Audit từ source thật (17 tool trong 1 `ToolRegistry`, auto-advertise qua
+> mà vẫn nhanh + chất lượng cao." Audit từ source thật (lúc audit 17, nay **18** tool trong 1 `ToolRegistry`, auto-advertise qua
 > `registry.listTools()`→`buildSystemPrompt`). Mỗi mục đo được, SỰ THẬT→LỖI→SỬA(+file).
 
 **(A) `truncateToolResult` model-aware scaling CHẾT (built-but-unwired) — ✅ ĐÃ SỬA (commit `a550bd2`).**
@@ -632,7 +635,7 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   từ 1 `const flags`). Test `prompt-cache-order.test.ts` +4 (legacy verbatim / on dropped exactly-5 / hardened default on /
   independent of cache flag). core 360→364, **29 flag**, surface `agency status` (`buildFlagRows` "Soft approaches").
 
-**(D) Tool-docs re-list args 17 tool mỗi turn (~1109 token).  ← 🟢 biên (sau B).**
+**(D) Tool-docs re-list args 18 tool mỗi turn (~1109 token).  ← 🟢 biên (sau B). [Việc kế của §8.11]**
 - SỰ THẬT. `formatToolDocs` (`prompt.ts:6`) liệt mọi tool + mọi arg mỗi turn. SỬA (sau khi B cache xong, lợi biên):
   rút gọn arg cho tool hiển nhiên, hoặc chỉ liệt arg cho tool ít rõ. Behavior-cẩn-thận (model cần biết schema).
 
@@ -648,11 +651,15 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > E (grep naming/patch/index-search).**
 
 ### Thứ tự đề xuất cho session sau
-**~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.
+**~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** + **~~§8.11-A/B/C token-efficiency~~ ✅** + **~~2 runtime fix ảnh user
+(append_file + egress fonts.gstatic.com)~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.
 **▶ NEXT P1 — 2 nhánh (user ưu tiên):**
 - **§8.10 TUI realtime activity** (user báo trực tiếp 2026-06-01, "đang làm gì chưa realtime + UX chưa chuyên nghiệp"):
   event tool-lifecycle cấu trúc cho main turn (gốc A) → lái status/phase realtime (B) → gộp 4 bề mặt + dedup 3 bản render
-  (D/E) → progress per-tool (C). Xem §8.10 ở trên (đã chẩn đoán từ source).
+  (D/E) → progress per-tool (C). Xem §8.10 ở trên (đã chẩn đoán từ source). **+ SUB-ITEM CÒN MỞ (ưu tiên cao, từ ảnh user):
+  max-loop-limit(15) + "tiếp tục" ghi LẠI từ đầu** = thiếu completion-detection / resume tiến độ file dở. `append_file`
+  (`aa14e48`) đã trị GỐC (có primitive ghi nối-tiếp) nhưng độ bền vòng lặp riêng: chạm maxLoops nên báo "đã ghi X/Y, còn Z"
+  + "tiếp tục" NỐI TIẾP file dở (đọc trạng thái thật) thay vì restart. Điều tra `maxLoops` ở turn loop + cách tái dựng context.
 - **§8.4 ảnh đa tầng:** `ChatMessage.content: string|ContentPart[]` additive (default string = byte-identical); adapter
   openai-compatible map `image_url` CHỈ khi `getModelSpec(model).capabilities.vision`; estimator §8.3 ĐÃ đếm token ảnh sẵn
   (`IMAGE_PART_TOKENS`); TUI đính ảnh (path qua `@` đã có resolve IMG badge — tận dụng). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →
