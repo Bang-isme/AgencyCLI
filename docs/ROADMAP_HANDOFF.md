@@ -403,8 +403,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > §8.11-A/B/C token-efficiency ✅ (prompt-cache reorder + Anthropic cache_control + soften 5-approaches) · 2 runtime fix
 > từ ảnh user ✅ (tool `append_file` cho file lớn + egress `fonts.gstatic.com`) · **§8.10 loop/resume ✅ (2026-06-01: notice
 > resume khi chạm maxLoops, cờ `AGENCY_RESUME_CONTINUATION`)** · **§8.10-A realtime tool narration ✅ (2026-06-02: emitThought
-> tại main-turn tool loop → status line realtime, dùng cờ sẵn `cognitionStream`)**. Baseline giờ: core **381** · providers 852 ·
-> security 36 · ~2092 test · **30 cờ** · 18 tool. ▶ FRONTIER: §8.10-B/D/E/C (status-phase từ event, gộp 4 bề mặt + dedup 3 render, progress per-tool) · §8.4 ảnh · §8.11-D/E.**
+> tại main-turn tool loop → status line realtime, dùng cờ sẵn `cognitionStream`)** · **§8.10-B/D ✅ (2026-06-02: lái
+> `activityPhase` từ thought qua `activityPhaseFromThought` → status hết kẹt "Writing" >10s; bỏ subtask GIẢ ExecutionPanel →
+> activity thật)**. Baseline giờ: core **381** · tui **134** · providers 852 · security 36 · ~2102 test · **30 cờ** · 18 tool.
+> ▶ FRONTIER: §8.10-E (dedup 3 render `SystemActivityLine`/`formatSystemActivityLine`/`toConciseTelemetry`) + C (inline-trace nhãn sai `lastToolTargets`) · §8.4 ảnh · §8.11-D/E.**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -540,10 +542,20 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > dispatch→Spawning subagent; phân biệt CỐ Ý với `SemanticTranslator` richer của TUI — core không import được TUI).
 > `App.tsx` ĐÃ subscribe `thought:emitted`→`emitHeartbeat`→status line + CognitionPanel → status giờ phản ánh REALTIME
 > "đang làm gì" thay vì kẹt "Writing". KHÔNG event mới / cờ mới / dead-producer: gate bằng cờ SẴN CÓ `cognitionStream`
-> (off-legacy no-op byte-identical / on-hardened). Test `tool-activity-narration.test.ts` (8). core 373→381. **CÒN LẠI
-> §8.10:** (B) lái `activityPhase`/label theo event (status hiện vẫn dựa `heartbeat.message` — đã realtime, nhưng phase-tree
-> chưa); (D) gộp 4 bề mặt; (E) dedup 3 render `SystemActivityLine`/`formatSystemActivityLine`/`toConciseTelemetry`; (C)
-> progress per-tool + sửa inline-trace nhãn sai (`lastToolTargets` global-Map vỡ parallel — vẫn ở nhánh text-parse, chưa đụng).
+> (off-legacy no-op byte-identical / on-hardened). Test `tool-activity-narration.test.ts` (8). core 373→381.
+>
+> **✅ §8.10-B/D ĐÃ XONG (2026-06-02, commit `47c2667`):** (B) `App.tsx handleThought` giờ map mỗi thought (structured
+> `source`/`phase`) → `activityPhase` qua hàm pure MỚI `activityPhaseFromThought` (`state/context-tracker.ts`:
+> retrieval→reading / worker+editing→editing / sandbox→running / worker+planning→thinking / planner→routing /
+> validator→analyzing; null = giữ nguyên) → status line hết rơi về "Writing" cũ khi `heartbeat.message` quá 10s; thêm phase
+> "running" + label. Ride cờ `cognitionStream` (legacy 0 thought → 0 setActivityPhase → byte-identical; reset idle qua
+> `processNextInQueue` khi queue cạn). (D) `ExecutionPanel` bỏ subtask HARDCODE GIẢ ("inspect routing"/"apply patches"/
+> "compile application") → sub-line node ACTIVE = thought THẬT mới nhất (rỗng khi không có narration, KHÔNG fake); mapping
+> phase→node-status trích sang hàm pure `computeExecutionPhaseStatuses` + mở rộng (editing/running→EXECUTE, analyzing→VERIFY).
+> Test `execution-activity.test.ts` (10). tui 124→134. **CÒN LẠI §8.10:** (E) dedup 3 render
+> `SystemActivityLine`≈`formatSystemActivityLine`≈`toConciseTelemetry`; (C) sửa inline-trace nhãn sai (`lastToolTargets`
+> global-Map keyed theo toolName vỡ khi parallel — vẫn ở nhánh text-parse, CHƯA đụng) + progress per-tool. (4 bề mặt: nhánh
+> text-parse inline vẫn song song với narration cấu trúc — gộp ở E/C.)
 
 **(A) Main turn KHÔNG có event tool có cấu trúc — UI phải regex-parse text English (gốc lớn nhất).**
 - **SỰ THẬT.** Main turn báo hiệu tool bằng cách **nhồi text người-đọc** vào stream LLM:
