@@ -648,7 +648,6 @@ This layer backs both the CLI's headless rendering and the data the TUI's runtim
 
 ## Other notable core modules
 
-- `validation/correctness-science.ts` — runtime correctness harness (`RuntimeInvariantEngine`, `LinearizabilityValidator`, `LatencyProfiler`, `ConvergenceTracker`, `DeterministicPRNG`)
 - `task/convergence-engine.ts` — `ConvergenceEngine` with 0–6 recovery levels for long-running task convergence
 - `chat/circuit-breaker.ts` — tool-failure circuit breaker guarding the chat loop
 - `kernel/entropy-provider.ts` — `DeterministicEntropy` / `DeterministicClock` + `installDeterministicGlobals()` for reproducible runs

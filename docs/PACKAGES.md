@@ -122,7 +122,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `harness.ts` | `runWithVerificationHarness()` — max 3 retry + auto_gate |
 | `tool-harness.ts` | `parseToolCalls()`, `executeTool()`, `registry`, `truncateToolResult()` — tool-call loop + registry |
 | `invoke-actions.ts` | `getInvokeActions()` — resolves skill invoke actions |
-| `context-delivery.ts` | `ContextSufficiencyModel`, `TopologyDetector`, `ContextEscalationEngine` — tiered skill context delivery |
 
 **`output/` — Output Rendering Engine (16 modules):**
 | Module | Key Exports |
@@ -158,7 +157,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `memory/bridge.ts` | `runMemoryScript()` |
 | `memory/compact.ts` | `compactContext()` |
 | `kernel/entropy-provider.ts` | `DeterministicEntropy`, `DeterministicClock`, `installDeterministicGlobals()`, `deterministicPromiseRace()` |
-| `validation/correctness-science.ts` | `RuntimeInvariantEngine`, `LinearizabilityValidator`, `LatencyProfiler`, `ConvergenceTracker`, `DeterministicPRNG` — runtime correctness harness |
 | `utils/ast-compiler.ts` | `applyPatch()`, `replaceFunctionBody()`, `renameSymbol()`, `insertFunction()`, … — AST patch ops |
 | `utils/file-parser.ts` | SEARCH/REPLACE edit parsing |
 | `utils/package-manager.ts` | `detectPackageManager()`, `getBuildCommand()`, `getTestCommand()`, `getInstallCommand()` |
