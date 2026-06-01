@@ -409,8 +409,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (compact tool-docs args, cờ
 > `AGENCY_COMPACT_TOOL_DOCS`) · §8.11-E ✅ (clarify grep mô tả cross-ref) → §8.11 ĐÓNG TRỌN** · **§8.7 ✅ (2026-06-02: index
 > freshness — xóa changedFiles fast-path dead+buggy)** · **§8.8 ✅ (2026-06-02: self-kill HARD-refuse — báo user `c03b9a2`;
-> DockerSandbox timeout+output-cap parity native `71cbe78`)**.
-> Baseline giờ: core **391** · tui **148** · providers 852 · security **38** · ~2129 test · **31 cờ** · 18 tool.
+> DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`)**.
+> Baseline giờ: core **396** · tui **148** · providers 852 · security **38** · ~2134 test · **31 cờ** · 18 tool.
 > ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
@@ -540,6 +540,14 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   thêm timeout (timer → `docker rm -f` + kill child + resolve exit 124/timedOut; clear khi close/abort/dev-server-detach) +
   output-cap (`[TRUNCATED]` + event), giống native; forward `timeout`/`maxStdoutBytes`/`maxStderrBytes`/`onEvent` xuống docker.
   Test `sandbox.test.ts` +2 (hung→124+timeout event; stdout vượt cap→truncated). security 36→38.
+- **✅ LỖI 3 — model CHURN trên lệnh bị chặn (ảnh 2 user, commit `ca2c954`):** sau khi self-kill bị refuse, model emit nhiều
+  `taskkill /IM node.exe` VARIANT (470 tok, vẫn "Writing"). Gốc: `executeTool` gọi `recordToolSuccess` cho MỌI kết quả không-throw —
+  kể cả chuỗi `Error…` (tool handler + refusal trả error dạng string) → nhánh `consecutiveFailures` của circuit-breaker CHẾT (lệnh
+  refuse lặp tính "success" mãi); breaker lại là singleton module không reset giữa turn + `toolCallHistory` phình + identical-check
+  KHÔNG bắt variant (command string khác nhau). SỬA: `executeTool` đếm kết quả `^Error[:\s]` là FAILURE → breaker `consecutiveFailures≥3`
+  trip cả trên variant + trả "circuit breaker triggered"; reset breaker đầu MỖI turn (`resetToolCircuitBreaker` wired CẢ 2 path) chống
+  leak xuyên turn; bound `toolCallHistory` 50. Test `circuit-breaker.test.ts` (5). core 391→396. **CÒN NGỎ (handoff):** breaker trip
+  hiện chỉ trả message (soft) — turn loop CHƯA hard-break trên trip → model vẫn có thể phớt lờ tới maxLoops.
 - **CÒN NGỎ (ưu tiên thấp):** native-mode security-warning mạnh hơn; tool-handler edge khác (đa số đã chắc: truncate scale window,
   invokeSafe không throw, file-write atomic — đã verify).
 
