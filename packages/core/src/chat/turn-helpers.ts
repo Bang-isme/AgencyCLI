@@ -149,6 +149,85 @@ export interface CompactionOptions {
   keepRecent?: number;
   /** Output cap for the generated summary (default 300). */
   maxSummaryTokens?: number;
+  /**
+   * Max characters fed to a single summarization call (default 8000 ≈ 2k
+   * tokens). When the middle exceeds this it is summarized in chunks and the
+   * partial summaries are combined, so the summarizer prompt itself can never
+   * overflow the model window (the old single-shot summary of an unbounded
+   * middle could).
+   */
+  maxInputChars?: number;
+}
+
+/** Render a turn list as the summarizer's plain-text input. */
+function renderForSummary(messages: ChatMessage[]): string {
+  return messages.map((m) => `[${m.role}]: ${m.content}`).join("\n");
+}
+
+const SUMMARY_INSTRUCTION =
+  "Summarize the following developer interaction history cleanly and very " +
+  "briefly, preserving key findings, active tasks, decisions, and any " +
+  "acceptance criteria. Output only the summary:\n\n";
+
+/**
+ * Summarize the middle turns without ever overflowing the summarizer's own
+ * context: if the rendered middle fits in `maxInputChars` it is one call,
+ * otherwise it is chunked (each chunk ≤ budget) and the partial summaries are
+ * combined hierarchically (also bounded). Returns "" on any failure so the
+ * caller falls back to a placeholder. Never throws.
+ */
+async function summarizeMiddle(
+  middle: ChatMessage[],
+  provider: CompletionProvider,
+  maxSummaryTokens: number,
+  maxInputChars: number
+): Promise<string> {
+  const once = async (text: string): Promise<string> => {
+    const out = await provider.complete([{ role: "user", content: SUMMARY_INSTRUCTION + text }], {
+      maxTokens: maxSummaryTokens,
+    });
+    return typeof out === "string" ? out.trim() : "";
+  };
+
+  try {
+    const full = renderForSummary(middle);
+    if (full.length <= maxInputChars) {
+      return await once(full);
+    }
+
+    // Pack messages into chunks that each fit the input budget.
+    const chunks: string[] = [];
+    let buf: ChatMessage[] = [];
+    let bufLen = 0;
+    for (const m of middle) {
+      const piece = `[${m.role}]: ${m.content}`;
+      if (bufLen > 0 && bufLen + piece.length > maxInputChars) {
+        chunks.push(renderForSummary(buf));
+        buf = [];
+        bufLen = 0;
+      }
+      buf.push(m);
+      bufLen += piece.length + 1;
+    }
+    if (buf.length > 0) chunks.push(renderForSummary(buf));
+
+    const partials: string[] = [];
+    for (const c of chunks) {
+      const s = await once(c.slice(0, maxInputChars));
+      if (s) partials.push(s);
+    }
+    if (partials.length === 0) return "";
+    if (partials.length === 1) return partials[0]!;
+
+    // Combine partial summaries (bounded — fall back to the concatenation if the
+    // combine call exceeds budget or fails).
+    const combined = partials.join("\n");
+    if (combined.length > maxInputChars) return combined.slice(0, maxInputChars);
+    return (await once(combined)) || combined;
+  } catch {
+    // Compaction must never break a turn — caller substitutes a placeholder.
+    return "";
+  }
 }
 
 export interface CompactionResult {
@@ -178,6 +257,7 @@ export async function compactTurnHistory(
   const thresholdRatio = options.thresholdRatio ?? 0.7;
   const keepRecent = options.keepRecent ?? 4;
   const maxSummaryTokens = options.maxSummaryTokens ?? 300;
+  const maxInputChars = options.maxInputChars ?? 8000;
 
   const threshold = Math.round(contextWindowLimit * thresholdRatio);
   const tokenCount = estimateMessagesTokens(messages);
@@ -200,19 +280,9 @@ export async function compactTurnHistory(
 
   let summaryText = "";
   if (provider && typeof provider.complete === "function") {
-    try {
-      const payload =
-        "Summarize the following developer interaction history cleanly and very " +
-        "briefly, preserving key findings, active tasks, decisions, and any " +
-        "acceptance criteria. Output only the summary:\n\n" +
-        middle.map((m) => `[${m.role}]: ${m.content}`).join("\n");
-      const out = await provider.complete([{ role: "user", content: payload }], {
-        maxTokens: maxSummaryTokens,
-      });
-      summaryText = typeof out === "string" ? out.trim() : "";
-    } catch {
-      // Compaction must never break a turn — fall through to the placeholder.
-    }
+    // Chunked + bounded so the summarizer's own prompt can never overflow the
+    // model window (a single-shot summary of an unbounded middle could).
+    summaryText = await summarizeMiddle(middle, provider, maxSummaryTokens, maxInputChars);
   }
 
   if (!summaryText) {

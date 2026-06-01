@@ -72,4 +72,33 @@ describe("compactTurnHistory (roadmap §2.3 context-window compaction)", () => {
     expect(res.compacted).toBe(true);
     expect(res.messages[1].content).toContain("earlier turn(s) omitted");
   });
+
+  it("chunks a large middle so the summarizer prompt never overflows (bounded input)", async () => {
+    // Three large middle turns + four recent; force chunking with a tiny budget.
+    const messages: ChatMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "M1 " + "a".repeat(200) },
+      { role: "assistant", content: "M2 " + "b".repeat(200) },
+      { role: "user", content: "M3 " + "c".repeat(200) },
+      { role: "user", content: "recent 4" },
+      { role: "assistant", content: "recent 3" },
+      { role: "user", content: "recent 2" },
+      { role: "assistant", content: "recent 1" },
+    ] as ChatMessage[];
+
+    const provider = { complete: vi.fn().mockResolvedValue("partial") };
+    const res = await compactTurnHistory(messages, provider, 20, { maxInputChars: 250 });
+
+    expect(res.compacted).toBe(true);
+    expect(res.summarizedTurns).toBe(3); // the three middle turns
+    expect(res.messages.length).toBe(6); // system + summary + last 4
+    expect(res.messages[1].content).toContain("partial");
+
+    // It did NOT single-shot a giant prompt: multiple bounded calls were made…
+    expect(provider.complete.mock.calls.length).toBeGreaterThan(1);
+    // …and every call's input stayed within the budget (+ the fixed instruction).
+    for (const [msgs] of provider.complete.mock.calls) {
+      expect((msgs[0].content as string).length).toBeLessThan(250 + 300);
+    }
+  });
 });
