@@ -26,7 +26,7 @@ describe("agency doctor", () => {
 
     const parsed = JSON.parse(result.stdout.trim()) as {
       ok: boolean;
-      checks: { name: string; status: string }[];
+      checks: { name: string; status: string; detail: string }[];
     };
     expect(typeof parsed.ok).toBe("boolean");
     expect(Array.isArray(parsed.checks)).toBe(true);
@@ -35,5 +35,27 @@ describe("agency doctor", () => {
     expect(names).toContain("python");
     expect(names).toContain("skills-pack");
     expect(names).toContain("providers");
+  });
+
+  it("validates skills-pack integrity (declared skills all resolve to a SKILL.md)", () => {
+    if (!existsSync(CLI_ENTRY)) {
+      throw new Error(`Build CLI first: pnpm --filter @agency/cli build (${CLI_ENTRY})`);
+    }
+
+    const result = spawnSync(process.execPath, [CLI_ENTRY, "doctor", "--json"], {
+      env: { ...process.env, AGENCY_SKILLS_ROOT: FIXTURE },
+      encoding: "utf8",
+    });
+
+    const parsed = JSON.parse(result.stdout.trim()) as {
+      checks: { name: string; status: string; detail: string }[];
+    };
+    const pack = parsed.checks.find((c) => c.name === "skills-pack");
+    expect(pack).toBeDefined();
+    // The mock-skills fixture is internally consistent → the deeper check passes
+    // and the detail now reports the declared-skill count (proves it didn't just
+    // confirm the manifest file exists).
+    expect(pack!.status).toBe("ok");
+    expect(pack!.detail).toMatch(/\d+ skills/);
   });
 });

@@ -9,7 +9,7 @@ import {
   resolveApiKey,
   type ProviderProfile,
 } from "@agency/core";
-import { runTool, resolvePythonBin } from "@agency/skills-bridge";
+import { runTool, resolvePythonBin, loadManifestSkills, skillMdPath } from "@agency/skills-bridge";
 import { out, handleError } from "../utils.js";
 
 type CheckStatus = "ok" | "warn" | "fail";
@@ -66,23 +66,57 @@ export function registerDoctor(program: Command) {
             });
           }
 
-          // 2. Skills pack
+          // 2. Skills pack — manifest present AND every declared skill resolves
+          //    to a real SKILL.md. Checking only that the manifest *file* exists
+          //    let a partial/corrupt install report healthy, then fail at runtime
+          //    when a declared-but-missing skill is invoked. This is the runtime
+          //    (installed-pack) counterpart of the CI bundled-pack integrity test.
           const skillsRoot = resolveSkillsRoot();
-          const manifest = join(skillsRoot, ".system", "manifest.json");
-          if (existsSync(manifest)) {
-            checks.push({
-              name: "skills-pack",
-              status: "ok",
-              detail: skillsRoot,
-            });
-          } else {
+          const manifestPath = join(skillsRoot, ".system", "manifest.json");
+          if (!existsSync(manifestPath)) {
             checks.push({
               name: "skills-pack",
               status: "warn",
-              detail: `manifest not found at ${manifest}`,
+              detail: `manifest not found at ${manifestPath}`,
               recovery:
                 "Reinstall the skills pack or point AGENCY_SKILLS_ROOT at a valid pack.",
             });
+          } else {
+            let declared: string[] | null = null;
+            try {
+              declared = loadManifestSkills(skillsRoot);
+            } catch {
+              declared = null;
+            }
+            if (declared === null) {
+              checks.push({
+                name: "skills-pack",
+                status: "fail",
+                detail: `manifest at ${manifestPath} is unreadable / not valid JSON`,
+                recovery: "Reinstall the skills pack — its manifest is corrupt.",
+              });
+            } else {
+              const missing = declared.filter(
+                (s) => !existsSync(skillMdPath(skillsRoot, s))
+              );
+              if (missing.length === 0) {
+                checks.push({
+                  name: "skills-pack",
+                  status: "ok",
+                  detail: `${skillsRoot} (${declared.length} skills)`,
+                });
+              } else {
+                checks.push({
+                  name: "skills-pack",
+                  status: "fail",
+                  detail: `${missing.length}/${declared.length} declared skill(s) missing SKILL.md: ${missing
+                    .slice(0, 3)
+                    .join(", ")}${missing.length > 3 ? "…" : ""}`,
+                  recovery:
+                    "Reinstall the skills pack — it is incomplete (a declared skill has no SKILL.md).",
+                });
+              }
+            }
           }
 
           // 3. Provider config + resolvable keys
