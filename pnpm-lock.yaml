@@ -61,9 +61,6 @@ importers:
       '@agency/skills-bridge':
         specifier: workspace:*
         version: link:../skills-bridge
-      '@agency/telemetry':
-        specifier: workspace:*
-        version: link:../telemetry
       '@agency/tui':
         specifier: workspace:*
         version: link:../tui

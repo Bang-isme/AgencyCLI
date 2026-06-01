@@ -139,3 +139,64 @@ describe("architecture: package-level import cycles", () => {
     expect(cycles, `runtime package import cycle(s) detected: ${JSON.stringify(cycles)} — invert the back-edge (push the shared concern to a leaf or inject it from the caller)`).toEqual([]);
   });
 });
+
+/** @agency/* names in a package.json `dependencies` block (excludes self + devDependencies). */
+function declaredAgencyDeps(d: string): { name: string; deps: Set<string> } {
+  const pj = JSON.parse(readFileSync(join(PACKAGES, d, "package.json"), "utf8"));
+  const name = pj.name as string;
+  const deps = (pj.dependencies ?? {}) as Record<string, string>;
+  return { name, deps: new Set(Object.keys(deps).filter((k) => k.startsWith("@agency/") && k !== name)) };
+}
+
+/**
+ * @agency/* packages a package EXPLICITLY imports in its src — covering every form:
+ * `from "@agency/x"` (value + `import type`), side-effect `import "@agency/x"`, and
+ * dynamic / inline `import("@agency/x")` (e.g. `await import("@agency/tui")`,
+ * `import("@agency/core").IndexProgress`). A backtick reference in a comment is NOT a
+ * quoted module specifier, so it is correctly excluded. A type that merely *leaks*
+ * through another package's signature (resolved transitively, never imported here —
+ * e.g. the trace type from `@agency/telemetry` via `@agency/benchmark`) is correctly
+ * NOT counted, so it must not be declared.
+ */
+function importedAgencyPkgs(d: string): Set<string> {
+  const re = /(?:from|import)\s*\(?\s*["']@agency\/([a-z-]+)(?:\/[^"']*)?["']/g;
+  const used = new Set<string>();
+  for (const file of listSourceFiles(join(PACKAGES, d, "src"))) {
+    const txt = readFileSync(file, "utf8");
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(txt))) used.add("@agency/" + m[1]);
+  }
+  return used;
+}
+
+/**
+ * Dependency hygiene — the package-manifest counterpart of the wired-or-dead /
+ * dead-export audits. A declared `@agency/*` dependency nothing imports is
+ * package-level dead weight (the `@agency/telemetry` dep cli carried until tsc was
+ * shown to resolve the trace type transitively via `@agency/benchmark`); a `@agency/*`
+ * imported but not declared is a phantom dependency that only resolves via pnpm
+ * hoisting and breaks under strict install. Asserting declared == imported per
+ * package catches both. Lives here (cli) with the cycle guard because, like it, cli
+ * can see every workspace package.
+ */
+describe("architecture: package dependency hygiene", () => {
+  it("declares exactly the @agency/* packages it imports (no dead or phantom deps)", () => {
+    const offenders: string[] = [];
+    for (const d of packageDirs()) {
+      const { name, deps: declared } = declaredAgencyDeps(d);
+      const imported = importedAgencyPkgs(d);
+      for (const dep of declared) {
+        if (!imported.has(dep)) {
+          offenders.push(`${name}: declares "${dep}" but never imports it (dead dependency — remove it from package.json dependencies)`);
+        }
+      }
+      for (const imp of imported) {
+        if (!declared.has(imp)) {
+          offenders.push(`${name}: imports "${imp}" but does not declare it (phantom dependency — add it to package.json; it currently resolves only via pnpm hoisting)`);
+        }
+      }
+    }
+    expect(offenders, `\n${offenders.join("\n")}`).toEqual([]);
+  });
+});

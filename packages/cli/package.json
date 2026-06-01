@@ -21,7 +21,6 @@
     "@agency/skills-bridge": "workspace:*",
     "@agency/tui": "workspace:*",
     "@agency/benchmark": "workspace:*",
-    "@agency/telemetry": "workspace:*",
     "commander": "^12.0.0",
     "execa": "^9.0.0"
   },

@@ -15,9 +15,12 @@ import { out, exitOk, exitFail, handleError } from "../utils.js";
  * `runRegressionReplay` had no caller outside tests. This wires them, reusing both
  * verbatim (no new replay/hash logic).
  *
- * Types are derived structurally from `runRegressionReplay` so the cli package does
- * not need a direct `@agency/telemetry` dependency (same approach the `replay`
- * command uses to avoid importing `@agency/contracts`).
+ * The trace types are derived structurally from `runRegressionReplay` (via
+ * `Parameters`/`ReturnType`), so the cli needs no direct `@agency/telemetry`
+ * dependency even though the trace type originates there: it only leaks through
+ * `@agency/benchmark`'s signature, and tsc resolves it transitively from
+ * benchmark's own node_modules. `package-cycles.test.ts` guards that cli's
+ * declared `@agency/*` deps stay in sync with what it actually imports.
  */
 type RegressionTrace = Parameters<typeof runRegressionReplay>[0];
 type RegressionExecutor = Parameters<typeof runRegressionReplay>[1];
