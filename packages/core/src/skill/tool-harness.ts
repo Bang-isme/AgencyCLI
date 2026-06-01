@@ -14,6 +14,7 @@ import { resolveSkillsRoot } from "../skills-root.js";
 import { loadIgnoreFilter } from "../index/gitignore-parser.js";
 import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure } from "../chat/circuit-breaker.js";
 import { z } from "zod";
+import { getModelSpec } from "@agency/providers";
 import { ToolRegistry } from "@agency/tooling";
 import { ApprovalPolicyEngine, ApprovalRequiredError } from "../approval/index.js";
 import { EventBus } from "../events/event-bus.js";
@@ -1008,29 +1009,36 @@ export function truncateToolResult(_name: string, result: string, modelName?: st
 
   if (modelName) {
     try {
-      const { getModelSpec } = require("@agency/providers");
+      // Was `require("@agency/providers")` — but this module is ESM, so `require`
+      // is undefined and threw, silently falling back to the default for EVERY
+      // model: the "scales by context window" behaviour never actually ran. A
+      // small-context model (≤16K) was handed the full ~30K-char (~7.5K token)
+      // result, risking the very overflow the cap exists to prevent (§8 family).
       const spec = getModelSpec(modelName);
       if (spec && spec.contextWindow) {
         const context = spec.contextWindow;
-        if (context <= 16384) {
-          // Very small context window (8K - 16K, e.g. Llama 3 8B, GPT-3.5)
-          // Limit tool output aggressively to 8,000 characters (~2,000 tokens) to guarantee no context crash
-          maxChars = 8000;
+        if (context < 32000) {
+          // Small window (≤16K — note many "16k" models report 16385): cap hard
+          // so one tool result can't overflow it. `<= 16384` used to miss the
+          // common 16385 models, leaving them on the medium cap.
+          maxChars = 8000;   // ~2K tokens
           maxLines = 150;
         } else if (context >= 200000) {
-          // Modern high context window (200K+, e.g. Kimi 2.6, Gemini 2.0/2.5, Claude 3)
-          // Allow up to 400,000 characters (~100,000 tokens) to supply comprehensive context and logs
-          maxChars = 400000;
-          maxLines = 5000;
+          // Large window: a bit more headroom, but deliberately NOT the old
+          // 400K-char (~100K token) dump — that wasted half the window on a
+          // single result. The truncation note tells the model to fetch more via
+          // read_file ranges, so a lean cap keeps tokens low without losing
+          // reachable detail (token efficiency the user asked for).
+          maxChars = 48000;  // ~12K tokens
+          maxLines = 800;
         } else {
-          // Balanced medium context window (e.g. 32K - 128K)
-          // Scale tool limits to ~20% of the active context window in characters
-          maxChars = Math.min(120000, Math.max(30000, Math.round(context * 4 * 0.20)));
-          maxLines = Math.min(1500, Math.max(500, Math.round(maxChars / 60)));
+          // Medium window (32K–128K): the lean default.
+          maxChars = 32000;  // ~8K tokens
+          maxLines = 500;
         }
       }
     } catch {
-      // safe fallback if dynamic import / require fails
+      // safe fallback if the spec lookup fails
     }
   }
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool, isFileWritingTool } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult } from "../skill/tool-harness.js";
 
 describe("Tool Harness Subsystem", () => {
   describe("parseToolCalls", () => {
@@ -172,6 +172,37 @@ Here is my decision:
       expect(isFileWritingTool("ast_edit")).toBe(true);
       expect(isFileWritingTool("read_file")).toBe(false);
       expect(isFileWritingTool("list_dir")).toBe(false);
+    });
+  });
+
+  describe("truncateToolResult model-aware scaling", () => {
+    const huge = "x".repeat(500_000); // single long line, no newlines
+
+    it("actually scales by the model's context window (regression: require() was dead in ESM)", () => {
+      // The old `require("@agency/providers")` threw in this ESM module and was
+      // swallowed, so EVERY model fell back to the same default — a small-context
+      // model was handed the full result and could overflow. These must differ.
+      const small = truncateToolResult("read_file", huge, "gpt-3.5-turbo"); // ~16K ctx
+      const large = truncateToolResult("read_file", huge, "claude-opus-4-5"); // ~200K ctx
+      expect(small.length).toBeLessThan(large.length);
+    });
+
+    it("caps a small-context model aggressively (overflow protection)", () => {
+      const small = truncateToolResult("read_file", huge, "gpt-3.5-turbo");
+      // 8K-char cap + a short truncation note — far below the ~30K default.
+      expect(small.length).toBeLessThan(9000);
+      expect(small).toContain("truncated");
+    });
+
+    it("does NOT dump a huge result even on a large-context model (token efficiency)", () => {
+      const large = truncateToolResult("read_file", huge, "claude-opus-4-5");
+      // Lean cap, nowhere near the old 400K-char (~100K token) dump.
+      expect(large.length).toBeLessThan(60000);
+    });
+
+    it("returns short results unchanged", () => {
+      const short = "all good";
+      expect(truncateToolResult("read_file", short, "claude-opus-4-5")).toBe(short);
     });
   });
 });
