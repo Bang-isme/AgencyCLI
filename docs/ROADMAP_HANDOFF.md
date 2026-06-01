@@ -411,8 +411,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > freshness — xóa changedFiles fast-path dead+buggy)** · **§8.8 ✅ (2026-06-02: self-kill HARD-refuse — báo user `c03b9a2`;
 > DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`; **§8.8-A turn-loop
 > HARD-break trên circuit-breaker trip + §8.8-B tolerate malformed `</tool_call>` wrappers `64e945a`** → §8.8 ĐÓNG TRỌN)**.
-> Baseline giờ: core **403** · tui **148** · providers 852 · security **39** · ~2142 test · **31 cờ** · 18 tool.
-> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
+> Baseline giờ: core **405** · tui **148** · providers 852 · security **39** · ~2144 test · **31 cờ** · 18 tool.
+> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -619,8 +619,14 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > completed non-expanded của `SystemActivityLine`, mà caller DUY NHẤT (Conversation.tsx:1359) luôn `expandedTui={true}`
 > (dùng alias+char-count, KHÔNG target). Gỡ Map + set(exec) + get(completed) → hết state chia sẻ → hết collision.
 > Behaviour-preserving thực tế (nhánh live không đổi). Test `tool-labels.test.ts` (5). tui 143→148.
-> **§8.10 (TUI realtime) ĐÓNG: loop/resume + A narration + B/D phase&panel + E dedup + C label/correlation.** Còn để ngỏ
-> ( enhancement, KHÔNG bug): progress trong-tool dài (heartbeat giữa 1 tool chậm) — cần tool-level progress callback, surface cao.
+> **§8.10 (TUI realtime) ĐÓNG: loop/resume + A narration + B/D phase&panel + E dedup + C label/correlation + F in-tool progress.**
+> **✅ §8.10-F in-tool progress (commit này):** narration §8.10-A fire 1 LẦN trước tool → 1 tool chậm (grep lớn / đọc file to /
+> lệnh dài) im suốt thời gian chạy → status kẹt. SỬA: helper `startToolProgressHeartbeat(toolName, stepLabel, enabled, intervalMs=4000)`
+> (nhà chung `turn-helpers.ts`) — `setInterval` re-narrate qua `describeToolActivity`→`emitThought` kèm suffix elapsed ("Searching src/** (8s)");
+> gọi ngay trước `await executeTool`, `stop()` trong `finally`; CẢ 2 turn path. `enabled` = `getRuntimeFlags().cognitionStream` truyền từ call-site
+> (turn-helpers KHÔNG import flags) → off thì KHÔNG tạo timer = legacy byte-identical; timer `unref` không giữ process; tick đầu ở `intervalMs`
+> nên tool nhanh không đổi. KHÔNG cờ mới (ride `cognitionStream`). Test `tool-progress-heartbeat.test.ts` (+2, fake timers) + stub trong
+> `in-loop-compaction.test.ts` (mock turn-helpers DUY NHẤT). core 403→405. **§8.10 ĐÓNG TRỌN (6 slice).**
 
 **(A) Main turn KHÔNG có event tool có cấu trúc — UI phải regex-parse text English (gốc lớn nhất).**
 - **SỰ THẬT.** Main turn báo hiệu tool bằng cách **nhồi text người-đọc** vào stream LLM:

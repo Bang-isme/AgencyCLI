@@ -49,6 +49,9 @@ vi.mock("../chat/turn-helpers.js", () => ({
   // emitThought (§8.10-A); the stubbed turn-helpers must provide it or the
   // unconditional call site throws (the tool path here writes t.txt, no agentId).
   describeToolActivity: () => ({ source: "worker", phase: "editing", severity: "info", confidence: "high", message: "stub" }),
+  // §8.10 in-tool progress — also called unconditionally in the tool path; stub it
+  // (returns a no-op stop()) so the eager call site doesn't invoke undefined.
+  startToolProgressHeartbeat: () => () => {},
 }));
 
 import * as providers from "@agency/providers";

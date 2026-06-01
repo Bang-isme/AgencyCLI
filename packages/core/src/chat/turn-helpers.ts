@@ -260,6 +260,40 @@ export function describeToolActivity(toolName: string, stepLabel: string): ToolA
   return { ...base, source: "worker", phase: "editing", message: stepLabel || toolName };
 }
 
+/**
+ * §8.10 in-tool progress — the §8.10-A narration above fires ONCE, before a tool
+ * runs. A single slow tool (a large grep, a big file read, a long shell command)
+ * then emits nothing for its whole duration, so the status line freezes on that
+ * last narration. This starts a periodic heartbeat that re-narrates the in-flight
+ * tool with an elapsed-time suffix (e.g. "Searching src/** (8s)") via the same
+ * `describeToolActivity` → `emitThought` path, so the status line keeps moving.
+ *
+ * Call it right before `await executeTool` and call the returned stop() in a
+ * `finally`. `enabled` is passed by the caller (which reads `cognitionStream`) so
+ * this stays flag-free: when off, NO timer is created — byte-identical legacy. The
+ * timer is `unref`'d so it can never keep the process alive, and the first tick is
+ * at `intervalMs` (a fast tool finishes and stops before any heartbeat fires, so
+ * sub-`intervalMs` tools are unchanged).
+ */
+export function startToolProgressHeartbeat(
+  toolName: string,
+  stepLabel: string,
+  enabled: boolean,
+  intervalMs = 4000
+): () => void {
+  if (!enabled) return () => {};
+  const start = Date.now();
+  const timer = setInterval(() => {
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    const narration = describeToolActivity(toolName, stepLabel);
+    emitThought({ ...narration, message: `${narration.message} (${elapsed}s)` });
+  }, intervalMs);
+  if (typeof (timer as { unref?: () => void }).unref === "function") {
+    (timer as { unref: () => void }).unref();
+  }
+  return () => clearInterval(timer);
+}
+
 /** Minimal provider surface the compactor needs (matches LlmProvider.complete). */
 interface CompletionProvider {
   complete(messages: ChatMessage[], opts?: { maxTokens?: number }): Promise<string>;

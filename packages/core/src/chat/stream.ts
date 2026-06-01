@@ -31,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -431,7 +431,16 @@ export async function runChatTurnWithStream(
               // sticking on "Writing". No-op unless cognitionStream is on.
               emitThought(describeToolActivity(tc.name, stepLabel));
             }
-            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
+            // §8.10 in-tool progress — keep the status line moving while a single
+            // slow tool runs (big grep / large read / long command). No-op timer
+            // when cognitionStream is off (byte-identical legacy). Cleared in finally.
+            const stopHeartbeat = startToolProgressHeartbeat(tc.name, stepLabel, getRuntimeFlags().cognitionStream);
+            let result: string;
+            try {
+              result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
+            } finally {
+              stopHeartbeat();
+            }
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
             traceRecorder?.recordTool(tc.name, tc.arguments, truncated);

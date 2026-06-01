@@ -29,7 +29,7 @@ import { type RouteResult } from "../router/model-router.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -404,7 +404,15 @@ export async function runChatTurn(
               // No-op unless cognitionStream is on (byte-identical when off).
               emitThought(describeToolActivity(tc.name, stepLabel));
             }
-            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot);
+            // §8.10 in-tool progress — keep the status line moving while a single
+            // slow tool runs. No-op timer when cognitionStream is off. (see stream.ts)
+            const stopHeartbeat = startToolProgressHeartbeat(tc.name, stepLabel, getRuntimeFlags().cognitionStream);
+            let result: string;
+            try {
+              result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot);
+            } finally {
+              stopHeartbeat();
+            }
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
             traceRecorder?.recordTool(tc.name, tc.arguments, truncated);
