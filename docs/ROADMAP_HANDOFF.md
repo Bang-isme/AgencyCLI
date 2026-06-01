@@ -409,8 +409,9 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (compact tool-docs args, cờ
 > `AGENCY_COMPACT_TOOL_DOCS`) · §8.11-E ✅ (clarify grep mô tả cross-ref) → §8.11 ĐÓNG TRỌN** · **§8.7 ✅ (2026-06-02: index
 > freshness — xóa changedFiles fast-path dead+buggy)** · **§8.8 ✅ (2026-06-02: self-kill HARD-refuse — báo user `c03b9a2`;
-> DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`)**.
-> Baseline giờ: core **396** · tui **148** · providers 852 · security **38** · ~2134 test · **31 cờ** · 18 tool.
+> DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`; **§8.8-A turn-loop
+> HARD-break trên circuit-breaker trip + §8.8-B tolerate malformed `</tool_call>` wrappers `64e945a`** → §8.8 ĐÓNG TRỌN)**.
+> Baseline giờ: core **403** · tui **148** · providers 852 · security **38** · ~2141 test · **31 cờ** · 18 tool.
 > ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
@@ -546,8 +547,17 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   refuse lặp tính "success" mãi); breaker lại là singleton module không reset giữa turn + `toolCallHistory` phình + identical-check
   KHÔNG bắt variant (command string khác nhau). SỬA: `executeTool` đếm kết quả `^Error[:\s]` là FAILURE → breaker `consecutiveFailures≥3`
   trip cả trên variant + trả "circuit breaker triggered"; reset breaker đầu MỖI turn (`resetToolCircuitBreaker` wired CẢ 2 path) chống
-  leak xuyên turn; bound `toolCallHistory` 50. Test `circuit-breaker.test.ts` (5). core 391→396. **CÒN NGỎ (handoff):** breaker trip
-  hiện chỉ trả message (soft) — turn loop CHƯA hard-break trên trip → model vẫn có thể phớt lờ tới maxLoops.
+  leak xuyên turn; bound `toolCallHistory` 50. Test `circuit-breaker.test.ts` (5). core 391→396.
+- **✅ §8.8-A — turn loop HARD-break trên circuit-breaker trip (commit `64e945a`):** trước đây breaker trip chỉ trả message string (soft)
+  → model phớt lờ, churn variant tới maxLoops. SỬA: `executeTool` latch lý do vào module var `lastCircuitBreakerTripReason`; export
+  `consumeCircuitBreakerTrip()` (read-and-clear; `resetToolCircuitBreaker` cũng clear). CẢ 2 turn loop gọi nó SAU khi append tool batch
+  vào `turnHistory` → non-null thì fold `buildCircuitBreakerNotice(reason)` (nhà chung `turn-helpers.ts`, mirror `buildIncompleteTurnNotice`
+  shape `⚠ [SYSTEM:]`) vào `llmText` (+`onDelta` ở stream) rồi **break**. KHÔNG cờ (đúng precedent §8.8 safety — breaker chỉ trip khi loop
+  kẹt rõ ràng, soft-signal là bug). Path riêng với resume-notice `loopCount>=maxLoops`.
+- **✅ §8.8-B — tolerate malformed `</tool_call>` wrappers (minimax, commit `64e945a`):** `parseToolCalls` regex nhận name attr nháy-đơn/có-space
+  (`name='x' `) + whitespace trong close tag (`</tool_call >`, `</ tool_call>`). SUPERSET nghiêm của canonical → output đúng parse byte-identical;
+  call recoverable hết bị nuốt im (nuốt → model tưởng đã chạy tool mà chưa → restart-from-scratch). No-close-tag (truncated) CỐ Ý KHÔNG recover
+  (không có ranh giới body an toàn). Test `circuit-breaker-hardbreak.test.ts` (+3) + `tool-harness.test.ts` (+4). core 396→403. **→ §8.8 ĐÓNG TRỌN.**
 - **CÒN NGỎ (ưu tiên thấp):** native-mode security-warning mạnh hơn; tool-handler edge khác (đa số đã chắc: truncate scale window,
   invokeSafe không throw, file-write atomic — đã verify).
 

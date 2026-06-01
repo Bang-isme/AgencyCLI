@@ -1,8 +1,12 @@
 # Agency CLI — Documentation
 
+> **Start here if you're an AI/agent picking up this repo:**
+> [AGENT_ONBOARDING.md](./AGENT_ONBOARDING.md) — the context-loading + session-tracking
+> framework (read order, doc taxonomy, memory model, slice rhythm, copy-paste templates).
+
 ## Overview
 
-Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (React/Ink) and headless CLI mode (21 subcommands). It orchestrates LLM providers, prompt routing, task planning, agent dispatch, and file editing with approval gates.
+Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (React/Ink) and a headless CLI mode. It orchestrates LLM providers, prompt routing, task planning, agent dispatch, and file editing with approval gates. (For live counts — packages, tests, flags, tools — run `pnpm verify` and `agency status` rather than trusting any number written in docs.)
 
 ## Documentation Index
 
@@ -36,6 +40,18 @@ Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (Reac
 |----------|-------------|
 | [SKILLS_PACK.md](./SKILLS_PACK.md) | Skills pack system: 28 skills, 8 agents, 8 workflows, 14 system scripts, Python bridge architecture, aliases, SKILL.md format, execution safety |
 | [TELEMETRY_BENCHMARK.md](./TELEMETRY_BENCHMARK.md) | Telemetry tracing, deterministic replay engine, isolated benchmarking, regression detection |
+
+### Process & Continuity (for ongoing work)
+
+| Document | Role | Edit policy |
+|----------|------|-------------|
+| [AGENT_ONBOARDING.md](./AGENT_ONBOARDING.md) | **Framework** — how to load context, work in slices, and hand off (templates included) | Stable; edit only when the *method* changes |
+| [ROADMAP_HANDOFF.md](./ROADMAP_HANDOFF.md) | Live work map (`TRUTH → BUG → FIX`), §8 is current | Living — update in the same slice |
+| [NEXT_SESSION_PROMPT.md](./NEXT_SESSION_PROMPT.md) | Paste-in prompt: current frontier + next tasks | Living snapshot |
+| [SESSION_HANDOFF_PROMPT.md](./SESSION_HANDOFF_PROMPT.md) | The detailed rulebook + paste-in onboarding prompt | Living |
+| [HARDENING_HANDOFF.md](./HARDENING_HANDOFF.md) | Production-hardening campaign status + per-slice `cont'd N` log | Living (append) |
+| [EVAL_RESULTS.md](./EVAL_RESULTS.md) | BYOK eval results (legacy ↔ hardened) | Living (append) |
+| [PRODUCTION_AUDIT.md](./PRODUCTION_AUDIT.md), [PRODUCTION_AUDIT_APPENDIX.md](./PRODUCTION_AUDIT_APPENDIX.md) | Point-in-time audit | **Frozen — do not edit** |
 
 ## Quick Start
 
