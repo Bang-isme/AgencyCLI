@@ -1,4 +1,4 @@
-import type { DeterministicExecutionTrace } from "./types.js";
+import type { DeterministicExecutionTrace, LlmResponseEntry } from "./types.js";
 
 /**
  * Deep equality helper to match structurally equivalent JSON payloads.
@@ -23,9 +23,13 @@ export class ReplayEngine {
   private trace: DeterministicExecutionTrace;
   private consumedOutputs: Set<number> = new Set();
   private currentTurnIndex = 0;
+  /** The model completions in recorded order (missing in pre-§2.5 traces → []). */
+  private llmResponses: LlmResponseEntry[];
+  private nextLlmIndex = 0;
 
   constructor(trace: DeterministicExecutionTrace) {
     this.trace = trace;
+    this.llmResponses = trace.llmResponses ?? [];
   }
 
   /**
@@ -65,6 +69,36 @@ export class ReplayEngine {
    */
   getUnconsumedCount(): number {
     return this.trace.toolOutputs.length - this.consumedOutputs.size;
+  }
+
+  /**
+   * Consumes the next recorded LLM completion in order and asserts it matches the
+   * one the re-execution produced. Unlike tool calls (matched by arguments) the
+   * completions are ordered by turn, so this is positional — the §2.5 analogue of
+   * {@link interceptToolCall}: a differing or extra response is behavioural drift.
+   */
+  interceptLlmResponse(text: string): LlmResponseEntry {
+    const entry = this.llmResponses[this.nextLlmIndex];
+    if (entry === undefined) {
+      throw new Error(
+        `[Replay Deviation] No recorded LLM response remains for completion #${this.nextLlmIndex + 1}: ${JSON.stringify(text.slice(0, 80))}`
+      );
+    }
+    if (entry.text !== text) {
+      throw new Error(
+        `[Replay Deviation] LLM response #${this.nextLlmIndex + 1} diverged from the recorded trace`
+      );
+    }
+    this.nextLlmIndex++;
+    return entry;
+  }
+
+  /**
+   * Returns the count of recorded LLM responses not yet consumed during replay
+   * (0 for pre-§2.5 traces that recorded no completions).
+   */
+  getUnconsumedLlmCount(): number {
+    return this.llmResponses.length - this.nextLlmIndex;
   }
 
   /**

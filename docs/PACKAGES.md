@@ -575,9 +575,9 @@ This document provides a **module-level** reference for every one of the 16 pack
 
 | File | Key Exports |
 |------|------------|
-| `types.ts` | `ToolTraceEntry`, `DeterministicExecutionTrace`, `TelemetryTracker` |
-| `tracker.ts` | `ActiveTelemetryTracker` — record turns + tool calls |
-| `replay.ts` | `ReplayEngine` — deterministic trace replay with deviation detection |
+| `types.ts` | `ToolTraceEntry`, `LlmResponseEntry`, `DeterministicExecutionTrace` (turns + tool I/O + optional per-turn `llmResponses`), `TelemetryTracker` |
+| `tracker.ts` | `ActiveTelemetryTracker` — record turns + tool calls + LLM completions (§2.5) |
+| `replay.ts` | `ReplayEngine` — deterministic trace replay with deviation detection (`interceptToolCall` arg-matched + `interceptLlmResponse` positional) |
 
 ---
 
@@ -613,7 +613,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `memory` | `commands/memory.ts` | Memory status / build / genome |
 | `plugin` | `commands/plugin.ts` | Validate / tools / schema for plugins |
 | `replay` | `commands/replay.ts` | Replay + verify the durable event journal (§2.5) |
-| `replay-regression` | `commands/replay-regression.ts` | Replay a recorded behaviour trace; `--baseline` checks a candidate reproduces the baseline's tool behaviour (§2.5) |
+| `replay-regression` | `commands/replay-regression.ts` | Replay a recorded behaviour trace; `--baseline` checks a candidate reproduces the baseline's tool calls **and** LLM completions (§2.5) |
 | `route` | `commands/route.ts` | Prompt routing only (no LLM call) |
 | `routing` | `commands/routing.ts` | Manage routing weights + feedback |
 | `run` | `commands/run.ts` | Execute shell commands with sandbox |

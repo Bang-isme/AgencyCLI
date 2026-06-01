@@ -1,5 +1,6 @@
 export {
   type ToolTraceEntry,
+  type LlmResponseEntry,
   type DeterministicExecutionTrace,
   type TelemetryTracker,
 } from "./types.js";

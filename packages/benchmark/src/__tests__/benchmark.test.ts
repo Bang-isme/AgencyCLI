@@ -139,5 +139,71 @@ describe("Benchmark Harness & Regression Suite", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("[Replay Deviation]");
     });
+
+    // §2.5 — LLM completions are now part of a trace; the regression replay must
+    // reproduce them in order too (a deterministic/seeded re-run should).
+    const llmTrace: DeterministicExecutionTrace = {
+      sessionId: "test-session-llm",
+      goal: "two-step edit",
+      timings: [120],
+      toolOutputs: [
+        { toolName: "view_file", arguments: { path: "a.ts" }, output: "x", timestamp: 1 },
+      ],
+      llmResponses: [
+        { text: "<view_file><path>a.ts</path></view_file>", finishReason: "tool_calls", timestamp: 1 },
+        { text: "done", finishReason: "stop", timestamp: 2 },
+      ],
+    };
+
+    it("should pass when the executor reproduces tool calls AND LLM responses", async () => {
+      const executor = async (engine: any) => {
+        engine.nextTurnDuration();
+        engine.interceptToolCall("view_file", { path: "a.ts" });
+        engine.interceptLlmResponse("<view_file><path>a.ts</path></view_file>");
+        engine.interceptLlmResponse("done");
+      };
+      const result = await runRegressionReplay(llmTrace, executor);
+      expect(result.success).toBe(true);
+      expect(result.unconsumedLlmResponses).toBe(0);
+    });
+
+    it("should fail when an LLM response is not reproduced", async () => {
+      const executor = async (engine: any) => {
+        engine.nextTurnDuration();
+        engine.interceptToolCall("view_file", { path: "a.ts" });
+        engine.interceptLlmResponse("<view_file><path>a.ts</path></view_file>");
+        // skips the final "done" completion
+      };
+      const result = await runRegressionReplay(llmTrace, executor);
+      expect(result.success).toBe(false);
+      expect(result.unconsumedLlmResponses).toBe(1);
+      expect(result.error).toContain("LLM responses were not reproduced");
+    });
+
+    it("should fail when an LLM response diverges from the recorded text", async () => {
+      const executor = async (engine: any) => {
+        engine.nextTurnDuration();
+        engine.interceptToolCall("view_file", { path: "a.ts" });
+        engine.interceptLlmResponse("a completely different first response");
+      };
+      const result = await runRegressionReplay(llmTrace, executor);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("[Replay Deviation]");
+    });
+
+    it("reports unconsumedLlmResponses: 0 for pre-§2.5 traces (no completions)", async () => {
+      const executor = async (engine: any) => {
+        engine.nextTurnDuration();
+        engine.interceptToolCall("view_file", { AbsolutePath: "/workspace/src/index.ts" });
+        engine.nextTurnDuration();
+        engine.interceptToolCall("write_to_file", {
+          TargetFile: "/workspace/src/index.ts",
+          CodeContent: "new content",
+        });
+      };
+      const result = await runRegressionReplay(sampleTrace, executor);
+      expect(result.success).toBe(true);
+      expect(result.unconsumedLlmResponses).toBe(0);
+    });
   });
 });

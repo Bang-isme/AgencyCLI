@@ -36,6 +36,12 @@ function replaySequenceOf(source: RegressionTrace): RegressionExecutor {
     for (const entry of source.toolOutputs) {
       engine.interceptToolCall(entry.toolName, entry.arguments);
     }
+    // §2.5 — also reproduce each recorded LLM completion in order (no-op for
+    // pre-§2.5 traces that recorded none). A differing/extra/missing response
+    // surfaces as drift, same as a tool deviation.
+    for (const entry of source.llmResponses ?? []) {
+      engine.interceptLlmResponse(entry.text);
+    }
   };
 }
 
@@ -58,7 +64,7 @@ function traceShapeError(trace: RegressionTrace, path: string): string | null {
 }
 
 function failResult(error: string): RegressionResult {
-  return { success: false, turnsReplayed: 0, unconsumedOutputs: 0, error };
+  return { success: false, turnsReplayed: 0, unconsumedOutputs: 0, unconsumedLlmResponses: 0, error };
 }
 
 /** Accept a path to a `.json` trace, or a bare sessionId under `.agency/traces/`. */
@@ -79,6 +85,7 @@ interface TraceSummary {
   goal?: string;
   turns?: number;
   toolCalls?: number;
+  llmResponses?: number;
   unreadable?: boolean;
 }
 
@@ -92,6 +99,7 @@ async function summarizeTrace(file: string): Promise<TraceSummary> {
       goal: trace.goal,
       turns: trace.timings.length,
       toolCalls: trace.toolOutputs.length,
+      llmResponses: trace.llmResponses?.length ?? 0,
     };
   } catch {
     return { file, unreadable: true };
@@ -116,11 +124,11 @@ async function listTraces(projectRoot: string, json: boolean): Promise<never> {
     ]);
   } else {
     out.table(
-      ["Session", "Turns", "Tools", "Goal"],
+      ["Session", "Turns", "Tools", "LLM", "Goal"],
       traces.map((t) =>
         t.unreadable
-          ? [t.file, "—", "—", "(unreadable / corrupt)"]
-          : [t.sessionId ?? "?", String(t.turns), String(t.toolCalls), t.goal ?? ""],
+          ? [t.file, "—", "—", "—", "(unreadable / corrupt)"]
+          : [t.sessionId ?? "?", String(t.turns), String(t.toolCalls), String(t.llmResponses), t.goal ?? ""],
       ),
       { title: `Recorded traces (${dir})` },
     );
@@ -220,6 +228,7 @@ export function registerReplayRegression(program: Command) {
                   trace: candidatePath,
                   sessionId: candidate.sessionId,
                   toolCalls: candidate.toolOutputs?.length ?? 0,
+                  llmResponses: candidate.llmResponses?.length ?? 0,
                   ...result,
                 },
                 null,
@@ -232,6 +241,7 @@ export function registerReplayRegression(program: Command) {
               { key: "Session", value: candidate.sessionId },
               { key: "Turns", value: String(result.turnsReplayed) },
               { key: "Tool calls", value: String(candidate.toolOutputs.length) },
+              { key: "LLM responses", value: String(candidate.llmResponses?.length ?? 0) },
             ]);
           } else {
             out.failure({

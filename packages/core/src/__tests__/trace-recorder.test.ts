@@ -20,8 +20,10 @@ describe("SessionTraceRecorder (§2.5 record side)", () => {
     dirs.push(root);
 
     const rec = new SessionTraceRecorder(root, "sess-1", "fix the bug");
+    rec.recordLlmResponse("<read_file><path>a.ts</path></read_file>", "tool_calls");
     rec.recordTool("read_file", { path: "a.ts" }, "contents");
     rec.recordTool("write_file", { path: "a.ts", content: "x" }, "Success");
+    rec.recordLlmResponse("Fixed.", "stop");
     rec.recordTurn(123);
     rec.save();
 
@@ -38,6 +40,10 @@ describe("SessionTraceRecorder (§2.5 record side)", () => {
       output: "contents",
     });
     expect(trace.toolOutputs[1]).toMatchObject({ toolName: "write_file" });
+    // §2.5 — the model's completions are persisted alongside the tool I/O.
+    expect(trace.llmResponses).toHaveLength(2);
+    expect(trace.llmResponses[0]).toMatchObject({ text: "<read_file><path>a.ts</path></read_file>", finishReason: "tool_calls" });
+    expect(trace.llmResponses[1]).toMatchObject({ text: "Fixed.", finishReason: "stop" });
   });
 
   it("createTraceRecorder returns null unless AGENCY_TRACE_RECORD is set", () => {

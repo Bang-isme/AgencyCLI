@@ -204,8 +204,20 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   Guard biên: pre-validate shape TRƯỚC khi vào `runRegressionReplay` (catch của nó gọi
   `getUnconsumedCount()`→`toolOutputs.length`, sẽ tự ném trên trace hỏng). Test: `replay-regression.test.ts`
   (+6: list / validate / non-trace-fail / match / drift / deviation). `pnpm verify` xanh (cli 550→556).
-- **Còn lại (full §2.5):** re-execute agent thật (cần ghi thêm LLM response — trace hiện chỉ có tool I/O +
-  timings). Xây TRÊN producer + consumer + driver sẵn có — không nhân đôi.
+- **LLM-response recording ĐÃ WIRE (2026-06-01, cont'd 18).** Trace trước chỉ có tool I/O + timings → replay
+  được *harness làm gì với lời model* nhưng KHÔNG có *chính lời đó*. Đã đóng bằng mở rộng machinery sẵn có
+  (KHÔNG module/cờ mới): `DeterministicExecutionTrace.llmResponses?` **optional** (trace cũ vẫn load + replay,
+  consumer cũ bỏ qua) + `recordLlmResponse` trên tracker/recorder, nối dây vào CẢ 2 turn path ngay sau
+  `llmText += currentText` (off `AGENCY_TRACE_RECORD` → recorder null → byte-identical). `ReplayEngine`
+  thêm `interceptLlmResponse(text)` (positional content-match — analogue của `interceptToolCall` arg-match;
+  completion xếp theo turn) + `getUnconsumedLlmCount()`. `runRegressionReplay` + lệnh `agency replay-regression`
+  giờ tái hiện + kiểm cả completion (drift nội dung/thiếu/thừa → `[Replay Deviation]`/unconsumed → exit≠0;
+  `unconsumedLlmResponses` thêm vào result). `providerSeed` (đã có sẵn) chính là để re-run seeded ra completion
+  y hệt. Test mở rộng tại chỗ: telemetry 4→9, benchmark 14→18, cli +3, core trace-recorder LLM round-trip.
+  `pnpm verify` xanh (~2006→~2018). Dữ liệu LLM-response giờ ĐƯỢC DÙNG NGAY (driver tiêu thụ/kiểm — không treo).
+- **Còn lại (full §2.5):** re-execute agent THẬT — chạy lại `runChatTurn` qua một **ReplayProvider** (`LlmProvider`
+  trả `llmResponses` đã ghi theo thứ tự) + seam intercept tool, để tái dùng vòng turn THẬT (không nhân đôi loop).
+  Dữ liệu LLM-response (slice này) là tiền đề — giờ đã sẵn. Xây TRÊN producer + consumer + driver sẵn có.
 
 ---
 

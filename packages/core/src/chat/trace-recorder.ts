@@ -37,6 +37,11 @@ export class SessionTraceRecorder {
     this.tracker.recordTurn(durationMs);
   }
 
+  /** Record the model's completion for one outer-loop iteration (§2.5). */
+  recordLlmResponse(text: string, finishReason?: string): void {
+    this.tracker.recordLlmResponse(text, finishReason);
+  }
+
   /** Persist the trace to `.agency/traces/<sessionId>.json`. Never throws. */
   save(): void {
     try {

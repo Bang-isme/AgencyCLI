@@ -341,6 +341,7 @@ export async function runChatTurnWithStream(
       }
 
       llmText += currentText;
+      traceRecorder?.recordLlmResponse(currentText, lastFinishReason);
 
       // Check for XML tool calls
       const toolCalls = parseToolCalls(currentText);

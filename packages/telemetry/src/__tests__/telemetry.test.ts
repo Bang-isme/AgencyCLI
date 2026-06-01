@@ -17,6 +17,9 @@ describe("packages/telemetry", () => {
       tracker.recordToolCall("bash", { command: "npm test" }, { exitCode: 0, stdout: "pass" });
       tracker.recordToolCall("read_file", { path: "src/auth.ts" }, { content: "export const auth = true;" });
 
+      tracker.recordLlmResponse("<read_file><path>src/auth.ts</path></read_file>", "tool_calls");
+      tracker.recordLlmResponse("Done — auth module verified.", "stop");
+
       const trace = tracker.exportTrace();
       expect(trace.sessionId).toBe("session-123");
       expect(trace.goal).toBe("Verify auth module safety");
@@ -24,13 +27,32 @@ describe("packages/telemetry", () => {
       expect(trace.providerSeed).toBe(42);
       expect(trace.timings).toEqual([350, 420]);
       expect(trace.toolOutputs).toHaveLength(2);
-      
+
       expect(trace.toolOutputs[0]?.toolName).toBe("bash");
       expect(trace.toolOutputs[0]?.arguments).toEqual({ command: "npm test" });
       expect(trace.toolOutputs[0]?.output).toEqual({ exitCode: 0, stdout: "pass" });
 
       expect(trace.toolOutputs[1]?.toolName).toBe("read_file");
       expect(trace.toolOutputs[1]?.arguments).toEqual({ path: "src/auth.ts" });
+
+      // §2.5 — LLM completions recorded in order (the missing half of replay).
+      expect(trace.llmResponses).toHaveLength(2);
+      expect(trace.llmResponses?.[0]).toMatchObject({
+        text: "<read_file><path>src/auth.ts</path></read_file>",
+        finishReason: "tool_calls",
+      });
+      expect(trace.llmResponses?.[1]?.text).toBe("Done — auth module verified.");
+    });
+
+    it("resets recorded LLM responses on a fresh session", () => {
+      const tracker = new ActiveTelemetryTracker();
+      tracker.startSession("a", "first");
+      tracker.recordLlmResponse("one");
+      tracker.startSession("b", "second");
+      tracker.recordLlmResponse("two");
+      expect(tracker.exportTrace().llmResponses).toEqual([
+        expect.objectContaining({ text: "two" }),
+      ]);
     });
   });
 
@@ -95,6 +117,50 @@ describe("packages/telemetry", () => {
       expect(() => replay.interceptToolCall("bash", { command: "npm run start" })).toThrow(
         /\[Replay Deviation\] No matching recorded trace entry found for tool "bash" with arguments: {"command":"npm run start"}/
       );
+    });
+
+    describe("LLM response replay (§2.5)", () => {
+      const llmTrace = {
+        sessionId: "sess-llm",
+        goal: "two-step edit",
+        timings: [100, 200],
+        toolOutputs: [],
+        llmResponses: [
+          { text: "step one", finishReason: "tool_calls", timestamp: 1 },
+          { text: "step two", finishReason: "stop", timestamp: 2 },
+        ],
+      };
+
+      it("consumes recorded completions positionally and matches content", () => {
+        const replay = new ReplayEngine(llmTrace);
+        expect(replay.getUnconsumedLlmCount()).toBe(2);
+        expect(replay.interceptLlmResponse("step one").finishReason).toBe("tool_calls");
+        expect(replay.getUnconsumedLlmCount()).toBe(1);
+        expect(replay.interceptLlmResponse("step two").finishReason).toBe("stop");
+        expect(replay.getUnconsumedLlmCount()).toBe(0);
+      });
+
+      it("throws a deviation when a completion diverges from the recorded text", () => {
+        const replay = new ReplayEngine(llmTrace);
+        replay.interceptLlmResponse("step one");
+        expect(() => replay.interceptLlmResponse("a different step two")).toThrow(
+          /\[Replay Deviation\] LLM response #2 diverged/
+        );
+      });
+
+      it("throws a deviation when an extra completion is replayed", () => {
+        const replay = new ReplayEngine(llmTrace);
+        replay.interceptLlmResponse("step one");
+        replay.interceptLlmResponse("step two");
+        expect(() => replay.interceptLlmResponse("step three")).toThrow(
+          /\[Replay Deviation\] No recorded LLM response remains/
+        );
+      });
+
+      it("treats a pre-§2.5 trace (no llmResponses) as zero completions", () => {
+        const replay = new ReplayEngine(sampleTrace);
+        expect(replay.getUnconsumedLlmCount()).toBe(0);
+      });
     });
   });
 });

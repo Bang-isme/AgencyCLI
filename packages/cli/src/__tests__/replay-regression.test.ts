@@ -107,4 +107,43 @@ describe("agency replay-regression", () => {
     expect(parsed.success).toBe(false);
     expect(parsed.error).toContain("[Replay Deviation]");
   });
+
+  // §2.5 — traces now also carry the model's completions (llmResponses).
+  const LLM1 = { text: "<view_file><path>a.ts</path></view_file>", finishReason: "tool_calls", timestamp: 1 };
+  const LLM2 = { text: "all done", finishReason: "stop", timestamp: 2 };
+  function traceWithLlm(sessionId: string, toolOutputs: unknown[], llmResponses: unknown[]) {
+    return { ...trace(sessionId, toolOutputs), llmResponses };
+  }
+
+  it("validate reports the recorded LLM response count (exit 0)", () => {
+    const root = newRoot();
+    seedTrace(root, "s1", traceWithLlm("s1", [VIEW], [LLM1, LLM2]));
+    const result = run(root, ["s1"]);
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout) as { success: boolean; llmResponses: number };
+    expect(parsed.success).toBe(true);
+    expect(parsed.llmResponses).toBe(2);
+  });
+
+  it("passes regression when candidate reproduces baseline tool calls AND LLM responses (exit 0)", () => {
+    const root = newRoot();
+    seedTrace(root, "base", traceWithLlm("base", [VIEW, WRITE], [LLM1, LLM2]));
+    seedTrace(root, "cand", traceWithLlm("cand", [VIEW, WRITE], [LLM1, LLM2]));
+    const result = run(root, ["cand", "--baseline", "base"]);
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse(result.stdout) as { success: boolean; unconsumedLlmResponses: number };
+    expect(parsed.success).toBe(true);
+    expect(parsed.unconsumedLlmResponses).toBe(0);
+  });
+
+  it("flags drift when the candidate's LLM response diverges from the baseline (exit 1)", () => {
+    const root = newRoot();
+    seedTrace(root, "base", traceWithLlm("base", [VIEW, WRITE], [LLM1, LLM2]));
+    seedTrace(root, "cand", traceWithLlm("cand", [VIEW, WRITE], [LLM1, { ...LLM2, text: "different wording" }]));
+    const result = run(root, ["cand", "--baseline", "base"]);
+    expect(result.status).toBe(1);
+    const parsed = JSON.parse(result.stdout) as { success: boolean; error?: string };
+    expect(parsed.success).toBe(false);
+    expect(parsed.error).toContain("[Replay Deviation]");
+  });
 });
