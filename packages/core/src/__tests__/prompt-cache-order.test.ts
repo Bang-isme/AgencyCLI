@@ -28,18 +28,22 @@ function build(): string {
 
 const savedProfile = process.env.AGENCY_PROFILE;
 const savedFlag = process.env.AGENCY_PROMPT_CACHE;
+const savedApproaches = process.env.AGENCY_SOFT_APPROACHES;
 
 afterEach(() => {
   if (savedProfile === undefined) delete process.env.AGENCY_PROFILE;
   else process.env.AGENCY_PROFILE = savedProfile;
   if (savedFlag === undefined) delete process.env.AGENCY_PROMPT_CACHE;
   else process.env.AGENCY_PROMPT_CACHE = savedFlag;
+  if (savedApproaches === undefined) delete process.env.AGENCY_SOFT_APPROACHES;
+  else process.env.AGENCY_SOFT_APPROACHES = savedApproaches;
 });
 
 describe("buildSystemPrompt prompt-cache ordering", () => {
   beforeEach(() => {
     delete process.env.AGENCY_PROFILE;
     delete process.env.AGENCY_PROMPT_CACHE;
+    delete process.env.AGENCY_SOFT_APPROACHES;
   });
 
   it("legacy (flag off) keeps the variable-first order: intent before tool docs", () => {
@@ -93,5 +97,49 @@ describe("buildSystemPrompt prompt-cache ordering", () => {
     process.env.AGENCY_PROMPT_CACHE = "on";
     const withOverride = buildSystemPrompt(route, PROMPT, CONTEXT, "/repo", undefined, override, MEMORIES);
     expect(withOverride.startsWith(`${override}\n\n`)).toBe(true);
+  });
+});
+
+describe("buildSystemPrompt soft-approaches rule (§8.11-C)", () => {
+  beforeEach(() => {
+    delete process.env.AGENCY_PROFILE;
+    delete process.env.AGENCY_PROMPT_CACHE;
+    delete process.env.AGENCY_SOFT_APPROACHES;
+  });
+
+  it("legacy (flag off) keeps the rigid exactly-5 rule verbatim", () => {
+    process.env.AGENCY_SOFT_APPROACHES = "off";
+    const out = build();
+    expect(out).toContain("THE 5-APPROACHES RULE");
+    expect(out).toContain("exactly 5 distinct");
+    expect(out).not.toContain("SOLUTION OPTIONS");
+  });
+
+  it("softened (flag on) drops the exactly-5 mandate for a complexity-scaled rule", () => {
+    process.env.AGENCY_SOFT_APPROACHES = "on";
+    const out = build();
+    expect(out).not.toContain("exactly 5 distinct");
+    expect(out).not.toContain("THE 5-APPROACHES RULE");
+    expect(out).toContain("SOLUTION OPTIONS");
+    expect(out).toContain("single clear recommendation");
+    // the prioritization-gradient step survives in both modes
+    expect(out).toContain("PRIORITIZATION GRADIENT");
+  });
+
+  it("hardened profile defaults the softened rule on", () => {
+    process.env.AGENCY_PROFILE = "hardened";
+    const out = build();
+    expect(out).not.toContain("exactly 5 distinct");
+    expect(out).toContain("SOLUTION OPTIONS");
+  });
+
+  it("is independent of the cache-order flag", () => {
+    // soft-approaches on while cache order stays off (legacy ordering)
+    process.env.AGENCY_SOFT_APPROACHES = "on";
+    process.env.AGENCY_PROMPT_CACHE = "off";
+    const out = build();
+    expect(out).toContain("SOLUTION OPTIONS");
+    // legacy order intact: intent before tool docs
+    expect(out.indexOf("User intent:")).toBeLessThan(out.indexOf("AVAILABLE TOOLS:"));
   });
 });

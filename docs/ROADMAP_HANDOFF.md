@@ -621,12 +621,16 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   vẫn thành công, nội dung y hệt) → an toàn không-key. Reuse cờ `promptCachePrefix` (KHÔNG cờ mới). Body-shape verify không cần
   key (test `anthropic.test.ts` +2: default string / on → cache_control block); đo cache-hit thật cần BYOK key. providers 850→852.
 
-**(C) "5-APPROACHES RULE" ép 5 hướng mỗi turn planning — phí OUTPUT token + formulaic.  ← 🟡**
-- SỰ THẬT. `chat/prompt.ts:77-78` ép "MUST outline exactly 5 distinct approaches ... sort by recommendation ... pros/cons,
-  success criteria, next command" cho MỌI đề xuất planning/architecture.
+**(C) "5-APPROACHES RULE" ép 5 hướng mỗi turn planning — phí OUTPUT token + formulaic.  ← ✅ XONG (2026-06-01)**
+- SỰ THẬT. `chat/prompt.ts` (rule "2." trong protocol segment) ép "MUST outline exactly 5 distinct approaches ... sort by
+  recommendation ... pros/cons, success criteria, next command" cho MỌI đề xuất planning/architecture.
 - LỖI. Task đơn giản cũng phải đẻ 5 hướng = tốn output token (đắt hơn input) + cứng nhắc, có khi giảm chất lượng (lan man).
-- SỬA. Mềm hoá ("vài hướng riêng biệt sắp theo khuyến nghị khi đề xuất chiến lược") hoặc gate theo độ phức tạp/disclosure.
-  Cờ vì đổi hành vi output. Giữ chất lượng cho task khó, bớt token cho task dễ.
+- **✅ SỬA ĐÃ XONG.** `buildSystemPrompt` chọn `approachesRule` theo cờ MỚI `AGENCY_SOFT_APPROACHES`/`softApproaches`
+  (off-legacy/on-hardened): **off** giữ NGUYÊN VĂN "THE 5-APPROACHES RULE … exactly 5 distinct" (byte-identical); **on** →
+  "SOLUTION OPTIONS: outline a few (typically 2–3) … scaled to the task's complexity — a simple task may warrant a single
+  clear recommendation rather than padded alternatives" + PRIORITIZATION GRADIENT gọn lại. Độc lập với cờ reorder (đều đọc
+  từ 1 `const flags`). Test `prompt-cache-order.test.ts` +4 (legacy verbatim / on dropped exactly-5 / hardened default on /
+  independent of cache flag). core 360→364, **29 flag**, surface `agency status` (`buildFlagRows` "Soft approaches").
 
 **(D) Tool-docs re-list args 17 tool mỗi turn (~1109 token).  ← 🟢 biên (sau B).**
 - SỰ THẬT. `formatToolDocs` (`prompt.ts:6`) liệt mọi tool + mọi arg mỗi turn. SỬA (sau khi B cache xong, lợi biên):
@@ -639,8 +643,9 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   nhanh + ít token + kết quả tốt hơn). Tra "Canonical Homes" trước khi thêm tool.
 
 > **Thứ tự §8.11:** B (caching — token win lớn nhất) → C (5-approaches) → D → E. Cờ cho thay đổi prompt; tái dùng catalog
-> `capabilities`/adapter interface; test + `pnpm verify` xanh. **A + B(1) reorder + B(2) Anthropic cache_control đều XONG
-> (cờ `AGENCY_PROMPT_CACHE`). §8.11-B ĐÓNG TRỌN. ▶ NEXT: C (5-approaches) → D (tool-docs) → E (grep naming/patch/index-search).**
+> `capabilities`/adapter interface; test + `pnpm verify` xanh. **A + B (reorder + Anthropic cache_control, cờ
+> `AGENCY_PROMPT_CACHE`) + C (5-approaches soften, cờ `AGENCY_SOFT_APPROACHES`) đều XONG. ▶ NEXT: D (tool-docs rút gọn arg) →
+> E (grep naming/patch/index-search).**
 
 ### Thứ tự đề xuất cho session sau
 **~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.

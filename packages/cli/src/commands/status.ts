@@ -94,6 +94,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Trace record", value: f.traceRecord ? "on (.agency/traces)" : "off", keys: ["traceRecord"] },
     { label: "Cognition stream", value: f.cognitionStream ? "on (narrate routing + safety to panel)" : "off", keys: ["cognitionStream"] },
     { label: "Prompt cache prefix", value: f.promptCachePrefix ? "on (static-first → provider prefix cache)" : "off", keys: ["promptCachePrefix"] },
+    { label: "Soft approaches", value: f.softApproaches ? "on (scale to a few, not exactly 5)" : "off (exactly 5)", keys: ["softApproaches"] },
   ];
 }
 

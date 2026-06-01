@@ -107,6 +107,14 @@ export interface RuntimeFlags {
    * — no prefix cache), on in hardened. Roadmap §8.11-B.
    */
   promptCachePrefix: boolean;
+  /**
+   * Soften the system prompt's "MUST outline exactly 5 approaches every turn"
+   * rule to a complexity-scaled "a few (2–3), or a single clear recommendation
+   * for simple tasks". Off in legacy (the exact-5 rule preserved verbatim), on
+   * in hardened. Saves output tokens (pricier than input) + less formulaic on
+   * easy tasks while keeping multi-option depth for hard ones. Roadmap §8.11-C.
+   */
+  softApproaches: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -216,5 +224,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // stable across turns → enables provider-side prefix caching) → off in
     // legacy (variable-first order preserved byte-identical), on in hardened.
     promptCachePrefix: parseBool(env.AGENCY_PROMPT_CACHE, hardened),
+    // Behaviour-changing (relaxes the "exactly 5 approaches" output rule) → off
+    // in legacy (rule preserved verbatim), on in hardened.
+    softApproaches: parseBool(env.AGENCY_SOFT_APPROACHES, hardened),
   };
 }

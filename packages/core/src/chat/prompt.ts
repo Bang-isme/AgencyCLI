@@ -86,12 +86,24 @@ export function buildSystemPrompt(
     "Be structured and concise; avoid generic filler and repeated tool dumps.",
     "",
   ];
+  const flags = getRuntimeFlags();
+  // §8.11-C: the rigid "MUST outline exactly 5 approaches every turn" rule wastes
+  // output tokens (pricier than input) and reads formulaic on simple tasks. When
+  // on, scale it to "a few" by complexity; legacy keeps the exact-5 text verbatim.
+  const approachesRule = flags.softApproaches
+    ? [
+        "2. SOLUTION OPTIONS: When proposing planning, architectural, or task-resolution strategies, outline a few (typically 2–3) distinct, well-differentiated approaches, scaled to the task's complexity — a simple task may warrant a single clear recommendation rather than padded alternatives.",
+        "3. PRIORITIZATION GRADIENT: Sort the proposed approaches by recommendation level (highest recommended first). For each, give its key trade-offs, success criteria, and a concrete next command/action to keep the workflow on-track.",
+      ]
+    : [
+        "2. THE 5-APPROACHES RULE: When proposing planning, architectural, or task resolution strategies, you MUST outline exactly 5 distinct, structured approaches or next steps.",
+        "3. PRIORITIZATION GRADIENT: Sort these 5 approaches by recommendation level (from highest recommended to fallback alternatives). For each approach, detail: its pros/cons, success criteria, and a concrete next command/action to keep the workflow on-track.",
+      ];
   const protocol = [
     "### WORKING PROGRESSION & SOLUTION ARCHITECTURE PROTOCOL",
     "To ensure every workflow stays on track to the right goal and leverages its past working timeline without losing context:",
     "1. TIMELINE ALIGNMENT: Utilize the `### SYSTEM HISTORICAL MEMORIES` to reconstruct the exact chronological timeline of past steps. Never repeat actions or edits that have already succeeded or been ruled out.",
-    "2. THE 5-APPROACHES RULE: When proposing planning, architectural, or task resolution strategies, you MUST outline exactly 5 distinct, structured approaches or next steps.",
-    "3. PRIORITIZATION GRADIENT: Sort these 5 approaches by recommendation level (from highest recommended to fallback alternatives). For each approach, detail: its pros/cons, success criteria, and a concrete next command/action to keep the workflow on-track.",
+    ...approachesRule,
     "",
     "",
     "### SYSTEM TOOL CALLS PROTOCOL",
@@ -121,7 +133,7 @@ export function buildSystemPrompt(
   // count, so total length is preserved):
   //  legacy  — anchor, identity, intent, guidance, protocol, tail
   //  cache   — identity, guidance, protocol (STATIC prefix), anchor, intent, tail
-  const ordered = getRuntimeFlags().promptCachePrefix
+  const ordered = flags.promptCachePrefix
     ? [...identity, ...guidance, ...protocol, ...sessionAnchor, ...intent, ...variableTail]
     : [...sessionAnchor, ...identity, ...intent, ...guidance, ...protocol, ...variableTail];
   const baseSystemPrompt = ordered.join("\n");
