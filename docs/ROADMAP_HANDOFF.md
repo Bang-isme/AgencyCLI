@@ -187,6 +187,12 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   `chat/route-presentation.ts` (orchestrator re-export → consumer giữ nguyên path); behaviour-preserving. Cạnh còn
   lại `agents/orchestrator → stream → orchestrator` (dispatch chạy chat turn) là chu trình CHỨC NĂNG hợp lệ → giữ.
   **§2.3 giờ đóng trọn: bound+chunk + incremental running-summary + in-loop.**
+- **Architecture cycle audit + guard (2026-06-01, cont'd 22):** Tarjan-SCC quét toàn `core/src` xác nhận chỉ còn 1
+  cạnh vi phạm phân tầng sót (`chat/presentation.ts` → `chat/orchestrator.ts` lấy `buildSuggestedCommands` — consumer
+  thứ 3 của helper đã dời, sót khỏi cont'd 21) → repoint sang leaf `route-presentation.ts`, SCC 8→7. Cụm 7-module còn
+  lại là chu trình chức năng bất khả giản (turn↔tools↔dispatch↔turn + setup + gate) → giữ + khoá bằng guard mới
+  `core/__tests__/architecture-cycles.test.ts` (fail nếu module ngoài set 7 lọt vào cycle). Guard thứ 4 (sau
+  skills/agents/flags). core 347→348.
 
 ### 2.4 — Tầng tool chắc hơn  ← 🟡 PHẦN LỚN ĐÃ CÓ (2026-05-31)
 - **Sửa file diff/patch chính xác — ĐÃ WIRE.** `ast-compiler` (`utils/`, AST TypeScript THẬT — `ts.createSourceFile`, không regex) trước chỉ dùng nhẹ ở `approval-policy-engine` (risk-sim), CHƯA là tool model gọi được. Giờ phơi thành tool **`ast_edit`** (`skill/tool-harness.ts`): `rename_symbol` / `replace_function_body` / `replace_method_body` / `modify_import` / `delete_node` / `insert_function` — tái dùng nguyên các hàm ast-compiler (không nhân đôi logic edit), bổ sung cho `edit_file` (text replace) chứ không thay. Auto-quảng bá cho model qua `registry.listTools()` → `buildSystemPrompt` (không cần sửa prompt cứng). Approval-gated (category write). Test: `tool-harness.test.ts` (+5).

@@ -1,5 +1,5 @@
 import type { ChatTurnResult } from "./orchestrator.js";
-import { buildSuggestedCommands } from "./orchestrator.js";
+import { buildSuggestedCommands } from "./route-presentation.js";
 import type { RouteResult } from "../router/model-router.js";
 import { JSONRepairEngine } from "@agency/tooling";
 
