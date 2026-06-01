@@ -11,6 +11,7 @@ import {
   isTransientError,
   type ProviderId,
   type ModelSpec,
+  type ChatMessage,
 } from "@agency/providers";
 import {
   buildAtReferenceContext,
@@ -39,10 +40,11 @@ import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js"
 
 
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
+// `ChatMessage` ({ role, content }) is owned by @agency/providers (the LLM
+// layer). Re-exported here so the many `import { ChatMessage } from
+// "./orchestrator.js"` consumers keep one import path, while the type has a
+// single definition — it was previously a byte-identical duplicate declaration.
+export type { ChatMessage };
 
 export interface ChatTurnInput {
   prompt: string;

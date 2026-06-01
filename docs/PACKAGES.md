@@ -684,7 +684,13 @@ or couple unrelated packages.
 | `~len/4` token estimate — `providers/*` (`ceil`, rate-limiter), `memory/retriever.ts` (`ceil`, retrieval budget), `providers/error-parser.ts` (`round`), chat turn (`round + 200`) | Different formulas and domains; merging across packages would change behaviour and add cross-package deps. Only the orchestrator↔stream copy was byte-identical and now lives in `turn-helpers.recordTurnTokenCost`. |
 | `handover.ts` — `core/runtime/handover.ts` vs `cli/commands/handover.ts` | Layer split: core builds the digest (`generateHandover`); cli is the thin command wrapper. |
 | `grep_file` vs `grep_search` built-in tools (`skill/tool-harness.ts`) | Different scope: `grep_file` searches one file (the model passes a file path); `grep_search` walks the workspace recursively, honours the ignore filter, skips binaries, and supports `limit`/`case_sensitive`/`is_regex`. Complementary, not redundant — `grep_search` can't search a single file (it `readdirSync`s a directory). |
+| `ToolCall` — `core/skill/tool-harness.ts` (`{name, arguments: Record<string,string>}`) vs `tooling/types.ts` (`{id, name, arguments: Record<string,any>}`) | Different shapes: core's is the parsed-XML model tool call (string args); tooling's is the registry-level call (carries an `id`, coerced `any` args). Distinct layers. |
+| `GraphEdge` — `core/graph/loader.ts` (`{from,to,kind}`) vs `memory/types.ts` (`{source_id,target_id,relation_type,weight,metadata}`) | Different domains: the workspace code-dependency graph vs the memory knowledge graph. |
+| `VerificationResult` — `core/skill/harness.ts` (`{passed,exitCode,stdout,stderr,error}`) vs `core/task/checkpoint.ts` (`{taskId,passed,timestamp,exitCode,stdout}`) | Different concerns: a tool-harness command result vs a persisted per-task checkpoint verification record. |
+| `AuditEntry` — `core/approval/audit.ts` (`{action,tool,command,approved}`) vs `memory/types.ts` (full mutation record) | Different domains: the approval-gate audit line vs the memory mutation/rollback audit row. |
 | Per-package `index.ts` / `types.ts` / `config.ts` / `runner.ts` / `registry.ts` | Normal monorepo structure — same basename, package-local scope, no shared logic. |
+
+> `ChatMessage` (`{role, content}`) was a byte-identical duplicate in `core/chat/orchestrator.ts` and `providers/types.ts`; it is now **owned by `@agency/providers`** (the LLM layer) and re-exported from `orchestrator.ts` (`export type { ChatMessage }`) so the many `./orchestrator.js` consumers keep one import path with a single definition.
 
 ### Repeatable duplication scan
 
@@ -695,7 +701,7 @@ grep -rEn --include='*.ts' "^export (async )?(function|class) [A-Za-z0-9_]+" pac
  | sed -E 's#(.*):[0-9]+:export (async )?(function|class) ([A-Za-z0-9_]+).*#\4\t\1#' \
  | sort | awk -F'\t' '{n[$1]=n[$1]" "$2; c[$1]++} END {for (k in c) if (c[k]>1) print c[k]"  "k":"n[k]}'
 ```
-As of 2026-05-31 the only cross-file match is the intentional `ReplayEngine` pair above.
+As of 2026-06-01: the **function/class**-name scan's only cross-file match is the intentional `ReplayEngine` pair; the **exported-const** scan is empty; the **type/interface**-name scan matches `ToolCall`, `GraphEdge`, `VerificationResult`, `AuditEntry` (all intentionally distinct — see the table above) — `ChatMessage` was the one real duplicate and is now consolidated into `@agency/providers`. To also scan types, swap `(function|class)` for `(interface|type)` and `const` in the command above.
 
 ## Harness, built-in tools & skills (inventory)
 
