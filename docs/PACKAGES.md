@@ -238,7 +238,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `components/SubagentPanel.tsx` | Subagent status panel |
 | `components/ExecutionPanel.tsx` | Phase/severity execution panel (lifecycle + severity glyphs) |
 | `components/ErrorBanner.tsx` | Inline error notification banner (`ErrorNotification`) |
-| `components/conversation/TraceTelemetry.tsx` | Inline trace/telemetry readout in conversation |
+| `components/conversation/TraceTelemetry.tsx` | Inline trace/telemetry readout. `parseSystemActivityLine()` is the SINGLE canonical `[SYSTEM:]`-line classifier (§8.10-E) consumed by both live renderers — `SystemActivityLine` (verbose) + `toConciseTelemetry` (concise); do NOT re-inline the pattern regexes. (The byte-identical dead `formatSystemActivityLine` was removed.) |
 | `components/conversation/SubagentStepRow.tsx` | Per-step subagent row with status highlighting |
 
 **State & Utilities:**
