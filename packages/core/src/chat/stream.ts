@@ -31,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, describeToolActivity } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -40,7 +40,7 @@ import {
   globalProviderSupervisor,
 } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
 import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
@@ -474,6 +474,23 @@ export async function runChatTurnWithStream(
           { role: "assistant" as const, content: currentText },
           { role: "user" as const, content: toolOutputs + gateFailureText },
         ];
+
+        // §8.8-A — the circuit breaker tripped inside executeTool (identical calls
+        // or consecutive failures). It used to only return an Error string the
+        // model kept ignoring, churning to maxLoops. Hard-break the loop and fold
+        // a final notice into the turn text so the user/next turn see why it
+        // stopped. The tool results are already in turnHistory above.
+        const breakerReason = consumeCircuitBreakerTrip();
+        if (breakerReason) {
+          const notice = buildCircuitBreakerNotice(breakerReason);
+          handlers.onDelta(`\n${notice}\n`);
+          llmText += `\n${notice}`;
+          EventBus.getInstance().publish("system:warning", {
+            message: `Tool loop halted by circuit breaker after repeated failed/identical tool calls.`,
+          });
+          break;
+        }
+
         loopCount++;
         continue;
       }

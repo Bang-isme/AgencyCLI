@@ -189,6 +189,21 @@ export function buildIncompleteTurnNotice(
     : head;
 }
 
+/**
+ * One-line halt notice for when the tool-loop circuit breaker trips — the model
+ * repeated an identical call or hit consecutive failures (e.g. a hard-refused
+ * `taskkill /IM node.exe`). The breaker already returns this signal inside
+ * `executeTool`; before this notice the turn loop merely passed the error back
+ * and the model churned on variants until maxLoops. Mirrors the `⚠ [SYSTEM:]`
+ * shape of {@link buildIncompleteTurnNotice} so the TUI activity parser renders
+ * it as one trace line and the model sees why the turn stopped. The `reason`
+ * already begins "Circuit breaker triggered: …" (from circuit-breaker.ts).
+ * Shared by BOTH turn paths.
+ */
+export function buildCircuitBreakerNotice(reason: string): string {
+  return `⚠ [SYSTEM: Tool loop halted — ${reason} Stopping here to avoid churning. Review the errors above, change the approach (a different command, or fix the underlying problem) and ask me to continue — repeating the same call will only trip this again.]`;
+}
+
 const SEARCH_NARRATION_TOOLS = new Set(["grep_file", "grep_search", "find_files", "list_dir"]);
 const READ_NARRATION_TOOLS = new Set(["read_file", "file_info", "git_summary", "git_diff"]);
 const EDIT_NARRATION_TOOLS = new Set([

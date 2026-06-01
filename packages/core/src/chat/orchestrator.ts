@@ -29,11 +29,11 @@ import { type RouteResult } from "../router/model-router.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, describeToolActivity } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
 import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
@@ -442,6 +442,19 @@ export async function runChatTurn(
           { role: "assistant" as const, content: currentText },
           { role: "user" as const, content: toolOutputs + gateFailureText },
         ];
+
+        // §8.8-A — hard-break on a circuit-breaker trip (see stream.ts). The
+        // non-stream path has no onDelta, so the notice reaches the user + the
+        // next turn only via llmText → assistantText → history.
+        const breakerReason = consumeCircuitBreakerTrip();
+        if (breakerReason) {
+          llmText += `\n${buildCircuitBreakerNotice(breakerReason)}`;
+          void EventBus.getInstance().publish("system:warning", {
+            message: `Tool loop halted by circuit breaker after repeated failed/identical tool calls.`,
+          });
+          break;
+        }
+
         loopCount++;
         continue;
       }

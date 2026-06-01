@@ -32,10 +32,20 @@ export interface ToolCall {
  * <tool_call name="read_file">
  *   <path>src/App.tsx</path>
  * </tool_call>
+ *
+ * Robustness (§8.8-B): some models (observed with minimax) emit slightly
+ * malformed wrappers — single-quoted or spaced name attributes
+ * (`<tool_call name='x' >`) and whitespace in the closing tag
+ * (`</tool_call >`, `</ tool_call>`). The wrapper regex tolerates those so a
+ * recoverable call isn't silently dropped (a dropped call makes the model think
+ * it ran a tool that never executed → the churn/restart-from-scratch loop). The
+ * pattern stays a strict superset of the canonical form, so well-formed output
+ * parses byte-identically. A wrapper with NO closing tag (truncated output) is
+ * still intentionally NOT recovered — there is no safe boundary for the body.
  */
 export function parseToolCalls(text: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
-  const regex = /<(tool_call|invoke|invoke_call)\s+name="([^"]+)">([\s\S]*?)<\/(tool_call|invoke|invoke_call)>/g;
+  const regex = /<(tool_call|invoke|invoke_call)\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/\s*(tool_call|invoke|invoke_call)\s*>/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     const name = match[2]!;
@@ -136,6 +146,16 @@ async function executeWithRetry(
  * Circuit breaker state to prevent infinite loops and cascading failures
  */
 const circuitBreakerState = createCircuitBreaker();
+
+/**
+ * Set when {@link executeTool} short-circuits a call because the breaker tripped
+ * (repeated identical calls OR consecutive failures). The turn loop reads this
+ * via {@link consumeCircuitBreakerTrip} after each tool batch so it can HARD-break
+ * instead of merely handing the model an `Error: Circuit breaker triggered …`
+ * string it can (and did, per the user's churn screenshot) ignore. Reading it
+ * clears it; the turn-start reset clears it too.
+ */
+let lastCircuitBreakerTripReason: string | null = null;
 
 export const registry = new ToolRegistry();
 
@@ -988,6 +1008,8 @@ export async function executeTool(
   // Check circuit breaker before execution
   const circuitCheck = checkCircuitBreaker(circuitBreakerState, [{ name, arguments: args }]);
   if (circuitCheck.shouldBreak) {
+    // Latch the reason so the turn loop can hard-break (see consumeCircuitBreakerTrip).
+    lastCircuitBreakerTripReason = circuitCheck.reason ?? "Possible infinite loop detected.";
     return `Error: Circuit breaker triggered - ${circuitCheck.reason}`;
   }
 
@@ -1049,6 +1071,21 @@ export async function executeTool(
  *  a fresh turn isn't pre-tripped by failures/repeats from a previous turn. */
 export function resetToolCircuitBreaker(): void {
   resetCircuitBreaker(circuitBreakerState);
+  lastCircuitBreakerTripReason = null;
+}
+
+/**
+ * Read-and-clear the most recent circuit-breaker trip reason, or `null` if the
+ * breaker hasn't tripped since the last read/reset. The turn loop calls this once
+ * after each tool batch: a non-null result means a tool was short-circuited by
+ * the breaker (the model is churning on identical or always-failing calls), so
+ * the loop should stop and surface a final message rather than continue feeding
+ * the model an error it keeps ignoring until maxLoops.
+ */
+export function consumeCircuitBreakerTrip(): string | null {
+  const reason = lastCircuitBreakerTripReason;
+  lastCircuitBreakerTripReason = null;
+  return reason;
 }
 
 const MAX_TOOL_RESULT_CHARS = 30_000; // ~7,500 tokens

@@ -65,6 +65,64 @@ Here is my decision:
       expect(calls[1]!.name).toBe("list_dir");
       expect(calls[1]!.arguments.path).toBe(".");
     });
+
+    // §8.8-B — tolerate the malformed wrappers some models (minimax) emit so a
+    // recoverable call isn't silently dropped (a dropped call → the model thinks
+    // a tool ran that never did → churn/restart-from-scratch).
+    it("recovers calls whose closing tag has stray whitespace (</tool_call >, </ tool_call>)", () => {
+      const text = `
+<tool_call name="read_file">
+  <path>a.ts</path>
+</tool_call >
+<tool_call name="list_dir">
+  <path>.</path>
+</ tool_call>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.name).toBe("read_file");
+      expect(calls[0]!.arguments).toEqual({ path: "a.ts" });
+      expect(calls[1]!.name).toBe("list_dir");
+    });
+
+    it("recovers single-quoted and spaced name attributes", () => {
+      const text = `
+<tool_call name='read_file' >
+  <path>b.ts</path>
+</tool_call>
+<tool_call name = "list_dir">
+  <path>.</path>
+</tool_call>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.name).toBe("read_file");
+      expect(calls[0]!.arguments).toEqual({ path: "b.ts" });
+      expect(calls[1]!.name).toBe("list_dir");
+    });
+
+    it("does not double-parse when a stray extra closing tag follows a valid call", () => {
+      const text = `
+<tool_call name="read_file">
+  <path>c.ts</path>
+</tool_call>
+</tool_call>
+</invoke>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.arguments).toEqual({ path: "c.ts" });
+    });
+
+    it("drops (does not crash on) a wrapper with no closing tag — no safe body boundary to recover", () => {
+      const text = `
+<tool_call name="write_file">
+  <path>d.ts</path>
+  <content>truncated...
+      `;
+      expect(() => parseToolCalls(text)).not.toThrow();
+      expect(parseToolCalls(text)).toHaveLength(0);
+    });
   });
 
   describe("executeTool", () => {
