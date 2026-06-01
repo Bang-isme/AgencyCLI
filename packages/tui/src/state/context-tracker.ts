@@ -77,7 +77,8 @@ export type ActivityPhase =
   | "analyzing"
   | "thinking"
   | "writing"
-  | "editing";
+  | "editing"
+  | "running";
 
 const PHASE_LABELS: Record<ActivityPhase, string> = {
   idle: "",
@@ -88,8 +89,40 @@ const PHASE_LABELS: Record<ActivityPhase, string> = {
   thinking: "Thinking",
   writing: "Writing",
   editing: "Editing",
+  running: "Running",
 };
 
 export function getPhaseLabel(phase: ActivityPhase): string {
   return PHASE_LABELS[phase] ?? phase;
+}
+
+/**
+ * §8.10-B — map a runtime thought (its structured `source`/`phase`) to the
+ * coarse TUI activity phase, so the status line + execution panel reflect what
+ * the agent is DOING in realtime and don't fall back to a stale "Writing" once
+ * the per-tool heartbeat message ages out (>10s). Mirrors the categories the
+ * core `describeToolActivity` emits for main-turn tools (retrieval→reading,
+ * worker+editing→editing, sandbox→running, dispatch→thinking) plus the other
+ * narration sources (planner→routing, validator→analyzing). Returns null for
+ * sources that carry no activity signal, leaving the phase unchanged. Pure.
+ */
+export function activityPhaseFromThought(
+  source?: string,
+  phase?: string
+): ActivityPhase | null {
+  switch (source) {
+    case "sandbox":
+      return "running";
+    case "validator":
+      return "analyzing";
+    case "planner":
+    case "scheduler":
+      return "routing";
+    case "retrieval":
+      return "reading";
+    case "worker":
+      return phase === "editing" ? "editing" : "thinking";
+    default:
+      return null;
+  }
 }

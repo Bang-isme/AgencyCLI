@@ -19,6 +19,50 @@ export interface ExecutionPanelProps {
   providerLabel?: string;
 }
 
+type PhaseStatus = "pending" | "active" | "done";
+export interface ExecutionPhaseStatuses {
+  plan: PhaseStatus;
+  execute: PhaseStatus;
+  verify: PhaseStatus;
+  recover: PhaseStatus | "hidden";
+  complete: PhaseStatus;
+}
+
+/**
+ * §8.10-B — map the coarse activity phase to the status of each lifecycle node.
+ * Extracted as a pure function so the mapping is unit-tested directly, and
+ * extended to cover the realtime per-tool phases now driven from runtime
+ * thoughts (editing/running → EXECUTE active, analyzing → VERIFY active, …),
+ * not just the original routing/writing/idle.
+ */
+export function computeExecutionPhaseStatuses(phase: string): ExecutionPhaseStatuses {
+  const s: ExecutionPhaseStatuses = {
+    plan: "pending", execute: "pending", verify: "pending", recover: "hidden", complete: "pending",
+  };
+  const p = phase.toLowerCase();
+  if (["routing", "reading", "exploring", "thinking"].includes(p)) {
+    s.plan = "active";
+  } else if (["writing", "editing", "running"].includes(p)) {
+    s.plan = "done";
+    s.execute = "active";
+  } else if (["validating", "analyzing"].includes(p)) {
+    s.plan = "done";
+    s.execute = "done";
+    s.verify = "active";
+  } else if (p === "recovering" || p === "rolling_back") {
+    s.plan = "done";
+    s.execute = "done";
+    s.verify = "done";
+    s.recover = "active";
+  } else if (p === "idle") {
+    s.plan = "done";
+    s.execute = "done";
+    s.verify = "done";
+    s.complete = "done";
+  }
+  return s;
+}
+
 /**
  * Unified Execution Panel.
  *
@@ -52,34 +96,16 @@ export const ExecutionPanel = memo(function ExecutionPanel({
   const hasCritical = counts.critical > 0;
   const innerWidth = width - 4;
 
-  // Map phase to status of each visual phase group
-  let planStatus: "pending" | "active" | "done" = "pending";
-  let executeStatus: "pending" | "active" | "done" = "pending";
-  let verifyStatus: "pending" | "active" | "done" = "pending";
-  let recoverStatus: "pending" | "active" | "done" | "hidden" = "hidden";
-  let completeStatus: "pending" | "active" | "done" = "pending";
+  // Map phase to the status of each visual lifecycle node (pure + tested).
+  const { plan: planStatus, execute: executeStatus, verify: verifyStatus, recover: recoverStatus, complete: completeStatus } =
+    computeExecutionPhaseStatuses(phase);
 
-  const lowerPhase = phase.toLowerCase();
-  if (lowerPhase === "routing" || lowerPhase === "reading") {
-    planStatus = "active";
-  } else if (lowerPhase === "writing") {
-    planStatus = "done";
-    executeStatus = "active";
-  } else if (lowerPhase === "validating") {
-    planStatus = "done";
-    executeStatus = "done";
-    verifyStatus = "active";
-  } else if (lowerPhase === "recovering" || lowerPhase === "rolling_back") {
-    planStatus = "done";
-    executeStatus = "done";
-    verifyStatus = "done";
-    recoverStatus = "active";
-  } else if (lowerPhase === "idle") {
-    planStatus = "done";
-    executeStatus = "done";
-    verifyStatus = "done";
-    completeStatus = "done";
-  }
+  // §8.10-D — the sub-line under the ACTIVE node is the agent's REAL latest
+  // activity (the most recent runtime thought), not a hardcoded decorative
+  // string ("inspect routing" / "apply patches" / "compile application") that
+  // had no relation to what was actually running. Empty when there is no live
+  // narration (e.g. cognitionStream off) → the node shows no fake sub-line.
+  const currentActivity = thoughts.length > 0 ? [thoughts[thoughts.length - 1]!.message] : [];
 
   const renderPhaseNode = (
     label: string,
@@ -162,11 +188,11 @@ export const ExecutionPanel = memo(function ExecutionPanel({
 
       {/* Execution Orchestration Tree */}
       <Box flexDirection="column" marginTop={1} marginBottom={1} width={innerWidth}>
-        {renderPhaseNode("PLAN", planStatus, ["inspect routing", "detect workspace context"])}
-        {renderPhaseNode("EXECUTE", executeStatus, ["apply patches", "modify codebase files"])}
-        {renderPhaseNode("VERIFY", verifyStatus, ["compile application", "validate integrity checks"])}
-        {recoverStatus !== "hidden" ? renderPhaseNode("RECOVER", recoverStatus, ["safely roll back changes"]) : null}
-        {renderPhaseNode("COMPLETE", completeStatus, ["operations completed successfully"])}
+        {renderPhaseNode("PLAN", planStatus, currentActivity)}
+        {renderPhaseNode("EXECUTE", executeStatus, currentActivity)}
+        {renderPhaseNode("VERIFY", verifyStatus, currentActivity)}
+        {recoverStatus !== "hidden" ? renderPhaseNode("RECOVER", recoverStatus, currentActivity) : null}
+        {renderPhaseNode("COMPLETE", completeStatus, [])}
       </Box>
 
       {/* Operational events (advanced/expert) */}

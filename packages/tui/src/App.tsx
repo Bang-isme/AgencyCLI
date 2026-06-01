@@ -86,6 +86,7 @@ import {
 import {
   estimateContextUsage,
   getPhaseLabel,
+  activityPhaseFromThought,
   type ActivityPhase,
 } from "./state/context-tracker.js";
 import { useTerminalLayout } from "./layout/TerminalLayoutProvider.js";
@@ -546,6 +547,13 @@ export function App({
       if (parsed?.message) {
         emitHeartbeat(parsed.message);
       }
+      // §8.10-B — drive the coarse activity phase from the (structured) thought
+      // so the status line + execution panel reflect the current tool in realtime
+      // instead of reverting to a stale "Writing" once the heartbeat ages out.
+      // Only tool/narration thoughts carry an activity signal; others return null
+      // and leave the phase unchanged. No-op in legacy (no thoughts are emitted).
+      const ph = activityPhaseFromThought(parsed?.source, parsed?.phase);
+      if (ph) setActivityPhase(ph);
     };
     EventBus.getInstance().subscribe("thought:emitted", handleThought);
     return () => {
