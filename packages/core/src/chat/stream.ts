@@ -39,7 +39,7 @@ import {
   globalProviderSupervisor,
 } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { parseToolCalls, executeTool, truncateToolResult } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
 import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
@@ -344,7 +344,7 @@ export async function runChatTurnWithStream(
       const toolCalls = parseToolCalls(currentText);
       if (toolCalls.length > 0) {
         for (const tc of toolCalls) {
-          if ((tc.name === "write_file" || tc.name === "edit_file" || tc.name === "batch_edit") && tc.arguments.path) {
+          if (isFileWritingTool(tc.name) && tc.arguments.path) {
             filesWritten.add(tc.arguments.path);
           }
           handlers.onDelta(formatToolCallNotice(tc.name, tc.arguments));

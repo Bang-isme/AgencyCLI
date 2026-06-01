@@ -41,7 +41,7 @@ startup hook over writing new mechanisms. Most remaining work is wiring, not inv
 
 ---
 
-## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 340 / cli 550 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~1994 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load. Core moved 350→344→336 (delete slices) →342 (ReplayEngine wired, +6) →340 (LongRunnerManager deleted, −2) — wired-or-dead initiative now closed 100%, see §5 LATEST.)
+## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 345 / cli 550 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~1999 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load. Core moved 350→344→336 (delete slices) →342 (ReplayEngine wired) →340 (LongRunnerManager deleted) →345 (§2.4 `ast_edit` tool, +5) — wired-or-dead initiative closed 100%, see §5 LATEST.)
 
 All 5 CRITICAL threats from the audit are closed, plus several HIGH clusters.
 
@@ -215,7 +215,9 @@ Inspect any time with `agency status` / `agency status --json`.
 >
 > **WIRED-OR-DEAD INITIATIVE CLOSED 100% (2026-05-31, cont'd 5):** the last limbo module, `LongRunnerManager`, was **deleted** as a dead duplicate (+ test + `core/index.ts` export) after confirming every concern of it is already live: heartbeat + stall→fail via the wired `LeaseManager` (runner.ts `acquireLease`/`renewLease`/`checkExpired`, 5s renew), SIGINT/SIGTERM graceful-shutdown in 4 live places, crash-resume via checkpoint.ts + auto-resume; `runners.jsonl` had 0 consumers and its detached cross-process runner model doesn't exist. `pnpm verify` green: core 342→**340**, repo 1996→**1994** (−2). **Every machinery class exported from `core/index.ts` is now either WIRED or DELETED — zero "built-but-unwired" limbo remains.** Final tally: deleted 5 dead duplicates (DomainSpecialist, SessionConversation, Planner, Skills, LongRunner), wired 1 (ReplayEngine §2.5), corrected 1 mislabel (OutputEngine was always wired).
 >
-> **NEXT after that:** roadmap §2.4 (stronger tool layer: parallel tools, structured tool results) · full §2.5 record/replay behaviour-regression (deterministic re-execution on top of the `verifyJournalReplay` primitive) · measure legacy↔hardened on a harder eval corpus (needs a BYOK key — ceiling effect on current corpus) · then promote `hardened`→default. A real tier-6 detached-ops runner, if ever needed, should be designed fresh on `LeaseManager`.
+> **§2.4 stronger tool layer — mostly already present (2026-05-31, cont'd 6):** audited the three §2.4 items. (1) **Precise diff/patch editing WIRED:** `ast-compiler` (real TS AST, `utils/`) was only used lightly in `approval-policy-engine` risk-sim and was NOT a model tool — now exposed as the **`ast_edit`** tool (rename_symbol / replace_function_body / replace_method_body / modify_import / delete_node / insert_function), reusing the ast-compiler functions verbatim (no dup), auto-advertised via `registry.listTools()`→`buildSystemPrompt`, approval-gated. (2) **Parallel tools already done + verified safe:** both turn paths `Promise.all` the tool batch; file-writing handlers are synchronous read-modify-write with no `await` between → atomic on Node's single thread → no race, so "serialize dependent" would fix a non-bug. (3) **Smart truncation already present** (`truncateToolResult` scales to the model context window). Also consolidated the duplicated `filesWritten` detection (orchestrator+stream) into `isFileWritingTool`. `pnpm verify` green: core 340→**345** (+5), repo 1994→**1999**.
+>
+> **NEXT:** full §2.5 record/replay behaviour-regression (deterministic re-execution on top of the `verifyJournalReplay` primitive) · optional §2.4 typed/structured tool results (marginal) · measure legacy↔hardened on a harder eval corpus (needs a BYOK key — ceiling effect on current corpus) · then promote `hardened`→default. A real tier-6 detached-ops runner, if ever needed, should be designed fresh on `LeaseManager`.
 
 > **STATUS (2026-05-30):** (A)·(B)·(C)·(D)·(E)·(F) all DONE → **every audit hardening gap is closed.**
 > Maturity tier 1 + tier 2 complete + 3 TUI reliability fixes. **Eval harness (ROADMAP Phần 3) STARTED:**
@@ -453,8 +455,8 @@ tools/MCP/plugins; full artifact system (id/owner/version). See PRODUCTION_AUDIT
 ## 7. How to resume in one minute
 ```bash
 pnpm -r build                                   # must be clean (all 16 packages)
-pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~1994, exit 0)
-# or per-package: core 340 / cli 550 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
+pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~1999, exit 0)
+# or per-package: core 345 / cli 550 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
 agency eval --json                              # run the eval suite + (if present) the regression gate
 agency status --json                            # see active flags (24)
 AGENCY_PROFILE=hardened agency status            # see hardened posture (auto-recover, GC, budgets, compaction…)

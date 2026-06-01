@@ -1,4 +1,12 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, unlinkSync, renameSync, statSync, mkdirSync } from "node:fs";
+import {
+  replaceFunctionBody,
+  replaceMethodBody,
+  renameSymbol,
+  modifyImport,
+  deleteNode,
+  insertFunction,
+} from "../utils/ast-compiler.js";
 import { resolve, join, relative } from "node:path";
 import { runShellCommand } from "../terminal/sandbox.js";
 import { dispatchAgent } from "../agents/orchestrator.js";
@@ -151,12 +159,24 @@ const APPROVAL_GATED_TOOLS = new Set([
   "write_file",
   "edit_file",
   "batch_edit",
+  "ast_edit",
   "delete_file",
   "move_file",
   "create_directory",
   "execute_command",
   "dispatch_subagent",
 ]);
+
+/**
+ * Tools that write new content to `args.path`. Drives `filesWritten` in the chat
+ * loop (knowledge-graph re-index + post-turn verify). Single source of truth so
+ * the non-stream and stream turn paths stay in sync — they previously inlined an
+ * identical `name === "write_file" || ...` check.
+ */
+const FILE_WRITING_TOOLS = new Set(["write_file", "edit_file", "batch_edit", "ast_edit"]);
+export function isFileWritingTool(name: string): boolean {
+  return FILE_WRITING_TOOLS.has(name);
+}
 
 /** Maps a tool invocation to an approval action + params for risk assessment. */
 function toApprovalAction(name: string, args: Record<string, any>): { action: string; params: Record<string, any> } {
@@ -330,6 +350,80 @@ registry.register({
       return `Error editing file: ${err.message || String(err)}`;
     }
   }
+});
+
+// 3b. ast_edit — precise structural edits via the TypeScript AST
+registry.register({
+  name: "ast_edit",
+  description:
+    "Precise TypeScript/JavaScript structural edit via the AST — more reliable than edit_file's text search/replace for renames and whole-body swaps. operation: rename_symbol (target=old name, replacement=new name) | replace_function_body (target=fn name, replacement=new body) | replace_method_body (className + target=method, replacement=new body) | modify_import (target=module, addImports/removeImports=comma-separated) | delete_node (target=fn/class/var name) | insert_function (replacement=full function code).",
+  category: "write",
+  schema: z.object({
+    path: z.string(),
+    operation: z.enum([
+      "rename_symbol",
+      "replace_function_body",
+      "replace_method_body",
+      "modify_import",
+      "delete_node",
+      "insert_function",
+    ]),
+    target: z.string().optional(),
+    className: z.string().optional(),
+    replacement: z.string().optional(),
+    addImports: z.string().optional(),
+    removeImports: z.string().optional(),
+  }),
+  execute: async (args: any, context: any) => {
+    const { projectRoot } = context;
+    const pathArg = args.path || "";
+    const operation = args.operation || "";
+    if (!pathArg) return "Error: 'path' argument is required for ast_edit.";
+    const filePath = resolve(projectRoot, pathArg);
+    if (!existsSync(filePath)) return `Error: File not found at path "${pathArg}"`;
+    const splitList = (s?: string) =>
+      (s || "").split(",").map((x) => x.trim()).filter(Boolean);
+    try {
+      const src = readFileSync(filePath, "utf8");
+      let updated: string;
+      switch (operation) {
+        case "rename_symbol":
+          if (!args.target || !args.replacement)
+            return "Error: rename_symbol needs 'target' (old name) and 'replacement' (new name).";
+          updated = renameSymbol(src, args.target, args.replacement);
+          break;
+        case "replace_function_body":
+          if (!args.target || args.replacement === undefined)
+            return "Error: replace_function_body needs 'target' (function name) and 'replacement' (new body).";
+          updated = replaceFunctionBody(src, args.target, args.replacement);
+          break;
+        case "replace_method_body":
+          if (!args.className || !args.target || args.replacement === undefined)
+            return "Error: replace_method_body needs 'className', 'target' (method name) and 'replacement' (new body).";
+          updated = replaceMethodBody(src, args.className, args.target, args.replacement);
+          break;
+        case "modify_import":
+          if (!args.target) return "Error: modify_import needs 'target' (module specifier).";
+          updated = modifyImport(src, args.target, splitList(args.addImports), splitList(args.removeImports));
+          break;
+        case "delete_node":
+          if (!args.target) return "Error: delete_node needs 'target' (function/class/variable name).";
+          updated = deleteNode(src, args.target);
+          break;
+        case "insert_function":
+          if (args.replacement === undefined)
+            return "Error: insert_function needs 'replacement' (the full function code).";
+          updated = insertFunction(src, args.replacement);
+          break;
+        default:
+          return `Error: unknown ast_edit operation "${operation}".`;
+      }
+      writeFileSync(filePath, updated, "utf8");
+      return `Success: ast_edit (${operation}) applied to "${pathArg}".`;
+    } catch (err: any) {
+      return `Error in ast_edit (${operation}): ${err.message || String(err)}`;
+    }
+  },
 });
 
 // 4. list_dir

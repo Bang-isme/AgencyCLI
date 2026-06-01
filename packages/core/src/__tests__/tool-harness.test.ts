@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, isFileWritingTool } from "../skill/tool-harness.js";
 
 describe("Tool Harness Subsystem", () => {
   describe("parseToolCalls", () => {
@@ -117,6 +117,61 @@ Here is my decision:
     it("should handle error for unknown or invalid tools", async () => {
       const result = await executeTool("super_secret_tool", {}, tempDir);
       expect(result).toContain("Error: Unknown tool");
+    });
+
+    it("ast_edit renames a symbol across the file via the AST", async () => {
+      writeFileSync(join(tempDir, "rename.ts"), "const foo = 1;\nconsole.log(foo + foo);", "utf8");
+      const res = await executeTool(
+        "ast_edit",
+        { path: "rename.ts", operation: "rename_symbol", target: "foo", replacement: "bar" },
+        tempDir
+      );
+      expect(res).toContain("Success: ast_edit (rename_symbol)");
+      expect(readFileSync(join(tempDir, "rename.ts"), "utf8")).toBe(
+        "const bar = 1;\nconsole.log(bar + bar);"
+      );
+    });
+
+    it("ast_edit replaces a function body via the AST", async () => {
+      writeFileSync(join(tempDir, "fn.ts"), "function add(a, b) {\n  return a - b;\n}", "utf8");
+      const res = await executeTool(
+        "ast_edit",
+        { path: "fn.ts", operation: "replace_function_body", target: "add", replacement: "return a + b;" },
+        tempDir
+      );
+      expect(res).toContain("Success: ast_edit (replace_function_body)");
+      const content = readFileSync(join(tempDir, "fn.ts"), "utf8");
+      expect(content).toContain("return a + b;");
+      expect(content).not.toContain("a - b");
+    });
+
+    it("ast_edit returns a clear error on missing operation args", async () => {
+      writeFileSync(join(tempDir, "x.ts"), "const a = 1;", "utf8");
+      const res = await executeTool(
+        "ast_edit",
+        { path: "x.ts", operation: "rename_symbol", target: "a" }, // missing replacement
+        tempDir
+      );
+      expect(res).toContain("Error: rename_symbol needs");
+    });
+
+    it("ast_edit errors when the target file is missing", async () => {
+      const res = await executeTool(
+        "ast_edit",
+        { path: "nope.ts", operation: "delete_node", target: "x" },
+        tempDir
+      );
+      expect(res).toContain("Error: File not found");
+    });
+  });
+
+  describe("isFileWritingTool", () => {
+    it("flags content-writing tools (incl. ast_edit), not read-only ones", () => {
+      expect(isFileWritingTool("write_file")).toBe(true);
+      expect(isFileWritingTool("edit_file")).toBe(true);
+      expect(isFileWritingTool("ast_edit")).toBe(true);
+      expect(isFileWritingTool("read_file")).toBe(false);
+      expect(isFileWritingTool("list_dir")).toBe(false);
     });
   });
 });
