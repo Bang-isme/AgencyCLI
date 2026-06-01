@@ -11,6 +11,7 @@ import { buildIndex, writeIndex } from "../index/workspace-indexer.js";
 import { routeUserPrompt } from "../router/model-router.js";
 import { resolveSkillsRoot } from "../skills-root.js";
 import { EventBus } from "../events/event-bus.js";
+import { emitThought, emitVerifyRoundThought } from "../events/cognition.js";
 import { buildAcceptanceCommands } from "../utils/package-manager.js";
 import {
   AGENT_DISCIPLINES,
@@ -399,6 +400,16 @@ export async function dispatchAgent(
         reason: routing.reason,
         timestamp: Date.now(),
       }, { agentId: routing.agentId as string });
+      // Narrate the dispatch reroute to the cognition panel (no-op unless the
+      // cognitionStream flag is on). Separate channel from subagent:routed above.
+      emitThought({
+        source: "scheduler",
+        phase: "planning",
+        severity: "adaptation",
+        confidence: "medium",
+        message: `Rerouted ${req.agentId} → ${routing.agentId} (better capability match${routing.reason ? `: ${routing.reason}` : ""})`,
+        workerId: routing.agentId as string,
+      });
       req = { ...req, agentId: routing.agentId };
     }
   }
@@ -663,7 +674,11 @@ export async function dispatchAgent(
               lastErrors = verifyResult.errors.join("\n");
               return { passed: verifyResult.success, failures: lastErrors };
             },
-            { maxRounds: verifyMaxRounds }
+            {
+              maxRounds: verifyMaxRounds,
+              onRound: (round, verify) =>
+                emitVerifyRoundThought(round, verify, { workerId: req.agentId }),
+            }
           );
 
           if (loop.success && pendingTxId) {
@@ -783,7 +798,11 @@ export async function dispatchAgent(
               lastErr = r.failures;
               return { passed: r.passed, failures: r.failures };
             },
-            { maxRounds }
+            {
+              maxRounds,
+              onRound: (round, verify) =>
+                emitVerifyRoundThought(round, verify, { workerId: req.agentId }),
+            }
           );
           if (!loop.success) {
             subagentStderr = lastErr;

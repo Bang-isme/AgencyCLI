@@ -6,6 +6,7 @@ import { buildAcceptanceCommandsStrict } from "../utils/package-manager.js";
 import { snapshotWorkspace, workspaceChangedSince } from "../utils/workspace-snapshot.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { EventBus } from "../events/event-bus.js";
+import { emitVerifyRoundThought } from "../events/cognition.js";
 
 type ChatTurnResult = Awaited<ReturnType<typeof runChatTurnWithStream>>;
 
@@ -81,7 +82,11 @@ async function verifyAndHeal(
       if (acceptance.length === 0) return { passed: true, failures: "" };
       return runAcceptance(input.projectRoot, acceptance);
     },
-    { maxRounds: Math.max(1, flags.verifyMaxRounds) }
+    {
+      maxRounds: Math.max(1, flags.verifyMaxRounds),
+      onRound: (round, verify) =>
+        emitVerifyRoundThought(round, verify, { workerId: input.agentId }),
+    }
   );
 
   if (!loop.success && loop.history.length > 0) {

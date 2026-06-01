@@ -40,3 +40,34 @@ export function emitThought(thought: {
     /* cognition narration is best-effort observability — never break a turn */
   }
 }
+
+/**
+ * Narrate one verify-loop round to the cognition panel (self-correction).
+ * Wired into the loop's `onRound` hook at every verify site — subagent dispatch
+ * (both the SEARCH/REPLACE and the XML tool-call edit paths) and the main-turn
+ * verify — so this narration lives in exactly one place instead of being copied
+ * into each call site. Only a *failed* round is narrated, as an adaptation (the
+ * loop is about to re-attempt); the terminal pass/fail is already carried by the
+ * existing lifecycle events. Delegates gating to `emitThought` (no-op unless
+ * `cognitionStream` is on).
+ */
+export function emitVerifyRoundThought(
+  round: number,
+  verify: { passed: boolean; failures: string },
+  opts: { workerId?: string } = {}
+): void {
+  if (verify.passed) return;
+  const firstLine =
+    verify.failures
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? "verification failed";
+  emitThought({
+    source: "validator",
+    phase: "validation",
+    severity: "adaptation",
+    confidence: "medium",
+    message: `Verification failed (round ${round}) — self-correcting: ${firstLine.slice(0, 140)}`,
+    workerId: opts.workerId,
+  });
+}

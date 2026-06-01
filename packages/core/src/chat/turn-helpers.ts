@@ -209,6 +209,16 @@ export async function compactTurnHistory(
     /* observability is best-effort */
   }
 
+  // Narrate the context adaptation to the cognition panel (no-op unless the
+  // cognitionStream flag is on). Separate channel from the system:warning above.
+  emitThought({
+    source: "retrieval",
+    phase: "retrieval",
+    severity: "adaptation",
+    confidence: "high",
+    message: `Context compaction: summarized ${middle.length} older turn(s) (~${tokenCount} est tokens) to fit the model window.`,
+  });
+
   return {
     messages: [...head, summaryTurn, ...recent],
     compacted: true,

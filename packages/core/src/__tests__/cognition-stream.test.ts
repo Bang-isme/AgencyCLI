@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { EventBus } from "../events/event-bus.js";
-import { emitThought } from "../events/cognition.js";
+import { emitThought, emitVerifyRoundThought } from "../events/cognition.js";
 import { RuntimeThoughtEvent } from "@agency/contracts";
 
 describe("Runtime Cognition Stream & Events", () => {
@@ -61,6 +61,50 @@ describe("Runtime Cognition Stream & Events", () => {
       severity: "warning",
       message: "Safety: blocked write_file",
     });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(received).toHaveLength(0);
+  });
+
+  it("emitVerifyRoundThought narrates a failed verify round as a validator adaptation", async () => {
+    process.env.AGENCY_COGNITION_STREAM = "1";
+    const received = collectThoughts();
+
+    emitVerifyRoundThought(
+      2,
+      { passed: false, failures: "  \nsrc/foo.ts: type error TS2322\nmore detail" },
+      { workerId: "coder" }
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(received).toHaveLength(1);
+    const event = received[0]!;
+    expect(event.source).toBe("validator");
+    expect(event.phase).toBe("validation");
+    expect(event.severity).toBe("adaptation");
+    expect(event.workerId).toBe("coder");
+    // first non-empty failure line is surfaced (leading blank line skipped)
+    expect(event.message).toContain("round 2");
+    expect(event.message).toContain("src/foo.ts: type error TS2322");
+  });
+
+  it("emitVerifyRoundThought is silent on a passed round", async () => {
+    process.env.AGENCY_COGNITION_STREAM = "1";
+    const received = collectThoughts();
+
+    emitVerifyRoundThought(1, { passed: true, failures: "" });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(received).toHaveLength(0);
+  });
+
+  it("emitVerifyRoundThought is a no-op when cognitionStream is off (legacy)", async () => {
+    process.env.AGENCY_PROFILE = "legacy";
+    process.env.AGENCY_COGNITION_STREAM = "0";
+    const received = collectThoughts();
+
+    emitVerifyRoundThought(2, { passed: false, failures: "build failed" });
 
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(received).toHaveLength(0);

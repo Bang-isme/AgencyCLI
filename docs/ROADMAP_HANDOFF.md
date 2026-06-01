@@ -249,8 +249,16 @@ hết hạn, google rate-limit; nvidia chạy được — nên đo thật tốt
 - **Cognition stream (2026-06-01):** TUI CognitionPanel (`App.tsx` subscribe `thought:emitted`) trước đây
   **rỗng vĩnh viễn** — producer `emitThought` 0 caller (live-consumer/dead-producer). Đã wire `emitThought`
   tại 2 điểm quyết định: routing (`resolveRoute` dùng chung) + safety gating (approval hook). Cờ
-  `AGENCY_COGNITION_STREAM` (off legacy/on hardened), gate tập trung trong `emitThought`. Mở rộng sau:
-  capability reroute, verify self-heal, compaction (tái dùng `emitThought`, không nhân đôi).
+  `AGENCY_COGNITION_STREAM` (off legacy/on hardened), gate tập trung trong `emitThought`.
+  **Mở rộng emit (2026-06-01, cont'd 11) — ĐÃ WIRE 3 điểm còn lại** (đúng đề xuất NEXT, tái dùng
+  `emitThought`, không nhân đôi): (1) **capability reroute** (`dispatchAgent`, cạnh `subagent:routed`) →
+  `scheduler`/`planning`/`adaptation`; (2) **verify self-heal** — helper dùng chung mới
+  `emitVerifyRoundThought` (`events/cognition.ts`) gắn vào `onRound` của `runVerifyLoop` ở CẢ 3 nơi
+  (dispatchAgent SEARCH/REPLACE + XML tool-call + main-turn `verifyAndHeal`) → `validator`/`validation`/
+  `adaptation`, chỉ narrate vòng FAIL (terminal pass/fail đã có lifecycle event); (3) **compaction**
+  (`compactTurnHistory`, cạnh `system:warning`) → `retrieval`/`retrieval`/`adaptation`. Gate vẫn tập trung
+  trong `emitThought` → off legacy = byte-identical. Test `cognition-stream.test.ts` (+3). `pnpm verify`
+  xanh (core 329→332, ~1992).
 - **Bảng sức khỏe:** agent nào hay lỗi (registry health từ slice 5 đã làm), MCP nào hay timeout,
   memory phình tới đâu (telemetry đã có).
 - **Cảnh báo:** vượt budget, crash-loop, tỉ lệ lỗi tăng đột biến.
