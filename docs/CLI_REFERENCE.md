@@ -425,6 +425,23 @@ agency benchmark ast-search --json --budget 2.0
 
 ---
 
+### `agency replay`
+Replay the recorded durable event journal (`.agency/events/journal.db`) and verify it has not diverged or been corrupted — each event's payload must still hash to its stored `payloadHash`. The §2.5 behaviour-replay foundation. Exits non-zero on divergence.
+
+```
+agency replay
+agency replay --json
+agency replay --project-root ./some/project
+```
+
+**Options:**
+- `--project-root <path>` — Project root directory
+- `--json` — Emit the result (`{ ok, total, verified, skipped, divergence? }`) as JSON
+
+Oversized events whose payload was spilled to disk are counted as `skipped` (their hash covers the original, not the inline ref), never flagged as failures.
+
+---
+
 ## TUI Slash Commands (Interactive Mode Only)
 
 | Command | Action |

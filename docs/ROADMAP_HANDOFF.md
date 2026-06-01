@@ -166,12 +166,21 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
 - Gọi nhiều tool song song khi độc lập.
 - Kết quả tool có cấu trúc rõ + cắt ngắn thông minh (đã có một phần ở `truncateToolResult`).
 
-### 2.5 — Dùng Replay để tự kiểm
+### 2.5 — Dùng Replay để tự kiểm  ← 🟡 NỀN MÓNG ĐÃ WIRE (2026-05-31)
 - Đã có `ReplayEngine` + `DeterministicClock/Entropy`. Tận dụng để **chạy lại phiên cũ và xác
   nhận ra kết quả y hệt** → nền cho test hồi quy ở **cấp hành vi**, không chỉ cấp unit.
-- *Audit wired-or-dead (2026-05-31):* `ReplayEngine` (events/replay-engine.ts) hiện **xây nhưng chưa
-  nối dây trong live code** (chỉ dùng ở test core + telemetry) — đây CHÍNH là việc của 2.5. Giữ lại,
-  KHÔNG xóa; wiring nó = thực thi mục này.
+- **ĐÃ WIRE (nền móng):** primitive thuần `verifyJournalReplay(events)` (TÁI DÙNG `ReplayEngine`,
+  không impl hash thứ 2) + `replaySessionJournal(projectRoot)` (load journal bền qua
+  `EventJournal.readEvents()`) + lệnh **`agency replay [--json]`**. Chạy lại `.agency/events/journal.db`
+  và phát hiện event có payload không còn khớp `payloadHash` đã lưu (corrupt/tamper on-disk — cùng họ
+  "làm hỏng-hóc quan sát được" với fix checkpoint-integrity). *Chi tiết đúng:* EventBus hash payload lớn
+  trên bản GỐC nhưng lưu spill-ref nhỏ inline → replay ngây thơ sẽ false-positive; `verifyJournalReplay`
+  nhận diện spill-ref và đếm `skipped` (trung thực về độ phủ), KHÔNG coi là fail. Thuần additive (lệnh
+  mới, không đổi path cũ → legacy ≡ hardened, không cờ). Test: `replay-journal.test.ts` (+6) +
+  `cli/replay.test.ts` (+3). `pnpm verify` xanh (core 342, cli 550, ~1996).
+- **Còn lại (full §2.5):** record/replay cấp hành vi thật = re-execute phiên cô lập (DeterministicClock/
+  Entropy đã có) + phát lại LLM response đã ghi, đẩy từng action qua `verifyJournalReplay`/`ReplayEngine`
+  để bắt divergence. Xây trên CHÍNH primitive này — không nhân đôi.
 
 ---
 

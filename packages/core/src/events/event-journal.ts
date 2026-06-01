@@ -17,11 +17,22 @@ process.on("exit", () => {
 export class EventJournal {
   private db: Database.Database;
 
+  /**
+   * Resolves the on-disk journal path for a project root. `":memory:"` passes
+   * through unchanged (used by tests). Shared by the constructor and by
+   * read-only callers (e.g. {@link replaySessionJournal}) so the path convention
+   * lives in exactly one place.
+   */
+  static resolvePath(projectRoot: string): string {
+    return projectRoot === ":memory:"
+      ? ":memory:"
+      : join(projectRoot, ".agency", "events", "journal.db");
+  }
+
   constructor(projectRoot: string) {
     activeJournals.add(this);
 
-    // If projectRoot is :memory:, use in-memory database for testing
-    const dbPath = projectRoot === ":memory:" ? ":memory:" : join(projectRoot, ".agency", "events", "journal.db");
+    const dbPath = EventJournal.resolvePath(projectRoot);
     if (dbPath !== ":memory:") {
       mkdirSync(dirname(dbPath), { recursive: true });
     }

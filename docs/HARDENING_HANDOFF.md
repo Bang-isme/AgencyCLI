@@ -41,7 +41,7 @@ startup hook over writing new mechanisms. Most remaining work is wiring, not inv
 
 ---
 
-## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 336 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~1987 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load. Core dropped 350→344→336 across two wire-or-delete slices that deleted four dead-duplicate modules — see §5 LATEST.)
+## 3. What is DONE (verified 2026-05-31 via `pnpm verify` — self-run, not inherited: full `pnpm -r build` clean 16/16; core 342 / cli 550 / tui 115 / memory 34 / workspace 11 / benchmark 14 / governance 7 / providers 840 / security 35 / tooling 14 / skills-bridge 13 / context 6 / heuristics 6 / browser 5 / telemetry 4 — **~1996 tests pass, exit 0**, full `pnpm -r` sweep green under concurrent load. Core moved 350→344→336 (two delete slices) →342 (ReplayEngine wired, +6 tests) — see §5 LATEST.)
 
 All 5 CRITICAL threats from the audit are closed, plus several HIGH clusters.
 
@@ -203,7 +203,7 @@ Inspect any time with `agency status` / `agency status --json`.
 > | ~~`SkillsRegistry` (skill/skills-registry.ts)~~ | in-memory skill registry duplicates skills-bridge; its per-skill circuit-breaker overlaps the wired tool-loop breaker (`chat/circuit-breaker.ts`) → **DELETED** (dead duplicate) |
 > | ~~`OutputEngine` (+ formatters, output/)~~ | **AUDIT MISLABEL — actually WIRED, not dead.** `cli/src/utils.ts` `out = OutputEngine.shared()` + `handleError()` → **49 `out.*`/`handleError` calls across 12 command files.** Moved to WIRED list above; NOT deleted. |
 > | `LongRunnerManager` (task/long-runner-manager.ts) | long-running task mgmt → **wire-target** (tier-6 ops) |
-> | `ReplayEngine` (events/replay-engine.ts) | **roadmap §2.5** (replay self-check) — deferred ON PURPOSE, do NOT delete |
+> | ~~`ReplayEngine` (events/replay-engine.ts)~~ | **NOW WIRED (2026-05-31 cont'd 4):** `verifyJournalReplay`/`replaySessionJournal` + the `agency replay` command verify the durable journal hasn't diverged/corrupted (§2.5 behaviour-replay *foundation*). No longer dead. |
 >
 > The remaining live-but-unwired modules are **left in place + documented** (not mass-deleted/wired in one pass — several need design decisions, one is planned). Picking any single one to wire-or-delete is a clean next slice.
 >
@@ -211,7 +211,9 @@ Inspect any time with `agency status` / `agency status --json`.
 >
 > **wire-or-delete slice 2 DONE (2026-05-31, cont'd 3):** swept the next batch with the "no duplication" lens. **`OutputEngine` was an audit MISLABEL — it is WIRED** (cli `out`/`handleError`, 49 calls/12 files) → kept + moved to WIRED, docs corrected. **`PlannerEngine` and `SkillsRegistry`** were confirmed dead duplicates (PlannerEngine ↔ live `runPlan`/`runner.ts`; SkillsRegistry ↔ live skills-bridge + `chat/circuit-breaker.ts`) → **deleted** (+ tests + `core/index.ts` exports). Verified by grep (no live importer, incl. the `cli/commands/skill.ts` `registerSkill` name-collision being unrelated) then `pnpm verify` green: core 344→**336**, repo 1995→**1987** (−8 = the two test files). **`LongRunnerManager` kept** (tier-6 wire-target, no live duplicate); `ReplayEngine` stays for §2.5. Dead-module list is now empty except those two intentional keeps.
 >
-> **NEXT after that:** roadmap §2.4 (stronger tool layer: parallel tools, structured tool results) · §2.5 (use `ReplayEngine` for behaviour-level regression) · measure legacy↔hardened on a harder eval corpus (needs a BYOK key — ceiling effect on current corpus) · then promote `hardened`→default.
+> **§2.5 ReplayEngine WIRED (2026-05-31, cont'd 4):** the last unwired keep is now wired without duplicating the existing journal infra. New core primitive `verifyJournalReplay(events)` (reuses the `ReplayEngine` class — no second hash impl) + `replaySessionJournal(projectRoot)` (loads the durable journal via `EventJournal.readEvents()`) + the **`agency replay [--json]`** command. It replays the recorded `.agency/events/journal.db` and flags any event whose stored payload no longer hashes to its stored `payloadHash` (on-disk corruption/tampering — same "make corruption observable" family as the checkpoint-integrity fix). **Correctness detail:** EventBus hashes oversized payloads over the *original* but stores a small spill-ref inline, so a naive replay would false-positive — `verifyJournalReplay` detects spill-refs and reports them as `skipped` (honest coverage), never as failures. Purely additive (new command; no existing path changes → legacy ≡ hardened, no flag). Tests: `replay-journal.test.ts` (+6) + `cli/replay.test.ts` (+3, incl. tamper→exit 1). `pnpm verify` green: core 336→**342**, cli 547→**550**, repo 1987→**1996**. This is the §2.5 *foundation* (verification primitive + surface); full record/replay behaviour-regression (deterministic re-execution + recorded LLM responses) reuses this primitive and is the follow-up. **Only `LongRunnerManager` (tier-6) remains unwired now.**
+>
+> **NEXT after that:** roadmap §2.4 (stronger tool layer: parallel tools, structured tool results) · full §2.5 record/replay behaviour-regression (deterministic re-execution on top of the new `verifyJournalReplay` primitive) · wire `LongRunnerManager` (tier-6 ops) · measure legacy↔hardened on a harder eval corpus (needs a BYOK key — ceiling effect on current corpus) · then promote `hardened`→default.
 
 > **STATUS (2026-05-30):** (A)·(B)·(C)·(D)·(E)·(F) all DONE → **every audit hardening gap is closed.**
 > Maturity tier 1 + tier 2 complete + 3 TUI reliability fixes. **Eval harness (ROADMAP Phần 3) STARTED:**
@@ -449,8 +451,8 @@ tools/MCP/plugins; full artifact system (id/owner/version). See PRODUCTION_AUDIT
 ## 7. How to resume in one minute
 ```bash
 pnpm -r build                                   # must be clean (all 16 packages)
-pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~1987, exit 0)
-# or per-package: core 336 / cli 547 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
+pnpm verify                                     # THE ground-truth gate: build all 16 + test all (~1996, exit 0)
+# or per-package: core 342 / cli 550 / tui 115 / memory 34 / workspace 11 / benchmark 14 / providers 840 ...
 agency eval --json                              # run the eval suite + (if present) the regression gate
 agency status --json                            # see active flags (24)
 AGENCY_PROFILE=hardened agency status            # see hardened posture (auto-recover, GC, budgets, compaction…)

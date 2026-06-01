@@ -23,6 +23,7 @@ import { registerSchedule } from "./commands/schedule.js";
 import { registerSetup } from "./commands/setup.js";
 import { registerStatus } from "./commands/status.js";
 import { registerHandover } from "./commands/handover.js";
+import { registerReplay } from "./commands/replay.js";
 
 export function registerCommands(program: Command) {
   registerAgents(program);
@@ -49,5 +50,6 @@ export function registerCommands(program: Command) {
   registerSetup(program);
   registerStatus(program);
   registerHandover(program);
+  registerReplay(program);
 }
 

@@ -271,7 +271,12 @@ export {
 } from "./agents/workspace-isolation.js";
 export { EventBus, type EventCallback, type DurableEventSink } from "./events/event-bus.js";
 export { EventJournal } from "./events/event-journal.js";
-export { ReplayEngine } from "./events/replay-engine.js";
+export {
+  ReplayEngine,
+  verifyJournalReplay,
+  replaySessionJournal,
+  type JournalReplayResult,
+} from "./events/replay-engine.js";
 export {
   getRuntimeFlags,
   type RuntimeFlags,

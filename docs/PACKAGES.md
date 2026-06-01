@@ -138,7 +138,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `workflow/compose.ts` | `runWorkflow()` — 8 predefined workflow chains |
 | `events/event-bus.ts` | `EventBus` (singleton pub/sub, SHA-256 dedup) |
 | `events/event-journal.ts` | `EventJournal` — SQLite-backed replay |
-| `events/replay-engine.ts` | `ReplayEngine` — replays journaled events |
+| `events/replay-engine.ts` | `ReplayEngine`, `verifyJournalReplay()`, `replaySessionJournal()` — replay-verify the durable journal (powers `agency replay`) |
 | `events/cognition.ts` | `emitThought()` — structured cognition events |
 | `index/workspace-indexer.ts` | `buildIndex()`, `incrementalUpdateAsync()`, `writeIndex()` |
 | `index/incremental-indexer.ts` | `extractSymbolsAndImports()` — AST-level symbols |
