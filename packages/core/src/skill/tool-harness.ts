@@ -17,6 +17,7 @@ import { z } from "zod";
 import { ToolRegistry } from "@agency/tooling";
 import { ApprovalPolicyEngine, ApprovalRequiredError } from "../approval/index.js";
 import { EventBus } from "../events/event-bus.js";
+import { emitThought } from "../events/cognition.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 
 export interface ToolCall {
@@ -230,6 +231,15 @@ registry.addPreExecuteHook(async (name, args) => {
       reason: evaluation.reason,
       wouldBlock: true,
     });
+    // Narrate the safety decision to the cognition panel (no-op unless the
+    // cognitionStream flag is on). Separate channel from approval:warn above —
+    // that drives the audit flow, this narrates the agent's reasoning.
+    emitThought({
+      source: "risk-engine",
+      phase: "editing",
+      severity: "adaptation",
+      message: `Safety: would gate ${action} (risk ${evaluation.risk.level}) — ${evaluation.reason}`,
+    });
     return; // non-blocking: observe what *would* have been gated
   }
 
@@ -239,6 +249,12 @@ registry.addPreExecuteHook(async (name, args) => {
     params,
     risk: evaluation.risk,
     reason: evaluation.reason,
+  });
+  emitThought({
+    source: "risk-engine",
+    phase: "editing",
+    severity: "warning",
+    message: `Safety: blocked ${action} (risk ${evaluation.risk.level}) — ${evaluation.reason}`,
   });
   throw new ApprovalRequiredError(
     `Approval required for "${action}" (risk: ${evaluation.risk.level}): ${evaluation.reason}`

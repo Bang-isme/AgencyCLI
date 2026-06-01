@@ -13,6 +13,7 @@ import { getCachedRoute, setCachedRoute } from "../context/session-cache.js";
 import { type TokenBudgetPlan } from "../context/token-policy.js";
 import { routeUserPrompt, type RouteResult } from "../router/model-router.js";
 import { EventBus } from "../events/event-bus.js";
+import { emitThought } from "../events/cognition.js";
 import { globalCostGovernor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import type { ChatTurnInput, ChatMessage } from "./orchestrator.js";
@@ -44,6 +45,16 @@ export async function resolveRoute(
   if (plan.useRouteCache) {
     setCachedRoute(input.projectRoot, input.prompt, route);
   }
+  // Narrate the planner decision to the cognition panel (no-op unless the
+  // cognitionStream flag is on). Only on a fresh resolve — a cache hit is not a
+  // new decision.
+  emitThought({
+    source: "planner",
+    phase: "planning",
+    severity: "info",
+    confidence: "high",
+    message: `Routing: ${route.intent} → ${route.provider}${route.suggested_agent ? ` · ${route.suggested_agent}` : ""}`,
+  });
   return { route, fromCache: false };
 }
 

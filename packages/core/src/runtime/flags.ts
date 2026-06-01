@@ -83,6 +83,14 @@ export interface RuntimeFlags {
    * (roadmap §2.5). Opt-in in both profiles — recording adds a per-tool push.
    */
   traceRecord: boolean;
+  /**
+   * Emit structured RuntimeThoughtEvents (`thought:emitted`) at runtime decision
+   * points (routing, safety gating) so the TUI CognitionPanel — which already
+   * subscribes to `thought:emitted` but had no live producer — narrates what the
+   * agent is doing. Off in legacy (no extra bus events → byte-identical), on in
+   * hardened. Gated centrally in `emitThought`, so call sites stay unconditional.
+   */
+  cognitionStream: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -182,5 +190,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Behaviour-recording for §2.5 replay regression; per-tool overhead → opt-in
     // (off by default even in hardened, like verifyTests).
     traceRecord: parseBool(env.AGENCY_TRACE_RECORD, false),
+    // Observability narration for the (already-subscribed) cognition panel; emits
+    // extra `thought:emitted` bus events → off in legacy, on in hardened.
+    cognitionStream: parseBool(env.AGENCY_COGNITION_STREAM, hardened),
   };
 }

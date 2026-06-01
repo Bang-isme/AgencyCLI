@@ -246,6 +246,11 @@ hết hạn, google rate-limit; nvidia chạy được — nên đo thật tốt
 
 - **Observability:** `agency status` đã tốt; thêm trace theo task xuyên suốt (nhờ B), và
   `agency handover` đã có để bàn giao trạng thái.
+- **Cognition stream (2026-06-01):** TUI CognitionPanel (`App.tsx` subscribe `thought:emitted`) trước đây
+  **rỗng vĩnh viễn** — producer `emitThought` 0 caller (live-consumer/dead-producer). Đã wire `emitThought`
+  tại 2 điểm quyết định: routing (`resolveRoute` dùng chung) + safety gating (approval hook). Cờ
+  `AGENCY_COGNITION_STREAM` (off legacy/on hardened), gate tập trung trong `emitThought`. Mở rộng sau:
+  capability reroute, verify self-heal, compaction (tái dùng `emitThought`, không nhân đôi).
 - **Bảng sức khỏe:** agent nào hay lỗi (registry health từ slice 5 đã làm), MCP nào hay timeout,
   memory phình tới đâu (telemetry đã có).
 - **Cảnh báo:** vượt budget, crash-loop, tỉ lệ lỗi tăng đột biến.
