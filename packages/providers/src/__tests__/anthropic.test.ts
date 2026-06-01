@@ -91,4 +91,46 @@ describe("anthropic provider complete & streamComplete", () => {
     expect(body.temperature).toBe(0.5);
     expect(body.max_tokens).toBe(500);
   });
+
+  it("complete(): system is a plain string by default (no prompt caching)", async () => {
+    const fetchImpl = mockFetch({ json: { content: [{ type: "text", text: "ok" }] } });
+    const provider = createAnthropicProvider(
+      { apiKey: "test-key", model: "claude-3-5-sonnet" },
+      fetchImpl as unknown as typeof fetch
+    );
+
+    await provider.complete(
+      [
+        { role: "system", content: "SYSTEM PROMPT" },
+        { role: "user", content: "Hi" },
+      ],
+      {}
+    );
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.system).toBe("SYSTEM PROMPT");
+  });
+
+  it("complete(): cacheSystemPrompt wraps system in a cache_control block", async () => {
+    const fetchImpl = mockFetch({ json: { content: [{ type: "text", text: "ok" }] } });
+    const provider = createAnthropicProvider(
+      { apiKey: "test-key", model: "claude-3-5-sonnet" },
+      fetchImpl as unknown as typeof fetch
+    );
+
+    await provider.complete(
+      [
+        { role: "system", content: "SYSTEM PROMPT" },
+        { role: "user", content: "Hi" },
+      ],
+      { cacheSystemPrompt: true }
+    );
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.system).toEqual([
+      { type: "text", text: "SYSTEM PROMPT", cache_control: { type: "ephemeral" } },
+    ]);
+  });
 });

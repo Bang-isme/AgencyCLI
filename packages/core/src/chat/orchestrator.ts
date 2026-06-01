@@ -269,6 +269,9 @@ export async function runChatTurn(
               onOptimization: (opt) => {
                 resolvedOptimization = opt;
               },
+              // Same flag as the static-prefix reorder: let the Anthropic
+              // adapter cache the (stable-prefix) system prompt across turns.
+              cacheSystemPrompt: getRuntimeFlags().promptCachePrefix,
             }
           );
           completionSuccess = true;

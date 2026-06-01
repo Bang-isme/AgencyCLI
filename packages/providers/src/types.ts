@@ -36,6 +36,14 @@ export interface CompleteOptions {
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
+  /**
+   * Ask the adapter to mark the (static-prefix) system prompt for provider-side
+   * prompt caching. OpenAI-compatible servers cache a stable prefix
+   * automatically and ignore this; the Anthropic adapter has no automatic
+   * prefix cache, so it attaches `cache_control:{type:"ephemeral"}` to the
+   * system block. Set by core from the `promptCachePrefix` flag. Roadmap §8.11-B.
+   */
+  cacheSystemPrompt?: boolean;
   onUsage?: (usage: { promptTokens: number; completionTokens: number; reasoningTokens?: number }) => void;
   onThought?: (thoughtDelta: string) => void;
   onFinishReason?: (reason: string) => void;

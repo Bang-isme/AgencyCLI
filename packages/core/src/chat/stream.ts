@@ -284,6 +284,9 @@ export async function runChatTurnWithStream(
             handlers.onOptimization?.(opt);
           },
           signal: input.signal,
+          // Same flag as the static-prefix reorder: let the Anthropic adapter
+          // cache the (now stable-prefix) system prompt across turns.
+          cacheSystemPrompt: getRuntimeFlags().promptCachePrefix,
         };
 
         try {

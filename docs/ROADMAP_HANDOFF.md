@@ -611,10 +611,15 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   surface ở `agency status` (`buildFlagRows`). Test `prompt-cache-order.test.ts` (5: legacy intent-before-tools / cache
   tools-before-intent + start "You are Agency CLI" / length-bất-biến / hardened default on / override giữ đầu). core 355→360,
   **28 flag**.
-- **SỬA (2) CÒN MỞ.** Adapter Anthropic (`providers/anthropic.ts`) gắn `cache_control:{type:"ephemeral"}` vào block cuối
-  `body.system` (Anthropic KHÔNG có automatic prefix-cache — phải khai tường minh, KHÁC openai-compatible). Providers là leaf
-  package → KHÔNG đọc core flags được → thread option qua `CompleteOptions` (vd `cacheSystemPrompt?: boolean`) do core set từ
-  `promptCachePrefix`. Body-shape verify được không cần key; đo cache-hit thật cần BYOK key. Slice kế.
+- **✅ SỬA (2) Anthropic cache_control ĐÃ XONG (2026-06-01).** Adapter Anthropic (`providers/anthropic.ts`) gắn
+  `cache_control:{type:"ephemeral"}` vào block `body.system` khi bật (Anthropic KHÔNG có automatic prefix-cache — phải khai
+  tường minh, KHÁC openai-compatible). Helper `buildSystemField(system, cache)` dùng chung cho CẢ `complete` + `streamComplete`
+  (off → string thuần như cũ; on → `[{type:"text",text,cache_control:{type:"ephemeral"}}]`). Providers là leaf → KHÔNG đọc core
+  flags → thêm `cacheSystemPrompt?: boolean` vào `CompleteOptions`, core set từ `getRuntimeFlags().promptCachePrefix` tại CẢ 2
+  call-site mang system prompt (`stream.ts` llmOpts + `orchestrator.ts` complete-opts); summarizer (`turn-helpers.ts`) KHÔNG set
+  (không có system prompt). Caching GA trên Claude 3+ → KHÔNG cần beta header; model không hỗ trợ thì bỏ qua directive (request
+  vẫn thành công, nội dung y hệt) → an toàn không-key. Reuse cờ `promptCachePrefix` (KHÔNG cờ mới). Body-shape verify không cần
+  key (test `anthropic.test.ts` +2: default string / on → cache_control block); đo cache-hit thật cần BYOK key. providers 850→852.
 
 **(C) "5-APPROACHES RULE" ép 5 hướng mỗi turn planning — phí OUTPUT token + formulaic.  ← 🟡**
 - SỰ THẬT. `chat/prompt.ts:77-78` ép "MUST outline exactly 5 distinct approaches ... sort by recommendation ... pros/cons,
@@ -634,8 +639,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   nhanh + ít token + kết quả tốt hơn). Tra "Canonical Homes" trước khi thêm tool.
 
 > **Thứ tự §8.11:** B (caching — token win lớn nhất) → C (5-approaches) → D → E. Cờ cho thay đổi prompt; tái dùng catalog
-> `capabilities`/adapter interface; test + `pnpm verify` xanh. **A đã xong; B(1) reorder đã xong (cờ `AGENCY_PROMPT_CACHE`);
-> còn B(2) Anthropic cache_control.**
+> `capabilities`/adapter interface; test + `pnpm verify` xanh. **A + B(1) reorder + B(2) Anthropic cache_control đều XONG
+> (cờ `AGENCY_PROMPT_CACHE`). §8.11-B ĐÓNG TRỌN. ▶ NEXT: C (5-approaches) → D (tool-docs) → E (grep naming/patch/index-search).**
 
 ### Thứ tự đề xuất cho session sau
 **~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.

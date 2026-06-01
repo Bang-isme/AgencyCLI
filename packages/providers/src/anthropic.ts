@@ -24,6 +24,23 @@ function splitMessages(messages: ChatMessage[]) {
   return { system, conversation };
 }
 
+/**
+ * Build Anthropic's `system` field. With caching on, return a structured block
+ * carrying `cache_control:{type:"ephemeral"}` so the (static-prefix) system
+ * prompt is cached across turns — Anthropic has no automatic prefix cache, it
+ * must be requested explicitly. Prompt caching is GA on Claude 3+ models, so no
+ * beta header is required; an unsupported model simply ignores the directive
+ * (the request still succeeds with identical content). Off → the plain string.
+ */
+function buildSystemField(
+  system: string,
+  cache: boolean
+): string | Array<Record<string, unknown>> {
+  return cache
+    ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+    : system;
+}
+
 export function createAnthropicProvider(
   profile: ProviderProfile = {},
   fetchImpl?: typeof fetch
@@ -81,7 +98,7 @@ export function createAnthropicProvider(
           max_tokens: maxTokens,
           messages: conversation,
         };
-        if (system) body.system = system;
+        if (system) body.system = buildSystemField(system, !!opts?.cacheSystemPrompt);
         if (temperature !== undefined) body.temperature = temperature;
 
         if (modelSpec.thinkingType === "budget" && optimization.thinkingBudget !== null) {
@@ -195,7 +212,7 @@ export function createAnthropicProvider(
           messages: conversation,
           stream: true,
         };
-        if (system) body.system = system;
+        if (system) body.system = buildSystemField(system, !!opts.cacheSystemPrompt);
         if (temperature !== undefined) body.temperature = temperature;
 
         if (modelSpec.thinkingType === "budget" && optimization.thinkingBudget !== null) {
