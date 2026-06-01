@@ -670,6 +670,7 @@ home here.
 | Memory lifecycle / GC / secret redaction | `@agency/memory` | Flag-gated from core via setter (no core-flag import — avoids a dependency cycle). |
 | Model catalog + cost resolution | `@agency/providers` (`model-catalog.ts`) + governance cost resolver | One price table; `matchModelKey` is shared with `resolveModelSpec`. |
 | TUI severity glyph/colour | `tui/src/utils/severity.ts` (`thoughtSeverity*`) | Consolidated from CognitionPanel + ExecutionPanel. |
+| Human `agency status` flag view | `cli/src/commands/status.ts` `buildFlagRows(flags)` | One declarative row-per-flag list (each row declares the flag keys it covers); `printHuman` just renders it. A completeness test asserts every `getRuntimeFlags()` key is covered, so no flag can be added without surfacing it. Don't hand-add `console.log` flag lines. `--json` emits the whole `getRuntimeFlags()` object. |
 
 ### Intentional name-collisions / near-duplicates — DO NOT merge
 

@@ -62,6 +62,39 @@ function buildReport(projectRoot: string): StatusReport {
   };
 }
 
+type Flags = ReturnType<typeof getRuntimeFlags>;
+const onOff = (b: boolean) => (b ? "on" : "off");
+
+/**
+ * Declarative one-row-per-display-line model of the runtime flags for the human
+ * `agency status`. Each row names the flag keys it covers, so a test can assert
+ * that EVERY flag in `getRuntimeFlags()` is surfaced (none silently omitted —
+ * the human view previously hand-picked ~14 of 26 and hid behaviour-changing
+ * ones like secretScan / atomicRollback / checkpointStrict). Numeric tunables
+ * are folded into their parent toggle's row but still declared as covered.
+ */
+export function buildFlagRows(f: Flags): { label: string; value: string; keys: (keyof Flags)[] }[] {
+  return [
+    { label: "Event persistence", value: onOff(f.persistEvents), keys: ["persistEvents"] },
+    { label: "Auto-recover", value: f.autoRecover ? `on (≤${f.maxCrashLoops} crash-loops)` : "off", keys: ["autoRecover", "maxCrashLoops"] },
+    { label: "Approval in toolpath", value: f.approvalInToolPath, keys: ["approvalInToolPath"] },
+    { label: "Delegation guards", value: f.delegationGuards ? `on (depth≤${f.maxDepth}, hops≤${f.maxHops})` : "off", keys: ["delegationGuards", "maxDepth", "maxHops"] },
+    { label: "Execution budget", value: f.executionBudgetMs > 0 ? `${f.executionBudgetMs}ms/agent` : "off", keys: ["executionBudgetMs"] },
+    { label: "Max parallel agents", value: String(f.maxParallelAgents), keys: ["maxParallelAgents"] },
+    { label: "MCP request timeout", value: f.mcpRequestTimeoutMs > 0 ? `${f.mcpRequestTimeoutMs}ms` : "off", keys: ["mcpRequestTimeoutMs"] },
+    { label: "Memory GC", value: f.memoryGc ? `on (episodes≤${f.memoryMaxEpisodes}, vectors≤${f.memoryMaxVectors})` : "off", keys: ["memoryGc", "memoryMaxEpisodes", "memoryMaxVectors"] },
+    { label: "Capability routing", value: onOff(f.capabilityRouting), keys: ["capabilityRouting"] },
+    { label: "Checkpoint strict", value: f.checkpointStrict ? "on (reject corrupt)" : "off (warn + load)", keys: ["checkpointStrict"] },
+    { label: "Atomic rollback", value: onOff(f.atomicRollback), keys: ["atomicRollback"] },
+    { label: "Secret scan", value: f.secretScan ? "on (redact/quarantine on persist)" : "off", keys: ["secretScan"] },
+    { label: "Verify loop", value: f.verifyLoop ? `on (≤${f.verifyMaxRounds} rounds; build${f.verifyLint ? "+lint" : ""}${f.verifyTests ? "+test" : ""}${f.verifyMainTurn ? "; +main-turn" : ""})` : "off", keys: ["verifyLoop", "verifyMaxRounds", "verifyLint", "verifyTests", "verifyMainTurn"] },
+    { label: "Model catalog", value: f.modelCatalog ? "on (models.json)" : "off", keys: ["modelCatalog"] },
+    { label: "Context compaction", value: f.contextCompaction ? "on (summarize >70% window)" : "off", keys: ["contextCompaction"] },
+    { label: "Trace record", value: f.traceRecord ? "on (.agency/traces)" : "off", keys: ["traceRecord"] },
+    { label: "Cognition stream", value: f.cognitionStream ? "on (narrate routing + safety to panel)" : "off", keys: ["cognitionStream"] },
+  ];
+}
+
 function printHuman(r: StatusReport): void {
   const bold = "\x1b[1m";
   const reset = "\x1b[0m";
@@ -69,18 +102,9 @@ function printHuman(r: StatusReport): void {
   console.log(`${bold}AgencyCLI runtime status${reset}  ${dim}(${r.projectRoot})${reset}`);
   console.log("");
   console.log(`  ${bold}Profile${reset}              ${r.profile}`);
-  console.log(`  Event persistence    ${r.flags.persistEvents ? "on" : "off"}`);
-  console.log(`  Auto-recover         ${r.flags.autoRecover ? "on" : "off"}`);
-  console.log(`  Approval in toolpath ${r.flags.approvalInToolPath}`);
-  console.log(`  Delegation guards    ${r.flags.delegationGuards ? `on (depth≤${r.flags.maxDepth}, hops≤${r.flags.maxHops})` : "off"}`);
-  console.log(`  Execution budget     ${r.flags.executionBudgetMs > 0 ? `${r.flags.executionBudgetMs}ms/agent` : "off"}`);
-  console.log(`  Max parallel agents  ${r.flags.maxParallelAgents}`);
-  console.log(`  Memory GC            ${r.flags.memoryGc ? `on (episodes≤${r.flags.memoryMaxEpisodes}, vectors≤${r.flags.memoryMaxVectors})` : "off"}`);
-  console.log(`  Capability routing   ${r.flags.capabilityRouting ? "on" : "off"}`);
-  console.log(`  Verify loop          ${r.flags.verifyLoop ? `on (≤${r.flags.verifyMaxRounds} rounds; build${r.flags.verifyLint ? "+lint" : ""}${r.flags.verifyTests ? "+test" : ""})` : "off"}`);
-  console.log(`  Model catalog        ${r.flags.modelCatalog ? "on (models.json)" : "off"}`);
-  console.log(`  Context compaction   ${r.flags.contextCompaction ? "on (summarize >70% window)" : "off"}`);
-  console.log(`  Cognition stream     ${r.flags.cognitionStream ? "on (narrate routing + safety to panel)" : "off"}`);
+  for (const row of buildFlagRows(r.flags)) {
+    console.log(`  ${row.label.padEnd(20)} ${row.value}`);
+  }
   console.log("");
   console.log(`  ${bold}Events${reset}               ${r.events.inMemoryJournal} in-memory${r.events.backpressured ? " (backpressured!)" : ""}`);
   console.log("");
