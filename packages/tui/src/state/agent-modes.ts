@@ -43,23 +43,6 @@ export function modeBudget(mode: AgentMode): BudgetMode {
   return BUDGETS[mode];
 }
 
-/**
- * Returns a skill prefix to prepend to the user prompt for a given mode.
- * "agent" mode has no prefix — it uses the full routing pipeline.
- */
-export function modeSkillPrefix(mode: AgentMode): string | null {
-  switch (mode) {
-    case "plan":
-      return "$plan";
-    case "debug":
-      return "$debug";
-    case "ask":
-    case "agent":
-    default:
-      return null;
-  }
-}
-
 const MODE_DESCRIPTIONS: Record<AgentMode, string> = {
   agent: "Full agent — plan, search, analyze & build",
   plan: "Architecture & implementation planning",

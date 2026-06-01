@@ -6,8 +6,6 @@
  * Wide/fullscreen windows hit this more often because rows stretch to the edge.
  */
 
-export const YOGA_SAFE_MARGIN = 1;
-
 /** Responsive margin: wider terminals need more edge clearance (Yoga rounding). */
 export function scrollbarMargin(_cols: number): number {
   return 1;

@@ -136,14 +136,6 @@ async function executeWithRetry(
  */
 const circuitBreakerState = createCircuitBreaker();
 
-/**
- * Reset circuit breaker state (call between conversations/sessions)
- */
-export function resetCircuitBreaker(): void {
-  circuitBreakerState.toolCallHistory.length = 0;
-  circuitBreakerState.consecutiveFailures = 0;
-}
-
 export const registry = new ToolRegistry();
 
 /**

@@ -77,14 +77,6 @@ export function getLoopLag(): number {
   return loopLag;
 }
 
-export function hasPendingStdinBytes(): boolean {
-  try {
-    return (process.stdin as any).readableLength > 0;
-  } catch {
-    return false;
-  }
-}
-
 let lastLagUnder50Time = typeof performance !== "undefined" ? performance.now() : Date.now();
 let currentTier: DegradationTier = 0;
 

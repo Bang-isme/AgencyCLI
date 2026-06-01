@@ -1,5 +1,3 @@
-import { EventBus } from "@agency/core";
-
 export type WorkerState =
   | "SPAWNING"
   | "ACQUIRING_CONTEXT"
@@ -11,16 +9,6 @@ export type WorkerState =
   | "CONSOLIDATING"
   | "COMPLETED"
   | "FAILED";
-
-export interface SemanticEvent {
-  id: string;
-  timestamp: number;
-  workerId: string;
-  category: "orchestration" | "analysis" | "synthesis" | "verification" | "resilience" | "lifecycle";
-  phase: "pending" | "active" | "retrying" | "completed" | "failed";
-  target: string;
-  description: string;
-}
 
 export interface WorkerLifecycleState {
   agentId: string;
@@ -263,36 +251,5 @@ export class WorkerLifecycleTracker {
   }
 }
 
-// 4. Temporal Choreography & Heartbeat Scheduler
-export class TemporalChoreographyEngine {
-  private activeInterval: NodeJS.Timeout | null = null;
-  private livenessPhrases = [
-    "Resolving package routes",
-    "Measuring active context budget",
-    "Validating import references",
-    "Assembling workspace payload",
-    "Checking compiler constraints"
-  ];
-  private phraseIndex = 0;
-
-  public startLivenessHeartbeat(onTick: (phrase: string) => void) {
-    this.stop();
-    this.activeInterval = setInterval(() => {
-      const phrase = this.livenessPhrases[this.phraseIndex % this.livenessPhrases.length]!;
-      this.phraseIndex++;
-      onTick(phrase);
-    }, 4000);
-  }
-
-  public stop() {
-    if (this.activeInterval) {
-      clearInterval(this.activeInterval);
-      this.activeInterval = null;
-    }
-  }
-}
-
 // Singletons for direct access
-export const semanticEventBus = EventBus.getInstance();
 export const globalWorkerTracker = new WorkerLifecycleTracker();
-export const globalChoreography = new TemporalChoreographyEngine();

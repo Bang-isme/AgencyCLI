@@ -172,20 +172,3 @@ export function buildAcceptanceCommandsStrict(
   }
   return commands;
 }
-
-/**
- * Get the install command for the detected package manager
- */
-export function getInstallCommand(packageManager: PackageManager): BuildCommand {
-  switch (packageManager) {
-    case "pnpm":
-      return { command: "pnpm", args: ["install"] };
-    case "yarn":
-      return { command: "yarn", args: ["install"] };
-    case "bun":
-      return { command: "bun", args: ["install"] };
-    case "npm":
-    default:
-      return { command: "npm", args: ["install"] };
-  }
-}

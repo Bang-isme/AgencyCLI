@@ -708,6 +708,24 @@ grep -rEn --include='*.ts' "^export (async )?(function|class) [A-Za-z0-9_]+" pac
 ```
 As of 2026-06-01: the **function/class**-name scan's only cross-file match is the intentional `ReplayEngine` pair; the **exported-const** scan is empty; the **type/interface**-name scan matches `ToolCall`, `GraphEdge`, `VerificationResult`, `AuditEntry` (all intentionally distinct — see the table above) — `ChatMessage` was the one real duplicate and is now consolidated into `@agency/providers`. To also scan types, swap `(function|class)` for `(interface|type)` and `const` in the command above.
 
+### Repeatable dead-export sweep (symbol-level wired-or-dead)
+
+The module-level wired-or-dead audit is closed (every machinery class in `core/index.ts` is WIRED or DELETED, and a full `core/src` sweep deleted the speculative modules). The finer layer is a **symbol-level** sweep: an exported name in a deep (non-index) module that is referenced *nowhere* — the same "built-but-unwired" defect one level down. Run it like the dup scan:
+
+```bash
+# Exported symbols (non-index, non-test) whose identifier appears NOWHERE
+# except its own declaration line (any package, .ts/.tsx/.mts, INCLUDING tests):
+grep -rEn --include='*.ts' "^export (async )?(function|class|const|interface|type|enum) [A-Za-z0-9_]+" packages/*/src \
+ | grep -v "__tests__" | grep -v "/index.ts:" \
+ | sed -E 's#(.*):[0-9]+:export (async )?(function|class|const|interface|type|enum) ([A-Za-z0-9_]+).*#\4\t\1#' \
+ | sort -u | while IFS=$'\t' read -r name def; do
+     out=$(grep -rEl --include='*.ts' --include='*.tsx' --include='*.mts' "\b${name}\b" packages/*/src | grep -vx "$def" | wc -l)
+     [ "$out" -eq 0 ] && [ "$(grep -rEoh "\b${name}\b" "$def" | wc -l)" -le 1 ] && echo "DEAD $name ($def)"
+   done
+```
+
+**Two-tier classification — don't over-delete.** A symbol used *only inside its own file* is **over-exported** (a minor smell — the `export` could be dropped) but **live**; do NOT delete it (e.g. `LeaseManager`/`globalLeaseManager` are used within `runner.ts`; the `@agency/benchmark` `tasks.ts` corpus consts fold into an in-file array). Only a **zero-reference** symbol (the command above) is dead. The `.tsx`/`.mts` includes matter — they catch consumers like `App.tsx` (the false-dead lesson). As of 2026-06-01 this scan is **empty** after pruning 13 truly-dead exports: `FailureClassifier`/`FailureCategory` (superseded by the live `FailureNormalizer`), `getInstallCommand` (install isn't an acceptance step), `resetCircuitBreaker` (an uncalled reset for the still-live `circuitBreakerState`), `addProject`/`removeProject` (superseded by `touchProject`'s upsert), `modeSkillPrefix` (a dead mode→skill-prefix helper in the live `agent-modes.ts`), `YOGA_SAFE_MARGIN`, `hasPendingStdinBytes`, `SemanticEvent`, `semanticEventBus` (an unused `EventBus` singleton — its sole `EventBus` import went too), and `TemporalChoreographyEngine`/`globalChoreography` (an orphan liveness-heartbeat superseded by the real TUI timers). This is a **lint-style sweep, not a CI guard** — a util committed just before its consumer would false-positive — so it stays a repeatable command, not a `pnpm verify` test; `knip`/`ts-prune` is the proper tool if hard enforcement is ever wanted.
+
 ## Harness, built-in tools & skills (inventory)
 
 So this doesn't get re-derived each session. Verified 2026-06-01.

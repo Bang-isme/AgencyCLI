@@ -209,26 +209,7 @@ export class LeaseManager {
 
 export const globalLeaseManager = new LeaseManager();
 
-// 3. Failure Normalization & Taxonomy
-export type FailureCategory =
-  | "IMPORT_FAILURE"
-  | "TYPE_MISMATCH"
-  | "SYNTAX_ERROR"
-  | "TEST_FAILURE"
-  | "TIMEOUT_ERROR"
-  | "UNKNOWN";
-
-export class FailureClassifier {
-  public static classify(stderr: string): FailureCategory {
-    if (/Cannot find module/i.test(stderr)) return "IMPORT_FAILURE";
-    if (/is not assignable to type/i.test(stderr)) return "TYPE_MISMATCH";
-    if (/SyntaxError/i.test(stderr)) return "SYNTAX_ERROR";
-    if (/timed out/i.test(stderr)) return "TIMEOUT_ERROR";
-    if (/fail/i.test(stderr)) return "TEST_FAILURE";
-    return "UNKNOWN";
-  }
-}
-
+// 3. Failure Normalization
 export class FailureNormalizer {
   private static TIMESTAMP_RE = /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g;
   private static HEX_ADDR_RE = /\b0x[0-9a-fA-F]+\b/g;
