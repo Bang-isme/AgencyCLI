@@ -682,6 +682,7 @@ or couple unrelated packages.
 | `truncateText` — TUI vs core | TUI is terminal-width-aware; core is plain char-count. Different semantics. |
 | `~len/4` token estimate — `providers/*` (`ceil`, rate-limiter), `memory/retriever.ts` (`ceil`, retrieval budget), `providers/error-parser.ts` (`round`), chat turn (`round + 200`) | Different formulas and domains; merging across packages would change behaviour and add cross-package deps. Only the orchestrator↔stream copy was byte-identical and now lives in `turn-helpers.recordTurnTokenCost`. |
 | `handover.ts` — `core/runtime/handover.ts` vs `cli/commands/handover.ts` | Layer split: core builds the digest (`generateHandover`); cli is the thin command wrapper. |
+| `grep_file` vs `grep_search` built-in tools (`skill/tool-harness.ts`) | Different scope: `grep_file` searches one file (the model passes a file path); `grep_search` walks the workspace recursively, honours the ignore filter, skips binaries, and supports `limit`/`case_sensitive`/`is_regex`. Complementary, not redundant — `grep_search` can't search a single file (it `readdirSync`s a directory). |
 | Per-package `index.ts` / `types.ts` / `config.ts` / `runner.ts` / `registry.ts` | Normal monorepo structure — same basename, package-local scope, no shared logic. |
 
 ### Repeatable duplication scan
@@ -694,3 +695,32 @@ grep -rEn --include='*.ts' "^export (async )?(function|class) [A-Za-z0-9_]+" pac
  | sort | awk -F'\t' '{n[$1]=n[$1]" "$2; c[$1]++} END {for (k in c) if (c[k]>1) print c[k]"  "k":"n[k]}'
 ```
 As of 2026-05-31 the only cross-file match is the intentional `ReplayEngine` pair above.
+
+## Harness, built-in tools & skills (inventory)
+
+So this doesn't get re-derived each session. Verified 2026-06-01.
+
+### The turn harness (how a turn runs)
+1. **Route** — `resolveRoute` (`chat/turn-helpers.ts`) → `routeUserPrompt` picks intent/workflow/agent/provider.
+2. **Assemble prompt** — `buildSystemPrompt` (`chat/prompt.ts`) embeds the goal anchor, the tool protocol, and **`formatToolDocs()` which advertises tools dynamically from `registry.listTools()`** (register a tool ⇒ it's advertised automatically — no hardcoded list), the context pack, and historical memories.
+3. **Model turn loop** — `runChatTurn` / `runChatTurnWithStream` run an outer tool loop (≤ `maxLoops`, default 15): the model emits XML `<tool_call name="…">…</tool_call>` blocks → `parseToolCalls` (`skill/tool-harness.ts`) → tools run (`Promise.all` over the batch; file-writing handlers are synchronous read-modify-write so they're atomic on Node's single thread) → each result is fed back as the next user message.
+4. **Verify / self-heal** — file-editing turns are wrapped by the verify loop (`task/verify-loop.ts` `runVerifyLoop`) at the subagent dispatch sites and (for the one-shot CLI) the main turn (`chat/verify-turn.ts`); acceptance = build + (opt-in) lint/test.
+5. **Compaction** — `compactTurnHistory` trims the middle of a long history before it overflows the window (flag `contextCompaction`).
+
+### Built-in tools (single registry)
+`registry = new ToolRegistry()` (from `@agency/tooling`) in `skill/tool-harness.ts` — **one registry**, no second tool table. 17 tools:
+
+| Category | Tools |
+|---|---|
+| read | `read_file`, `list_dir`, `grep_file` (one file), `grep_search` (recursive), `find_files`, `file_info`, `git_summary`, `git_diff` |
+| write (approval-gated) | `write_file`, `edit_file` (text replace), `ast_edit` (real-TS-AST structural; see Canonical Homes), `delete_file`, `move_file`, `create_directory`, `batch_edit` |
+| compile | `execute_command` (sandboxed shell) |
+| other | `dispatch_subagent` (spawns a specialist via the orchestrator) |
+
+MCP tools register into the **same** registry with an `mcpSchema` marker and are approval-gated as external (MEDIUM-floored). "Which tools write files" → `isFileWritingTool` (single source; see Canonical Homes).
+
+### Skills pack (bundled in `@agency/cli`)
+- **Home:** `packages/cli/skills/` (shipped via the cli `files` field). Manifest: `.system/manifest.json`.
+- **Contents (2026-06-01):** 28 skills (`codex-*` dirs, each a `SKILL.md`) + 8 agents (== `MANIFEST_AGENTS` in `core/agents/types.ts`) + 8 workflows + a `load_order` (always / on-demand). Two meta-skills live under `.system/` (`skill-creator`, `skill-installer`) and are intentionally not pack skills.
+- **Loaders (skills-bridge):** `loadManifestSkills(root)`, `resolveSkillsRoot()` (core), `skillMdPath`, aliases (`SKILL_ALIASES`). Built-in helper scripts: `skills-bridge/builtins.ts` (`prompt_route`, `plugin_validate`, …).
+- **Integrity guard:** `cli/__tests__/skills-manifest-integrity.test.ts` fails `pnpm verify` on any drift — manifest skill with no `SKILL.md` (advertised-but-missing), on-disk `SKILL.md` not in the manifest (built-but-unwired), `manifest.agents` ≠ `MANIFEST_AGENTS`, or a `load_order` entry that isn't a declared skill. **When adding/removing a skill or agent, update the manifest in the same change** or this test fails.
