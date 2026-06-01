@@ -11,9 +11,6 @@ import {
   toPastTense
 } from "../../utils/conversation/tool-labels.js";
 
-// Stateful cache for tool targets
-export const lastToolTargets = new Map<string, string>();
-
 export interface RetryCountdownMsgProps {
   message: string;
   theme: ThemeTokens;
@@ -157,11 +154,6 @@ export const SystemActivityLine = memo(function SystemActivityLine({
       const toolName = parsed.toolName!;
       const target = parsed.target ?? "";
       const args = parsed.args ?? "";
-      if (target) {
-        lastToolTargets.set(toolName, target);
-      } else if (args) {
-        lastToolTargets.set(toolName, args);
-      }
       const semanticOp = expandedTui
         ? `${getToolAlias(toolName)} ➔ ${target || args}`
         : getSemanticToolOperation(toolName, args, target);
@@ -177,10 +169,14 @@ export const SystemActivityLine = memo(function SystemActivityLine({
     case "completed": {
       const toolName = parsed.toolName!;
       const len = parsed.len;
-      const prevTarget = lastToolTargets.get(toolName) || "";
+      // The completed line is self-contained: the started line above already
+      // showed the target. We no longer thread a started→completed target via a
+      // global name-keyed Map (it collided across parallel / same-name tool calls
+      // and was only ever read on the non-expanded path, which the sole caller —
+      // always expandedTui — never hits).
       const semanticOp = expandedTui
         ? `${getToolAlias(toolName)} completed (${len} chars)`
-        : toPastTense(getSemanticToolOperation(toolName, "", prevTarget));
+        : toPastTense(getSemanticToolOperation(toolName, "", ""));
       return (
         <Box flexDirection="row">
           <Text color={theme.success}>✓ </Text>

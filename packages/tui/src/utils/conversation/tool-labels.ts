@@ -69,14 +69,23 @@ export function getGroundedTargetName(targetPath: string): string {
           cleanedPath = String(parsed.path).trim();
         } else if (parsed.filePath !== undefined) {
           cleanedPath = String(parsed.filePath).trim();
+        } else if (parsed.TargetFile !== undefined) {
+          cleanedPath = String(parsed.TargetFile).trim();
+        } else if (parsed.AbsolutePath !== undefined) {
+          cleanedPath = String(parsed.AbsolutePath).trim();
+        } else if (parsed.SearchPath !== undefined) {
+          cleanedPath = String(parsed.SearchPath).trim();
+        } else if (parsed.DirectoryPath !== undefined) {
+          cleanedPath = String(parsed.DirectoryPath).trim();
         } else if (parsed.target !== undefined) {
           cleanedPath = String(parsed.target).trim();
         } else {
-          // Fallback to first string value found
-          const values = Object.values(parsed).filter(v => typeof v === "string");
-          if (values.length > 0) {
-            cleanedPath = (values[0] as string).trim();
-          }
+          // No recognized path/command field — do NOT guess a target from an
+          // arbitrary arg. The old "first string value" fallback grabbed
+          // free-text args (e.g. a subagent `task` description) and rendered them
+          // as if they were the tool's target → the wrong label seen in the
+          // user's screenshot (`list_dir · short video`). Show no target instead.
+          cleanedPath = "";
         }
       }
     } catch {}
