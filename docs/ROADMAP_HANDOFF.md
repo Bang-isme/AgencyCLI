@@ -390,7 +390,24 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > Mục này là **chẩn đoán từ source thật** + hướng sửa; **chưa code** (session sau làm). Mỗi item ghi
 > rõ SỰ THẬT → LỖI/THIẾU → SỬA (+ file) → chống trùng lặp.
 
-### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← 🔴 P0 (gây crash)
+> **✅ P0 ĐÃ XONG (2026-06-01, commits `b83b55a` TUI crash + `106ee22` overflow).** 8.1+8.2+8.3
+> làm cùng đợt. Kèm: (a) sửa **crash TUI render-loop** trong ảnh user — `stripToolCalls(m.content)`
+> gọi không-guard ở `calculateFormattedLines` lúc render, `m.content` có thể `undefined` (App vá
+> `content: turn.body || undefined`, `Partial<SessionMessage>` nới content thành `string|undefined`)
+> → "Cannot read properties of undefined (reading 'indexOf')" → ErrorBoundary recovery loop; sửa tại
+> canonical home (coerce non-string→"" như `parseAssistantContent`); (b) chặn **ratchet phá hoại**:
+> reactive trước đây khi `parsedLimit >= oldLimit` áp `oldLimit*0.8` MỖI vòng + `updateModelOverride`
+> ghi đè ĐĨA → minimax tụt 196608→…→**16887** kẹt trong `~/.agency/config.json` (đã dọn override hỏng
+> của user; KHÔNG đụng API key). Giờ honor limit thật từ provider + cắt thân. `pnpm verify` xanh 16/16
+> (providers 850 · core 351 · tui 116). **P1 kế: §8.5 paste dài → §8.4 ảnh.**
+
+### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
+> **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
+> gọi từ CẢ `stream.ts` + `orchestrator.ts`, không copy-paste): (1) repack system prompt (try/caught);
+> (2) tóm middle qua `compactTurnHistory` canonical (thresholdRatio:0 vì đã quá ngưỡng); (3) cắt đôi
+> body lớn nhất / bỏ lượt cũ tới khi `estimateMessagesTokens ≤ newLimit*safety` (0.8), GIỮ system[0] +
+> message cuối. Trả `{messages, estimatedTokens, fits}` để assert trước retry. Never throws. Test
+> `reduce-history.test.ts` (3). Chẩn đoán gốc dưới đây vẫn đúng nguyên văn.
 - **SỰ THẬT.** `chat/stream.ts:288-328` + `chat/orchestrator.ts:~296-330` bắt `isContextLimitError`, giảm
   `contextWindow` override (`newLimit`), rồi **chỉ** `turnHistory[0].content = repackContextAndSystemPrompt(...)`
   (chỉ pack lại SYSTEM prompt) → `continue` retry.
@@ -404,7 +421,15 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   bỏ lượt cũ nhất, **lặp tới khi `estimateMessagesTokens(turnHistory) <= newLimit*safety`**; (3) chỉ retry khi đã
   THẬT SỰ vừa (assert estimate ≤ limit TRƯỚC khi gửi). Reactive này là lưới cuối; proactive là 8.3.
 
-### 8.2 — Đọc SAI thông số model từ `models.json` (catalog không biết provider)  ← 🔴 P0
+### 8.2 — Đọc SAI thông số model từ `models.json` (catalog không biết provider)  ← ✅ XONG (2026-06-01)
+> **Đã làm + ĐÍNH CHÍNH dữ liệu:** models.json GIỜ CÓ `nvidia/minimaxai/minimax-m2.7`=**204800** (SAI —
+> API thật 196608) + outlier `routing-run/route/minimax-m2.7`=100000. Nên "exact provider match"→204800
+> (vẫn tràn), "min tuyệt đối"→100000 (quá tay). Giải: `getCatalogSpec(model, providerId?)` clamp context
+> xuống **conservative robust-min** (nhỏ nhất trong nhóm cùng bare-id, BỎ outlier <50% max) → minimax ra
+> **196608** (ollama-cloud/openrouter, = limit NVIDIA thật). Thread `providerId` qua `getModelSpec` →
+> `enrichWithCatalog` (giờ còn **siết** confident registry-window xuống catalog conservative khi nhỏ hơn,
+> KHÔNG nới) + `getTokenBudgetPlan`. Gate bằng cờ sẵn `AGENCY_MODEL_CATALOG`; không providerId =
+> byte-identical. Test `model-catalog.test.ts` (+5 → assert 196608). `matchModelKey` giữ cho fallback bare.
 - **SỰ THẬT.** `models.json` ở `packages/providers/models.json` (KHÔNG ở gốc repo — sửa mọi tham chiếu cũ).
   `model-catalog.ts` `matchModelKey(model, keys)` (dòng 58) lấy `base = id.split("/").pop()` rồi match trên
   **bare model id** vào index gộp PHẲNG mọi provider. `minimax-m2.7` tồn tại dưới NHIỀU provider với context KHÁC
@@ -419,7 +444,11 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   toàn budget, không bao giờ over-allow), (c) cuối mới tới CANONICAL_PROVIDERS. Giữ `matchModelKey` cho fallback bare.
   Test: thêm case minimax đa-provider → assert NVIDIA ra 196608, không phải 204800.
 
-### 8.3 — Token estimator ƯỚC THIẾU (gây overflow + nén trễ)  ← 🔴 P0 (đi kèm 8.1/8.2)
+### 8.3 — Token estimator ƯỚC THIẾU (gây overflow + nén trễ)  ← ✅ XONG (2026-06-01)
+> **Đã làm:** `estimateMessagesTokens` (`error-parser.ts`) giờ ước-DƯ: `len/3.5` (thay `len/4`) +
+> overhead 8/msg (thay 5) + xử lý `content` non-string (đếm text-part của multimodal, hằng/ảnh = 1200 —
+> forward-compat §8.4). 1 hàm canonical (không tạo cái thứ 2). Compaction proactive + reduceHistoryToFit
+> nhờ đó kích SỚM. Test `error-parser.test.ts` (mới, 6: over-estimate + non-string + parseContextLimit).
 - **SỰ THẬT.** `providers/error-parser.ts:71` `estimateMessagesTokens` = `Σ content.length / 4 + msgs*5`. Lỗi NVIDIA:
   ước 192627 nhưng THẬT 197270 (thiếu ~2.4%). Dùng ở `turn-helpers.ts:328` (ngưỡng compaction) + 2 reactive handler.
 - **LỖI.** (a) `len/4` lạc quan cho code/JSON/tool-result nhiều ký tự đặc biệt/non-ASCII → ước THẤP hơn thật →
@@ -483,7 +512,16 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   canonical home, cờ nếu đổi hành vi, test, cập nhật docs + memory** — đúng nhịp slice của chiến dịch.
 
 ### Thứ tự đề xuất cho session sau
-**P0 (1 slice, cùng gốc "không tràn"):** 8.2 (catalog provider-aware → contextWindow ĐÚNG) + 8.3 (estimator err-high) +
-8.1 (reactive cắt thân, helper dùng chung) — làm CÙNG nhau vì cùng trị crash overflow; có test BYOK đa-provider + một test
-mô phỏng history lớn → assert không gửi quá `newLimit`. **P1:** 8.5 (paste dài) rồi 8.4 (ảnh, đa tầng). **P2:** 8.6/8.7/8.8.
-Mỗi bước: `pnpm verify` xanh → commit `master` → sync docs/memory.
+**~~P0 (1 slice, cùng gốc "không tràn"): 8.2 + 8.3 + 8.1~~ ✅ XONG (2026-06-01)** — xem các mục trên +
+banner đầu §8. **▶ NEXT = P1:** §8.5 (paste dài không gãy UI: `tui` PromptComposer/ComposerBlock —
+bracketed-paste + cap chiều cao + paste cực dài→attachment) rồi §8.4 (ảnh đa tầng: `ChatMessage.content:
+string|ContentPart[]` additive; adapter map image_url CHỈ khi `capabilities.vision`; estimator §8.3 ĐÃ
+đếm token ảnh sẵn; TUI đính ảnh). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →
+sync docs/memory.
+
+> **Lưu ý cho session sau (di chứng + theo dõi):** (1) `updateModelOverride` trong reactive vẫn GHI ĐĨA
+> override context (giờ = limit thật, không ratchet) — cân nhắc đổi sang override SESSION-LOCAL để 1
+> overflow nhất thời không sửa vĩnh viễn spec model (lợi biên, để ngỏ). (2) `conservativeContextForBareId`
+> dùng ngưỡng outlier 0.5×max — nếu sau này thấy model bị siết quá tay, chỉnh `CONSERVATIVE_OUTLIER_RATIO`.
+> (3) user config `~/.agency` có `nvidia.thinking: 196608` (= cả context window — đáng ngờ, có thể
+> misconfig nhưng KHÔNG phải gốc crash; không đụng).
