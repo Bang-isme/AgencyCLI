@@ -30,7 +30,7 @@ import { type RouteResult } from "../router/model-router.js";
 import { getInvokeActions } from "../skill/invoke-actions.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool } from "../skill/tool-harness.js";
@@ -157,7 +157,7 @@ export function appendSuggestedCommands(
 export async function runChatTurn(
   input: ChatTurnInput
 ): Promise<ChatTurnResult> {
-  const resolvedSessionId = input.sessionId || process.env.AGENCY_SESSION_ID || "sess-cli";
+  const resolvedSessionId = resolveSessionId(input.sessionId);
   const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
 
   // Ingest user prompt at the start of the turn

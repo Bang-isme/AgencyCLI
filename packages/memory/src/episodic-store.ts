@@ -50,6 +50,11 @@ export class EpisodicStore {
     return this.backend.queryEpisodesByAction(sessionId, actionSignature, tenantId);
   }
 
+  /** Most-recent episodes recorded by OTHER sessions (cross-session recency recall). */
+  public getRecentAcrossSessions(excludeSessionId: string, limit = 10, tenantId = "default"): Episode[] {
+    return this.backend.recentEpisodesAcrossSessions(excludeSessionId, limit, tenantId);
+  }
+
   public searchEpisodesByGoal(goalKeyword: string, tenantId = "default"): Episode[] {
     if (!goalKeyword.trim()) return [];
 

@@ -32,7 +32,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
@@ -108,7 +108,7 @@ export async function runChatTurnWithStream(
   input: ChatStreamInput,
   handlers: ChatStreamHandlers
 ): Promise<ChatTurnResult> {
-  const resolvedSessionId = input.sessionId || process.env.AGENCY_SESSION_ID || "sess-cli";
+  const resolvedSessionId = resolveSessionId(input.sessionId);
   const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
 
   // Ingest user prompt at the start of the turn

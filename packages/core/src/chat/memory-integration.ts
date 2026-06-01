@@ -2,8 +2,18 @@ import { getDb, EpisodicStore } from "@agency/memory";
 import { EventBus } from "../events/event-bus.js";
 
 /**
+ * Maximum characters of formatted memory injected into the system prompt. Each
+ * episode is already snippet-capped; this bounds the *total* recall block so a
+ * project with many recorded episodes can never bloat the prompt (a long-context
+ * safety valve — the conversation history itself is bounded separately by
+ * compaction).
+ */
+const RECALL_CHAR_BUDGET = 6000;
+
+/**
  * Loads relevant historical episodes matching the current userPrompt via FTS5
- * along with the 10 most recent chronological episodes from past sessions.
+ * along with the most recent chronological episodes from OTHER sessions, both
+ * via the typed store API (no raw SQL), bounded by {@link RECALL_CHAR_BUDGET}.
  */
 export async function loadHistoricalMemories(
   projectRoot: string,
@@ -14,48 +24,45 @@ export async function loadHistoricalMemories(
     const db = getDb(projectRoot);
     const store = new EpisodicStore(db);
 
-    // 1. Fetch relevant episodes matching the current userPrompt's keywords using FTS5 search
+    // 1. Relevant episodes matching the prompt's keywords (FTS5), past sessions only.
     const ftsMatches = store.searchEpisodesByGoal(userPrompt);
 
-    // 2. Fetch the 10 most recent chronological episodes from past sessions
-    const rawDb = (db as any).db;
-    let recentEpisodes: any[] = [];
-    if (rawDb && typeof rawDb.prepare === "function") {
-      try {
-        recentEpisodes = rawDb.prepare(`
-          SELECT * FROM episodes
-          WHERE session_id != ?
-          ORDER BY created_at DESC
-          LIMIT 10
-        `).all(currentSessionId) as any[];
-      } catch (dbErr) {
-        // fail-safe
-      }
-    }
+    // 2. Most-recent episodes from OTHER sessions (typed recency recall — replaces
+    //    the previous raw `(db as any).db` SQL that bypassed the store).
+    const recentEpisodes = store.getRecentAcrossSessions(currentSessionId, 10);
 
     const formattedEpisodes: string[] = [];
     const seen = new Set<number>();
+    let usedChars = 0;
+    let budgetHit = false;
 
     const formatEpisode = (ep: any) => {
-      if (!ep.id || seen.has(ep.id)) return;
+      if (budgetHit || !ep.id || seen.has(ep.id)) return;
       seen.add(ep.id);
 
       const dateStr = new Date(ep.created_at).toISOString().split("T")[0];
       const goalStr = ep.goal.length > 80 ? ep.goal.slice(0, 80) + "..." : ep.goal;
       const contentSnippet = ep.content.length > 150 ? ep.content.slice(0, 150) + "..." : ep.content;
 
-      formattedEpisodes.push(
-        `- [Date: ${dateStr}, Session: ${ep.session_id}, Turn: ${ep.turn_index}, Goal: "${goalStr}", Action: ${ep.action_signature}]\n  Content: ${contentSnippet.replace(/\s+/g, " ").trim()}`
-      );
+      const line = `- [Date: ${dateStr}, Session: ${ep.session_id}, Turn: ${ep.turn_index}, Goal: "${goalStr}", Action: ${ep.action_signature}]\n  Content: ${contentSnippet.replace(/\s+/g, " ").trim()}`;
+
+      // Stop before exceeding the recall budget (keep what we have; never drop
+      // the leading line mid-way once at least one episode is included).
+      if (usedChars + line.length > RECALL_CHAR_BUDGET && formattedEpisodes.length > 0) {
+        budgetHit = true;
+        return;
+      }
+      formattedEpisodes.push(line);
+      usedChars += line.length;
     };
 
-    // Ingest FTS matches first, filtering out the current session
+    // Ingest FTS matches first (highest relevance), filtering out the current session.
     ftsMatches
       .filter((m: any) => m.session_id !== currentSessionId)
       .slice(0, 10)
       .forEach(formatEpisode);
 
-    // Ingest chronological recency episodes next
+    // Then chronological recency episodes.
     recentEpisodes.forEach(formatEpisode);
 
     if (formattedEpisodes.length === 0) {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   loadAgencyConfig,
   resolveApiKey,
@@ -27,6 +28,28 @@ import type { ChatTurnInput, ChatMessage } from "./orchestrator.js";
  * removes. `ChatStreamInput extends ChatTurnInput`, so typing on the base input
  * serves both callers.
  */
+
+/**
+ * One stable session id per process, generated lazily so multiple turns in the
+ * same CLI run share it while distinct invocations get distinct ids.
+ */
+let cliSessionFallback: string | undefined;
+
+/**
+ * Resolve the session id for a turn: explicit input → `AGENCY_SESSION_ID` env →
+ * a unique-per-process fallback. The fallback was previously the constant
+ * `"sess-cli"`, which made every headless `agency chat` run collide on one id —
+ * and `loadHistoricalMemories` filters cross-session recall by
+ * `session_id != current`, so a constant id meant the CLI agent could never
+ * recall its own prior runs. A unique id per process fixes that recall while the
+ * TUI (which always passes a real `session.id`) is unaffected.
+ */
+export function resolveSessionId(explicit?: string): string {
+  if (explicit) return explicit;
+  if (process.env.AGENCY_SESSION_ID) return process.env.AGENCY_SESSION_ID;
+  if (!cliSessionFallback) cliSessionFallback = `sess-cli-${randomUUID()}`;
+  return cliSessionFallback;
+}
 
 /** Resolve the route for a turn, honouring the per-plan route cache. */
 export async function resolveRoute(

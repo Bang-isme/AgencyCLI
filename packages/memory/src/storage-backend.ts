@@ -13,6 +13,8 @@ export interface MemoryStorageBackend {
   addEpisode(episode: Episode): void;
   queryEpisodes(sessionId: string, tenantId?: string): Episode[];
   queryEpisodesByAction(sessionId: string, actionSignature: string, tenantId?: string): Episode[];
+  /** Most-recent episodes from OTHER sessions (cross-session recency recall). */
+  recentEpisodesAcrossSessions(excludeSessionId: string, limit: number, tenantId?: string): Episode[];
   searchEpisodesFTS(matchQuery: string, tenantId?: string): Episode[];
   deleteEpisodes(sessionId: string, tenantId?: string): void;
 
@@ -186,6 +188,21 @@ export class SqliteStorageBackend implements MemoryStorageBackend {
     `);
 
     const rows = stmt.all(sessionId, actionSignature, tenantId) as any[];
+    return rows.map((r) => ({
+      ...r,
+      metadata: this.parseMetadata(r.metadata),
+    }));
+  }
+
+  recentEpisodesAcrossSessions(excludeSessionId: string, limit: number, tenantId: string = "default"): Episode[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM episodes
+      WHERE session_id != ? AND tenant_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(excludeSessionId, tenantId, limit) as any[];
     return rows.map((r) => ({
       ...r,
       metadata: this.parseMetadata(r.metadata),

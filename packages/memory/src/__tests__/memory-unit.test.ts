@@ -47,6 +47,28 @@ describe("Memory Subsystem Unit Tests", () => {
     closeAllDbs();
   });
 
+  it("should recall recent episodes from OTHER sessions, excluding the current one, honouring the limit", () => {
+    const backend = getDb(":memory:", ":memory:");
+    const store = new EpisodicStore(backend);
+
+    store.addEpisode("session-a", "A work", 0, "run", "a content", {});
+    store.addEpisode("session-b", "B work", 0, "run", "b content", {});
+    store.addEpisode("session-current", "Current work", 0, "run", "current content", {});
+
+    const recent = store.getRecentAcrossSessions("session-current", 10);
+    // Excludes the current session entirely…
+    expect(recent.every((e) => e.session_id !== "session-current")).toBe(true);
+    // …and returns the two other sessions.
+    expect(new Set(recent.map((e) => e.session_id))).toEqual(new Set(["session-a", "session-b"]));
+
+    // Honours the limit (and the limited result is still never the current session).
+    const limited = store.getRecentAcrossSessions("session-current", 1);
+    expect(limited).toHaveLength(1);
+    expect(limited[0]!.session_id).not.toBe("session-current");
+
+    closeAllDbs();
+  });
+
   it("should perform vector insert and query similarity correctly", () => {
     const backend = getDb(":memory:", ":memory:");
     const store = new VectorStore(backend);
