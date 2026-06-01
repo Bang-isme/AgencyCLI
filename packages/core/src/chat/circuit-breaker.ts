@@ -13,12 +13,22 @@ export interface CircuitBreakerResult {
 }
 
 const CIRCUIT_BREAKER_THRESHOLD = 3;
+// Cap the retained signatures so the (process-lifetime) state can't grow without
+// bound. Only the most recent calls matter for the consecutive-repeat check.
+const MAX_HISTORY = 50;
 
 export function createCircuitBreaker(): CircuitBreakerState {
   return {
     toolCallHistory: [],
     consecutiveFailures: 0,
   };
+}
+
+/** Reset the breaker between turns so failure/repeat counts don't leak across
+ *  independent turns (the breaker is meant to catch a loop WITHIN one turn). */
+export function resetCircuitBreaker(state: CircuitBreakerState): void {
+  state.toolCallHistory = [];
+  state.consecutiveFailures = 0;
 }
 
 function getToolSignature(tc: { name: string; arguments: Record<string, any> }): string {
@@ -51,8 +61,11 @@ export function checkCircuitBreaker(
       };
     }
     
-    // Update history
+    // Update history (bounded — keep only the most recent signatures).
     state.toolCallHistory.push(...signatures);
+    if (state.toolCallHistory.length > MAX_HISTORY) {
+      state.toolCallHistory = state.toolCallHistory.slice(-MAX_HISTORY);
+    }
   }
 
   // Check for consecutive failures

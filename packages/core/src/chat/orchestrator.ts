@@ -33,7 +33,7 @@ import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, r
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
 import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
@@ -240,6 +240,7 @@ export async function runChatTurn(
     await compactIfEnabled();
 
     loopCount = 0;
+    resetToolCircuitBreaker(); // fresh breaker per turn (no cross-turn leak)
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
     while (loopCount < maxLoops) {

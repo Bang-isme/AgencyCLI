@@ -12,7 +12,7 @@ import { runShellCommand } from "../terminal/sandbox.js";
 import { dispatchAgent } from "../agents/orchestrator.js";
 import { resolveSkillsRoot } from "../skills-root.js";
 import { loadIgnoreFilter } from "../index/gitignore-parser.js";
-import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure } from "../chat/circuit-breaker.js";
+import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure, resetCircuitBreaker } from "../chat/circuit-breaker.js";
 import { z } from "zod";
 import { getModelSpec } from "@agency/providers";
 import { ToolRegistry } from "@agency/tooling";
@@ -1026,14 +1026,29 @@ export async function executeTool(
 
   try {
     const result = await executeWithRetry(name, executeOnce);
-    // Record success if no error
-    recordToolSuccess(circuitBreakerState);
+    // A tool that returns an `Error…` string (the convention for handler failures
+    // AND for a hard-refused command, e.g. a self-terminating shell command) has
+    // NOT succeeded — count it toward the breaker so the model can't churn on a
+    // command that will always be refused. Previously every non-throwing result
+    // was recorded as success, so the consecutive-failure breaker never tripped
+    // and a blocked command (taskkill /IM node.exe …) looped until maxLoops.
+    if (/^Error[:\s]/.test(result)) {
+      recordToolFailure(circuitBreakerState);
+    } else {
+      recordToolSuccess(circuitBreakerState);
+    }
     return result;
   } catch (error) {
     // Record failure for circuit breaker
     recordToolFailure(circuitBreakerState);
     throw error;
   }
+}
+
+/** Reset the tool-loop circuit breaker. Called at the start of each chat turn so
+ *  a fresh turn isn't pre-tripped by failures/repeats from a previous turn. */
+export function resetToolCircuitBreaker(): void {
+  resetCircuitBreaker(circuitBreakerState);
 }
 
 const MAX_TOOL_RESULT_CHARS = 30_000; // ~7,500 tokens
