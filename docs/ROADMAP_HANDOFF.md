@@ -470,7 +470,18 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   fallback (mô tả text / từ chối rõ ràng); (3) estimator (8.3) đếm token ảnh thô (vd hằng/ảnh); (4) TUI: affordance đính
   ảnh (path / paste ảnh từ clipboard → đọc file → base64). Giữ provider-agnostic qua interface adapter (mở rộng dễ).
 
-### 8.5 — Paste input DÀI làm gãy UI (TUI composer)  ← 🟡 P1 (user yêu cầu)
+### 8.5 — Paste input DÀI làm gãy UI (TUI composer)  ← ✅ XONG (2026-06-01, commit `2172832`)
+> **Kết quả sau khi VERIFY source (đừng-assert + chống trùng):**
+> - **(perf — gốc thật, ĐÃ SỬA)** `applyTextInput` (`tui/hooks/useTextInput.ts`) append paste **mỗi ký tự**
+>   qua `setter(b => b + c)` → O(n²) rebuild buffer → freeze khi paste 12k. Ink GIAO CẢ paste trong **1
+>   sự kiện** `input` (theo docs Ink), nên gom thành **1 setBuffer (O(n))**, giữ nguyên ngữ nghĩa trái→phải
+>   (backspace nhúng pop accumulator trước, tràn sang buffer cũ khi rỗng). +8 test `text-input.test.ts`.
+> - **(2) cap chiều cao ĐÃ CÓ SẴN** — `PromptComposer` `MAX_LINES=6` + `visibleLines.slice(-6)` + indicator
+>   "▲ +N lines scrollable above" + `estimateComposerHeight`. Display paste dài đã bị bound → KHÔNG làm lại.
+> - **(1) bracketed-paste KHÔNG cần + có HẠI** — Ink đã coalesce paste; `applyTextInput` reject input chứa
+>   `\x1b`, nên bật `?2004h` sẽ khiến Ink giao marker `\x1b[200~` rồi bị vứt → vỡ paste. KHÔNG bật.
+> - **(3) paste cực dài→attachment** — giá trị BIÊN vì (2) đã bound hiển thị; để ngỏ (polish), gắn cùng §8.4
+>   nếu cần một khái niệm "composer attachment" chung. Chẩn đoán gốc dưới đây giữ làm tham chiếu.
 - **SỰ THẬT.** Input ở `tui/components/PromptComposer.tsx` + `ComposerBlock.tsx` (Ink). Paste 1 khối lớn → Ink/Yoga
   re-layout toàn khung theo từng ký tự + 1 dòng dài cực kỳ → giật/gãy frame (cùng họ lag ConPTY đã ghi ở Phần 1 (TUI)).
 - **SỬA.** (1) Bật **bracketed-paste** (gom cả khối thành 1 sự kiện thay vì N keypress); (2) **cap chiều cao composer**
@@ -512,11 +523,11 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   canonical home, cờ nếu đổi hành vi, test, cập nhật docs + memory** — đúng nhịp slice của chiến dịch.
 
 ### Thứ tự đề xuất cho session sau
-**~~P0 (1 slice, cùng gốc "không tràn"): 8.2 + 8.3 + 8.1~~ ✅ XONG (2026-06-01)** — xem các mục trên +
-banner đầu §8. **▶ NEXT = P1:** §8.5 (paste dài không gãy UI: `tui` PromptComposer/ComposerBlock —
-bracketed-paste + cap chiều cao + paste cực dài→attachment) rồi §8.4 (ảnh đa tầng: `ChatMessage.content:
-string|ContentPart[]` additive; adapter map image_url CHỈ khi `capabilities.vision`; estimator §8.3 ĐÃ
-đếm token ảnh sẵn; TUI đính ảnh). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →
+**~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.
+**▶ NEXT = §8.4 ảnh đa tầng:** `ChatMessage.content: string|ContentPart[]` additive (default string =
+byte-identical); adapter openai-compatible map `image_url` CHỈ khi `getModelSpec(model).capabilities.vision`
+(tái dùng gate năng lực catalog, không đoán); estimator §8.3 ĐÃ đếm token ảnh sẵn (`IMAGE_PART_TOKENS`); TUI
+đính ảnh (path qua `@` đã có resolve IMG badge — tận dụng, không dựng lại). **P2:** 8.6/8.7/8.8. Mỗi bước: `pnpm verify` xanh → commit `master` →
 sync docs/memory.
 
 > **Lưu ý cho session sau (di chứng + theo dõi):** (1) `updateModelOverride` trong reactive vẫn GHI ĐĨA
