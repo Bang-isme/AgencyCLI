@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry } from "../skill/tool-harness.js";
 
 describe("Tool Harness Subsystem", () => {
   describe("parseToolCalls", () => {
@@ -235,6 +235,26 @@ Here is my decision:
     it("returns short results unchanged", () => {
       const short = "all good";
       expect(truncateToolResult("read_file", short, "claude-opus-4-5")).toBe(short);
+    });
+  });
+
+  // §8.11-E — the two similarly-named search tools are distinct (single file vs
+  // whole workspace); rather than rename them (a name change ripples through the
+  // label map / narration / security escalation / recorded traces), the
+  // descriptions cross-reference each other so the model picks the right one.
+  describe("grep_file vs grep_search clarity (§8.11-E)", () => {
+    const desc = (name: string) => registry.listTools().find((t) => t.name === name)?.description ?? "";
+
+    it("grep_file describes a single file and points to grep_search for the workspace", () => {
+      const d = desc("grep_file");
+      expect(d.toLowerCase()).toContain("single file");
+      expect(d).toContain("grep_search");
+    });
+
+    it("grep_search describes the whole workspace and points to grep_file for one file", () => {
+      const d = desc("grep_search");
+      expect(d.toLowerCase()).toContain("workspace");
+      expect(d).toContain("grep_file");
     });
   });
 });

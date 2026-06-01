@@ -568,7 +568,7 @@ registry.register({
 // 7. grep_file
 registry.register({
   name: "grep_file",
-  description: "Search for a regex pattern inside a file and return matching lines.",
+  description: "Search a SINGLE file (you provide its `path`) for a regex pattern; returns the matching lines. Use when you already know which file to look in — to search the whole workspace, use `grep_search` instead.",
   category: "read",
   schema: z.object({
     path: z.string(),
@@ -719,7 +719,7 @@ registry.register({
 // 11. grep_search
 registry.register({
   name: "grep_search",
-  description: "Search for a pattern across multiple files in the workspace recursively.",
+  description: "Search the WHOLE workspace recursively for a pattern (honors .gitignore, skips binaries; supports `limit`, `case_sensitive`, `is_regex`). Use to find where something appears across files — for one known file, use `grep_file` instead.",
   category: "read",
   schema: z.object({
     pattern: z.string(),
