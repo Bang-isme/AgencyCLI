@@ -595,7 +595,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `tui-launch.ts` | `resolveTuiLaunch(argv)` — TUI vs headless decision logic |
 | `resolve-project.ts` | `resolveProjectRoot()` — workspace root resolution |
 
-### 21 Commands
+### 25 Commands
 
 | Command | File | Purpose |
 |---------|------|---------|
@@ -606,17 +606,21 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `compact` | `commands/compact.ts` | Compress memory context |
 | `config` | `commands/config.ts` | Init / show / path for `~/.agency/config.json` |
 | `doctor` | `commands/doctor.ts` | TS-native preflight: Python, skills pack, provider keys (+ `--deep` pack health) |
+| `eval` | `commands/eval.ts` | Run the eval suite + regression gate vs baseline |
 | `git` | `commands/git.ts` | Git summary + PR status |
 | `graph` | `commands/graph.ts` | Load knowledge graph |
+| `handover` | `commands/handover.ts` | Generate `.agency/handover.md` resume digest |
 | `index` | `commands/index-cmd.ts` | Build workspace file index |
 | `memory` | `commands/memory.ts` | Memory status / build / genome |
 | `plugin` | `commands/plugin.ts` | Validate / tools / schema for plugins |
+| `replay` | `commands/replay.ts` | Replay + verify the durable event journal (§2.5) |
 | `route` | `commands/route.ts` | Prompt routing only (no LLM call) |
 | `routing` | `commands/routing.ts` | Manage routing weights + feedback |
 | `run` | `commands/run.ts` | Execute shell commands with sandbox |
 | `schedule` | `commands/schedule.ts` | Cron workflow scheduling |
 | `setup` | `commands/setup.ts` | Bootstrap project setup |
 | `skill` | `commands/skill.ts` | List / show / invoke skills |
+| `status` | `commands/status.ts` | Runtime status: flags, events, memory, tasks, agents |
 | `task` | `commands/task.ts` | Run / resume / abort plan tasks |
 | `team` | `commands/team.ts` | Team configuration |
 | `workflow` | `commands/workflow.ts` | List / run predefined workflows |
@@ -640,3 +644,46 @@ workspace ─────────┤           ├──→ benchmark
                     │
 browser (standalone)
 ```
+
+## Canonical Homes & No-Duplication Map
+
+Single source of truth for shared logic, so new work **reuses** instead of
+re-implementing. Before adding a helper, check whether its concern already has a
+home here.
+
+| Concern | Canonical home | Notes |
+|---------|----------------|-------|
+| Chat-turn setup (route resolve, key check, context repack), context compaction, turn token-cost estimate | `core/src/chat/turn-helpers.ts` | Shared by BOTH `runChatTurn` (orchestrator.ts) and `runChatTurnWithStream` (stream.ts). `recordTurnTokenCost` consolidated the once-copy-pasted `~len/4 + 200` estimate. |
+| Headless output rendering | `OutputEngine` (`core/src/output/`) | CLI uses it via `out` / `handleError` in `cli/src/utils.ts`. Do NOT add ad-hoc `console.log` formatting in commands. |
+| CLI process helpers (`out`, `exitOk/Fail`, `exitFromResult`, `writeProcessOutput`, `handleError`) | `cli/src/utils.ts` | One home for every command. |
+| Tool-loop circuit breaking | `core/src/chat/circuit-breaker.ts` | Wired into `skill/tool-harness.ts`. The deleted `SkillsRegistry` per-skill breaker duplicated this. |
+| Plan / DAG execution | `core/src/task/runner.ts` (`runPlan`, `parsePlanTasks`, `detectDagCycle`) | The deleted `PlannerEngine` duplicated this on a separate `ExecutionDagContract` model. |
+| Capability-driven agent routing + health/utilization | `core/src/agents/agent-registry.ts` | The deleted `DomainSpecialistRegistry` duplicated this. |
+| Durable event journal + replay verification | `core/src/events/event-journal.ts` + `events/replay-engine.ts` (`verifyJournalReplay`, `replaySessionJournal`) | Path convention lives only in `EventJournal.resolvePath`. |
+| Memory lifecycle / GC / secret redaction | `@agency/memory` | Flag-gated from core via setter (no core-flag import — avoids a dependency cycle). |
+| Model catalog + cost resolution | `@agency/providers` (`model-catalog.ts`) + governance cost resolver | One price table; `matchModelKey` is shared with `resolveModelSpec`. |
+| TUI severity glyph/colour | `tui/src/utils/severity.ts` (`thoughtSeverity*`) | Consolidated from CognitionPanel + ExecutionPanel. |
+
+### Intentional name-collisions / near-duplicates — DO NOT merge
+
+These look mergeable but are deliberately distinct; merging would change behaviour
+or couple unrelated packages.
+
+| Symbol / pattern | Why kept separate |
+|------------------|-------------------|
+| `ReplayEngine` — `core/src/events/replay-engine.ts` vs `telemetry/src/replay.ts` | Different domains: core verifies journaled events by hash; telemetry replays a `DeterministicExecutionTrace`, overriding live tool/clock outputs. Different packages. |
+| `truncateText` — TUI vs core | TUI is terminal-width-aware; core is plain char-count. Different semantics. |
+| `~len/4` token estimate — `providers/*` (`ceil`, rate-limiter), `memory/retriever.ts` (`ceil`, retrieval budget), `providers/error-parser.ts` (`round`), chat turn (`round + 200`) | Different formulas and domains; merging across packages would change behaviour and add cross-package deps. Only the orchestrator↔stream copy was byte-identical and now lives in `turn-helpers.recordTurnTokenCost`. |
+| `handover.ts` — `core/runtime/handover.ts` vs `cli/commands/handover.ts` | Layer split: core builds the digest (`generateHandover`); cli is the thin command wrapper. |
+| Per-package `index.ts` / `types.ts` / `config.ts` / `runner.ts` / `registry.ts` | Normal monorepo structure — same basename, package-local scope, no shared logic. |
+
+### Repeatable duplication scan
+
+```bash
+# Exported function/class names defined in >1 file (excluding tests):
+grep -rEn --include='*.ts' "^export (async )?(function|class) [A-Za-z0-9_]+" packages/*/src \
+ | grep -v "__tests__" \
+ | sed -E 's#(.*):[0-9]+:export (async )?(function|class) ([A-Za-z0-9_]+).*#\4\t\1#' \
+ | sort | awk -F'\t' '{n[$1]=n[$1]" "$2; c[$1]++} END {for (k in c) if (c[k]>1) print c[k]"  "k":"n[k]}'
+```
+As of 2026-05-31 the only cross-file match is the intentional `ReplayEngine` pair above.

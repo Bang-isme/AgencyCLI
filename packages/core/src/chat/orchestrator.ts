@@ -29,7 +29,7 @@ import { type RouteResult } from "../router/model-router.js";
 import { getInvokeActions } from "../skill/invoke-actions.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost } from "./turn-helpers.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { parseToolCalls, executeTool, truncateToolResult } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
@@ -477,10 +477,8 @@ export async function runChatTurn(
     const duration = Date.now() - startTime;
     globalProviderSupervisor.recordCall(providerId, duration, true);
 
-    // Record actual or estimated tokens cost
-    const finalInputTokens = aggregatedUsage.promptTokens || (Math.round(contextPack.length / 4) + 200);
-    const finalOutputTokens = aggregatedUsage.completionTokens || Math.round(llmText.length / 4);
-    globalCostGovernor.recordTokens(finalInputTokens, finalOutputTokens, providerId);
+    // Record actual or estimated tokens cost (shared estimate — see turn-helpers).
+    recordTurnTokenCost(aggregatedUsage, contextPack, llmText, providerId);
   } catch (err) {
     const duration = Date.now() - startTime;
     globalProviderSupervisor.recordCall(providerId, duration, false);

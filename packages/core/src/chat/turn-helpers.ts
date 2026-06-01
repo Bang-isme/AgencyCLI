@@ -13,6 +13,7 @@ import { getCachedRoute, setCachedRoute } from "../context/session-cache.js";
 import { type TokenBudgetPlan } from "../context/token-policy.js";
 import { routeUserPrompt, type RouteResult } from "../router/model-router.js";
 import { EventBus } from "../events/event-bus.js";
+import { globalCostGovernor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import type { ChatTurnInput, ChatMessage } from "./orchestrator.js";
 
@@ -82,6 +83,24 @@ export function repackContextAndSystemPrompt(
     input.systemInstructionOverride,
     historicalMemories
   );
+}
+
+/**
+ * Record a finished turn's token cost against the cost governor, falling back to
+ * a ~chars/4 estimate (+200 prompt overhead) when the provider didn't report
+ * usage. Shared by `runChatTurn` + `runChatTurnWithStream` so the estimate
+ * formula lives in exactly one place — it was previously copy-pasted, identical,
+ * into both turn paths.
+ */
+export function recordTurnTokenCost(
+  usage: { promptTokens?: number; completionTokens?: number },
+  contextPack: string,
+  llmText: string,
+  providerId: string
+): void {
+  const inputTokens = usage.promptTokens || Math.round(contextPack.length / 4) + 200;
+  const outputTokens = usage.completionTokens || Math.round(llmText.length / 4);
+  globalCostGovernor.recordTokens(inputTokens, outputTokens, providerId);
 }
 
 /** Minimal provider surface the compactor needs (matches LlmProvider.complete). */
