@@ -97,6 +97,16 @@ export interface RuntimeFlags {
    * hardened. Gated centrally in `emitThought`, so call sites stay unconditional.
    */
   cognitionStream: boolean;
+  /**
+   * Order the system prompt STATIC-prefix-first (identity + protocol + tool
+   * docs), then the session-stable goal anchor, then the per-turn variable tail
+   * (route intent, context pack, memories, user question). A stable prefix lets
+   * every OpenAI-compatible provider (NVIDIA / openrouter / deepseek / Ollama,
+   * …) hit its automatic prefix cache — a large input-token saving on long
+   * conversations. Off in legacy (variable-first order preserved byte-identical
+   * — no prefix cache), on in hardened. Roadmap §8.11-B.
+   */
+  promptCachePrefix: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -202,5 +212,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Observability narration for the (already-subscribed) cognition panel; emits
     // extra `thought:emitted` bus events → off in legacy, on in hardened.
     cognitionStream: parseBool(env.AGENCY_COGNITION_STREAM, hardened),
+    // Behaviour-changing (reorders the system prompt so the static prefix is
+    // stable across turns → enables provider-side prefix caching) → off in
+    // legacy (variable-first order preserved byte-identical), on in hardened.
+    promptCachePrefix: parseBool(env.AGENCY_PROMPT_CACHE, hardened),
   };
 }

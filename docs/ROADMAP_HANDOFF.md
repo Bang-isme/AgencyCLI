@@ -594,7 +594,7 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   báo 16385) → 8K; lớn (≥200K) → **48K (KHÔNG còn 400K-char/~100K-token dump** — truncation note đã bảo model lấy
   thêm qua `read_file` ranges); medium → 32K. +4 test regression. ÍT token + an toàn tràn.
 
-**(B) KHÔNG có prompt caching — ĐÒN BẨY TOKEN LỚN NHẤT bị bỏ lỡ.  ← 🔴 ưu tiên token**
+**(B) prompt caching — ĐÒN BẨY TOKEN LỚN NHẤT.  ← phần (1) reorder ✅ ĐÃ XONG; phần (2) Anthropic cache_control CÒN MỞ**
 - SỰ THẬT. grep `cache_control|prompt_cache|ephemeral` trong `packages/providers` = **RỖNG**. System prompt cố định đo
   được **~2069 token/turn** (tool-docs 1109 + prose ~960), GỬI MỖI TURN + contextPack + history. `buildSystemPrompt`
   (`chat/prompt.ts`) xếp **VARIABLE lên ĐẦU**: `anchorBlock` (goal pillars từ user msg) + `intent/workflow` (dòng 66-70)
@@ -602,10 +602,19 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 - LỖI. (a) Anthropic không gắn `cache_control:{type:"ephemeral"}` → mỗi turn trả FULL giá input cho phần static
   (đáng ra cache ~10% giá). (b) OpenAI-compatible (NVIDIA/openrouter/deepseek) có **automatic prefix caching** nhưng
   CẦN prefix ổn định — đặt VARIABLE lên đầu **phá** prefix cache → 0% hit. Đây là token phí lớn nhất cho hội thoại dài.
-- SỬA. (1) Reorder `buildSystemPrompt`: **STATIC prefix trước** (protocol + tool-docs) → rồi anchorBlock (ổn định/phiên)
-  → contextPack/memories/user-question (variable) cuối. Bật automatic prefix-cache cho mọi openai-compatible, 0 thêm code.
-  (2) Adapter Anthropic gắn `cache_control` block cuối system (verify cần BYOK key — đo cache-hit). **Cờ nếu đổi prompt
-  order** (legacy giữ nguyên). Đây là cách "ít token cho TẤT CẢ model" trực tiếp nhất.
+- **✅ SỬA (1) reorder ĐÃ XONG (2026-06-01).** `buildSystemPrompt` (`chat/prompt.ts`) tách prompt thành segment theo độ
+  ổn-định-trong-phiên: **static** (identity+protocol+tool-docs) → **sessionAnchor** (anchorBlock goal-pillars, ổn định/phiên)
+  → **variableTail** (route intent + contextPack + memories + user-question, đổi mỗi turn). Cùng bộ string, 2 thứ tự ráp
+  (KHÔNG nhân đôi prose): cờ MỚI `AGENCY_PROMPT_CACHE`/`promptCachePrefix` **ON** → static-prefix-first (bật automatic
+  prefix-cache cho MỌI openai-compatible, 0 đụng adapter); **OFF (legacy)** → thứ tự cũ **byte-identical**. Pure reorder
+  (cùng element-count + join "\n" → length bất biến giữa 2 mode = bằng chứng không thêm/bớt nội dung). off-legacy/on-hardened,
+  surface ở `agency status` (`buildFlagRows`). Test `prompt-cache-order.test.ts` (5: legacy intent-before-tools / cache
+  tools-before-intent + start "You are Agency CLI" / length-bất-biến / hardened default on / override giữ đầu). core 355→360,
+  **28 flag**.
+- **SỬA (2) CÒN MỞ.** Adapter Anthropic (`providers/anthropic.ts`) gắn `cache_control:{type:"ephemeral"}` vào block cuối
+  `body.system` (Anthropic KHÔNG có automatic prefix-cache — phải khai tường minh, KHÁC openai-compatible). Providers là leaf
+  package → KHÔNG đọc core flags được → thread option qua `CompleteOptions` (vd `cacheSystemPrompt?: boolean`) do core set từ
+  `promptCachePrefix`. Body-shape verify được không cần key; đo cache-hit thật cần BYOK key. Slice kế.
 
 **(C) "5-APPROACHES RULE" ép 5 hướng mỗi turn planning — phí OUTPUT token + formulaic.  ← 🟡**
 - SỰ THẬT. `chat/prompt.ts:77-78` ép "MUST outline exactly 5 distinct approaches ... sort by recommendation ... pros/cons,
@@ -625,7 +634,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   nhanh + ít token + kết quả tốt hơn). Tra "Canonical Homes" trước khi thêm tool.
 
 > **Thứ tự §8.11:** B (caching — token win lớn nhất) → C (5-approaches) → D → E. Cờ cho thay đổi prompt; tái dùng catalog
-> `capabilities`/adapter interface; test + `pnpm verify` xanh. A đã xong.
+> `capabilities`/adapter interface; test + `pnpm verify` xanh. **A đã xong; B(1) reorder đã xong (cờ `AGENCY_PROMPT_CACHE`);
+> còn B(2) Anthropic cache_control.**
 
 ### Thứ tự đề xuất cho session sau
 **~~P0: 8.2 + 8.3 + 8.1~~ ✅** + **~~§8.5 paste dài~~ ✅** (2026-06-01) — xem các mục trên + banner đầu §8.

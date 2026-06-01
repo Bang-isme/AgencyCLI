@@ -2,6 +2,7 @@ import { compileGoalPillars, formatGoalAnchorPrompt } from "@agency/heuristics";
 import type { RouteResult } from "../router/model-router.js";
 import type { ChatMessage } from "./orchestrator.js";
 import { registry } from "../skill/tool-harness.js";
+import { getRuntimeFlags } from "../runtime/flags.js";
 
 function formatToolDocs(): string {
   const tools = registry.listTools();
@@ -63,14 +64,29 @@ export function buildSystemPrompt(
   const agentPart = route.suggested_agent
     ? ` Suggested agent: ${route.suggested_agent}.`
     : "";
-  const baseSystemPrompt = [
-    anchorBlock,
-    "",
+
+  // --- Prompt segments, classified by how often they change across the turns of
+  // a single session. Splitting them out lets us assemble two orderings from the
+  // same strings (no prose is duplicated): the legacy order (byte-identical), or
+  // the cache-optimised order that puts the STATIC prefix first.
+  //
+  //  static       — identical every turn (identity + protocols + tool docs)
+  //  sessionAnchor — stable within a session (goal pillars from the first user msg)
+  //  variableTail  — changes every turn (route intent, context, memories, question)
+
+  const sessionAnchor = [anchorBlock, ""];
+  const identity = [
     `You are Agency CLI — a CodexAI skills harness operating in the workspace at ${projectRoot}.`,
+  ];
+  const intent = [
     `User intent: ${route.intent}. Workflow: ${route.workflow}.${agentPart}`,
+  ];
+  const guidance = [
     "You have full read access to the workspace. Use the provided context pack (which includes a project file tree and selected file contents) to answer the user's questions, analyze code, or write file changes.",
     "Be structured and concise; avoid generic filler and repeated tool dumps.",
     "",
+  ];
+  const protocol = [
     "### WORKING PROGRESSION & SOLUTION ARCHITECTURE PROTOCOL",
     "To ensure every workflow stays on track to the right goal and leverages its past working timeline without losing context:",
     "1. TIMELINE ALIGNMENT: Utilize the `### SYSTEM HISTORICAL MEMORIES` to reconstruct the exact chronological timeline of past steps. Never repeat actions or edits that have already succeeded or been ruled out.",
@@ -92,12 +108,23 @@ export function buildSystemPrompt(
     "AVAILABLE TOOLS:",
     formatToolDocs(),
     "",
+  ];
+  const variableTail = [
     contextPack,
     "",
     historicalMemories ? `### SYSTEM HISTORICAL MEMORIES\n${historicalMemories}\n` : "",
     "",
     `User question: ${userPrompt.trim()}`,
-  ].join("\n");
+  ];
+
+  // Same segments, two orderings (reorder only — identical content + element
+  // count, so total length is preserved):
+  //  legacy  — anchor, identity, intent, guidance, protocol, tail
+  //  cache   — identity, guidance, protocol (STATIC prefix), anchor, intent, tail
+  const ordered = getRuntimeFlags().promptCachePrefix
+    ? [...identity, ...guidance, ...protocol, ...sessionAnchor, ...intent, ...variableTail]
+    : [...sessionAnchor, ...identity, ...intent, ...guidance, ...protocol, ...variableTail];
+  const baseSystemPrompt = ordered.join("\n");
 
   if (systemInstructionOverride) {
     return `${systemInstructionOverride}\n\n${baseSystemPrompt}`;
