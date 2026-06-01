@@ -463,6 +463,7 @@ agency eval --json                              # run the eval suite + (if prese
 agency status --json                            # see active flags (25)
 AGENCY_PROFILE=hardened agency status            # see hardened posture (auto-recover, GC, budgets, compaction…)
 ```
+**Starting a brand-new session?** Paste `docs/SESSION_HANDOFF_PROMPT.md` as the first message — it points the new session at this doc + the no-duplication map and enforces the investigate→verify→commit rhythm.
 Then open this file (read §5 **LATEST** banner → git history + verify gate + §2.3 compaction wired + the wired-or-dead audit; **top pick is wire-or-delete one dead module, or grow the eval corpus & measure**) + ROADMAP_HANDOFF.md +
 PRODUCTION_AUDIT.md §2 (gap matrix). Memory note for the assistant: see
 `agencycli-production-hardening` in the project memory.
