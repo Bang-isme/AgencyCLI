@@ -65,15 +65,56 @@ export function parseContextLimit(errorMessage: string): number | null {
   return null;
 }
 
+// Conservative chars-per-token: code, JSON and tool results — which dominate
+// agent turns — tokenize denser than prose, and non-ASCII costs more, so the
+// naive 4 under-counts. 3.5 deliberately err's HIGH.
+const CHARS_PER_TOKEN_CONSERVATIVE = 3.5;
+// Per-message structural overhead (role wrapper + message framing), also on the
+// high side.
+const PER_MESSAGE_OVERHEAD = 8;
+// Coarse upper-bound token cost of an inline image part (multimodal, §8.4).
+const IMAGE_PART_TOKENS = 1200;
+
 /**
- * Computes an estimated token count of the given messages array (~4 characters per token + overhead).
+ * Estimated token count of a messages array — deliberately an OVER-estimate.
+ *
+ * This single canonical estimator is the proactive half of overflow protection
+ * (it gates compaction in `compactTurnHistory` and the reactive
+ * `reduceHistoryToFit`). Erring high means we compact/trim a turn slightly too
+ * early rather than under-count, send an oversized prompt, and have the provider
+ * reject it — the minimax-on-NVIDIA crash (the old `len/4` under-counted 197270
+ * real tokens as 192627). It also handles non-string content so multimodal
+ * messages (§8.4) don't break it.
  */
 export function estimateMessagesTokens(messages: ChatMessage[]): number {
-  let totalChars = 0;
+  let total = 0;
   for (const msg of messages) {
-    totalChars += (msg.content || "").length;
+    total += estimateContentTokens((msg as { content?: unknown })?.content);
+    total += PER_MESSAGE_OVERHEAD;
   }
-  const estimatedTokens = Math.round(totalChars / 4);
-  const overhead = messages.length * 5;
-  return estimatedTokens + overhead;
+  return Math.ceil(total);
+}
+
+function estimateContentTokens(content: unknown): number {
+  if (typeof content === "string") {
+    return content.length / CHARS_PER_TOKEN_CONSERVATIVE;
+  }
+  if (Array.isArray(content)) {
+    // Multimodal content parts: { type:"text", text } | { type:"image", ... }.
+    let t = 0;
+    for (const part of content) {
+      if (part && typeof part === "object") {
+        const p = part as { text?: unknown };
+        if (typeof p.text === "string") t += p.text.length / CHARS_PER_TOKEN_CONSERVATIVE;
+        else t += IMAGE_PART_TOKENS;
+      }
+    }
+    return t;
+  }
+  if (content == null) return 0;
+  try {
+    return String(content).length / CHARS_PER_TOKEN_CONSERVATIVE;
+  } catch {
+    return 0;
+  }
 }

@@ -54,6 +54,38 @@ describe("getCatalogSpec (loads the real models.json)", () => {
   });
 });
 
+describe("getCatalogSpec provider-aware conservative bound (§8.2)", () => {
+  it("clamps minimax-m2.7 to the real NVIDIA limit (196608), not a wrong-high entry", () => {
+    // models.json lists nvidia/minimaxai/minimax-m2.7 at 204800, but the NVIDIA
+    // API enforces 196608 (the value ollama-cloud / openrouter report). The
+    // conservative cross-provider bound must resolve 196608, never 204800, and
+    // never the 100000 router-cap outlier.
+    const spec = getCatalogSpec("minimaxai/minimax-m2.7", "nvidia");
+    expect(spec).not.toBeNull();
+    expect(spec!.contextWindow).toBe(196608);
+  });
+
+  it("is no larger than the provider-agnostic lookup (never over-allocates)", () => {
+    const agnostic = getCatalogSpec("minimaxai/minimax-m2.7");
+    const aware = getCatalogSpec("minimaxai/minimax-m2.7", "nvidia");
+    expect(agnostic!.contextWindow).toBe(204800); // legacy bare-id resolution
+    expect(aware!.contextWindow).toBeLessThanOrEqual(agnostic!.contextWindow!);
+  });
+
+  it("without a providerId stays byte-identical to the legacy agnostic lookup", () => {
+    expect(getCatalogSpec("anthropic/claude-opus-4-5")!.contextWindow).toBe(200000);
+  });
+
+  it("getModelSpec threads providerId so the heuristic 204800 is overridden to 196608", () => {
+    setModelCatalogEnabled(true);
+    const on = getModelSpec("minimaxai/minimax-m2.7", "nvidia");
+    expect(on.contextWindow).toBe(196608);
+    setModelCatalogEnabled(false);
+    const off = getModelSpec("minimaxai/minimax-m2.7", "nvidia");
+    expect(off.contextWindow).toBe(204800); // heuristic family value, legacy
+  });
+});
+
 describe("getModelSpec catalog enrichment (flag-gated)", () => {
   it("does NOT enrich when the catalog is disabled (legacy behaviour)", () => {
     setModelCatalogEnabled(false);

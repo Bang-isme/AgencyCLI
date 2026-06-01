@@ -48,12 +48,19 @@ const PLANS: Record<BudgetMode, TokenBudgetPlan> = {
 
 import { getModelSpec } from "@agency/providers";
 
-export function getTokenBudgetPlan(mode: BudgetMode = "normal", modelName?: string): TokenBudgetPlan {
+export function getTokenBudgetPlan(
+  mode: BudgetMode = "normal",
+  modelName?: string,
+  providerId?: string
+): TokenBudgetPlan {
   const plan = { ...PLANS[mode] };
   if (!modelName) return plan;
 
   try {
-    const spec = getModelSpec(modelName);
+    // Provider-aware so the adaptive budget uses the CONSERVATIVE context window
+    // for the user's provider (model-catalog clamps a wrong-high entry down),
+    // never over-allocating the prompt.
+    const spec = getModelSpec(modelName, providerId);
     if (spec && spec.contextWindow) {
       // Safety Margin of 10% for context window (A1)
       const maxOutputLimit = spec.maxOutputTokens;

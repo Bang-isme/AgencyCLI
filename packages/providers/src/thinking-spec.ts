@@ -1033,11 +1033,11 @@ export function resolveModelSpec(model: string): ModelSpec | null {
  *    so a confident registry/override entry stays authoritative; the catalog
  *    just fills the gaps. Off by default → returns the spec untouched (legacy).
  */
-function enrichWithCatalog(spec: ModelSpec, model: string): ModelSpec {
+function enrichWithCatalog(spec: ModelSpec, model: string, providerId?: string): ModelSpec {
   if (!isModelCatalogEnabled()) return spec;
   let cat = null as ReturnType<typeof getCatalogSpec>;
   try {
-    cat = getCatalogSpec(model);
+    cat = getCatalogSpec(model, providerId);
   } catch {
     cat = null;
   }
@@ -1051,13 +1051,26 @@ function enrichWithCatalog(spec: ModelSpec, model: string): ModelSpec {
     if (cat.contextWindow !== undefined || cat.maxOutputTokens !== undefined) {
       out.specSource = "catalog";
     }
+  } else if (
+    providerId &&
+    typeof cat.contextWindow === "number" &&
+    typeof out.contextWindow === "number" &&
+    cat.contextWindow < out.contextWindow
+  ) {
+    // Provider-aware safety clamp: a confident (registry/override) window that
+    // EXCEEDS the conservative cross-provider catalog bound is over-allocating
+    // for this provider and risks overflow — e.g. the registry lists
+    // minimax-m2.7 at 204800 but the NVIDIA API enforces 196608. The catalog
+    // only ever TIGHTENS a confident spec here, never loosens it.
+    out.contextWindow = cat.contextWindow;
+    out.specSource = "catalog";
   }
   if (!out.cost && cat.cost) out.cost = cat.cost;
   if (!out.capabilities && cat.capabilities) out.capabilities = cat.capabilities;
   return out;
 }
 
-export function getModelSpec(model: string): ModelSpec {
+export function getModelSpec(model: string, providerId?: string): ModelSpec {
   if (!model || typeof model !== "string") {
     return {
       maxOutputTokens: 4096,
@@ -1077,7 +1090,7 @@ export function getModelSpec(model: string): ModelSpec {
         copy.freeRateLimit = { rpm: 5, tpm: 200_000 };
       }
     }
-    return enrichWithCatalog(copy, model);
+    return enrichWithCatalog(copy, model, providerId);
   }
 
   // Heuristics fallback
@@ -1094,7 +1107,8 @@ export function getModelSpec(model: string): ModelSpec {
             ? { rpm: 15, tpm: 1_000_000 }
             : undefined,
       },
-      model
+      model,
+      providerId
     );
   }
 
@@ -1112,7 +1126,8 @@ export function getModelSpec(model: string): ModelSpec {
           ? { rpm: 15, tpm: 1_000_000 }
           : undefined,
     },
-    model
+    model,
+    providerId
   );
 }
 

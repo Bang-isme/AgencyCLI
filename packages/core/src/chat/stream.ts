@@ -7,7 +7,6 @@ import {
   updateModelOverride,
   isContextLimitError,
   parseContextLimit,
-  estimateMessagesTokens,
   isTransientError,
   type ProviderId,
 } from "@agency/providers";
@@ -32,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
@@ -144,8 +143,10 @@ export async function runChatTurnWithStream(
   const providerId = globalProviderSupervisor.getOptimalProvider(requestedProviderId) as any;
   const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
 
-  // Resolve the adaptive token budget plan based on the resolved modelName (A1)
-  let plan = getTokenBudgetPlan(budget, modelName);
+  // Resolve the adaptive token budget plan based on the resolved modelName (A1).
+  // Provider-aware so the budget uses the conservative context window for THIS
+  // provider (model-catalog clamps a wrong-high catalog entry down).
+  let plan = getTokenBudgetPlan(budget, modelName, providerId);
 
   const routeSummary = formatRouteSummary(route);
   const suggestedCommands = buildSuggestedCommands(
@@ -234,7 +235,7 @@ export async function runChatTurnWithStream(
       const compaction = await compactTurnHistory(
         turnHistory,
         provider,
-        getModelSpec(modelName).contextWindow,
+        getModelSpec(modelName, providerId).contextWindow,
         { cacheKey: resolvedSessionId }
       );
       turnHistory = compaction.messages;
@@ -296,32 +297,45 @@ export async function runChatTurnWithStream(
         } catch (err: any) {
           if (isContextLimitError(err) && attempt < maxAttempts) {
             attempt++;
-            const currentSpec = getModelSpec(modelName);
+            const currentSpec = getModelSpec(modelName, providerId);
             const oldLimit = currentSpec.contextWindow;
 
             if (oldLimit > 8192) {
+              // Honour the provider's stated real limit when we have one and
+              // trim the BODY to fit it (§8.1), instead of ratcheting the window
+              // down 20% on every retry — the latter, combined with the old
+              // system-prompt-only repack that never actually shrank the
+              // payload, drove minimax-m2.7 from 196608 to an absurd 16887
+              // persisted on disk.
               const parsedLimit = parseContextLimit(err.message || String(err));
-              let newLimit = parsedLimit;
-              if (!newLimit || newLimit >= oldLimit) {
-                newLimit = Math.max(8192, Math.floor(oldLimit * 0.8));
-              } else {
-                newLimit = Math.max(8192, newLimit);
-              }
+              const newLimit = parsedLimit && parsedLimit > 8192
+                ? parsedLimit
+                : Math.max(8192, Math.floor(oldLimit * 0.8));
 
               updateModelOverride(modelName, { contextWindow: newLimit });
 
               const updatedConfig = loadAgencyConfig();
               provider = getProvider(updatedConfig, providerId);
-              const updatedPlan = getTokenBudgetPlan(budget, modelName);
+              const updatedPlan = getTokenBudgetPlan(budget, modelName, providerId);
               plan = updatedPlan;
 
-              const newSystemPrompt = repackContextAndSystemPrompt(input, route, updatedPlan, historicalMemories);
-              turnHistory[0].content = newSystemPrompt;
-
-              const estimated = estimateMessagesTokens(turnHistory);
+              // §8.1 — reduce the conversation BODY, not just the system prompt:
+              // repack system + summarize the middle + trim/drop large turns
+              // until the (conservative) estimate fits the reduced window. The
+              // old handler only repacked turnHistory[0], so the oversized body
+              // was re-sent and the retry failed again until it threw.
+              const reduction = await reduceHistoryToFit(turnHistory, newLimit, {
+                input,
+                route,
+                plan: updatedPlan,
+                historicalMemories,
+                provider,
+                cacheKey: resolvedSessionId,
+              });
+              turnHistory = reduction.messages;
 
               void EventBus.getInstance().publish("system:warning", {
-                message: `Context limit exceeded for model ${modelName} (estimated prompt: ${estimated} tokens). Auto-reducing context window limit from ${oldLimit} to ${newLimit} tokens and retrying...`
+                message: `Context limit exceeded for model ${modelName}. Reduced conversation to ~${reduction.estimatedTokens} est tokens (window ${oldLimit} → ${newLimit})${reduction.fits ? "" : " — still tight"} and retrying...`
               });
 
               currentText = "";

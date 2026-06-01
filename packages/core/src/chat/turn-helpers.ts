@@ -383,3 +383,118 @@ export async function compactTurnHistory(
     summarizedTurns: middle.length,
   };
 }
+
+/** Context the reactive reducer needs to rebuild the system prompt + summarize. */
+export interface ReduceHistoryContext {
+  input: ChatTurnInput;
+  route: RouteResult;
+  /** The reduced budget plan (already recomputed at the lowered window). */
+  plan: TokenBudgetPlan;
+  historicalMemories?: string;
+  /** Provider used to summarize the middle (same one the turn uses). */
+  provider?: CompletionProvider | null;
+  /** Session id → makes the in-reducer compaction incremental across retries. */
+  cacheKey?: string;
+  /**
+   * Fraction of `newLimit` the reduced history must fit under, leaving headroom
+   * for the completion + estimator slop (default 0.8).
+   */
+  safety?: number;
+}
+
+export interface ReduceHistoryResult {
+  messages: ChatMessage[];
+  estimatedTokens: number;
+  /** True once the estimate is within `newLimit * safety`. */
+  fits: boolean;
+}
+
+/**
+ * Roadmap §8.1 — the reactive last-resort reducer shared by BOTH turn paths
+ * (`runChatTurn` and `runChatTurnWithStream`). When a provider rejects a turn
+ * for exceeding its context window, the old handler only repacked the SYSTEM
+ * prompt (`turnHistory[0]`) and retried — but the overflow lives in the
+ * conversation BODY (accumulated tool results, file reads, long pastes), so the
+ * retry re-sent an oversized history and failed again until `maxAttempts`, then
+ * threw. This is the crash the user hit ("auto-reducing" logged but never
+ * effective).
+ *
+ * It reduces the body for real, in three stages, until the (conservative,
+ * err-high) estimate fits `newLimit * safety`:
+ *  1. repack the system prompt at the reduced plan (the legacy behaviour);
+ *  2. summarize the middle via the canonical {@link compactTurnHistory} (forced
+ *     past its threshold since we're already over budget);
+ *  3. if still over, trim the largest middle message bodies, then drop the
+ *     oldest middle turns — never touching the system turn or the final
+ *     (current) message.
+ *
+ * Never throws. Returns the reduced history and whether it actually fits, so the
+ * caller can assert before retrying.
+ */
+export async function reduceHistoryToFit(
+  turnHistory: ChatMessage[],
+  newLimit: number,
+  ctx: ReduceHistoryContext
+): Promise<ReduceHistoryResult> {
+  const safety = ctx.safety ?? 0.8;
+  const target = Math.max(2000, Math.floor(newLimit * safety));
+
+  let history = turnHistory.slice();
+
+  // 1. Repack the system prompt at the reduced plan (legacy step, now stage 1).
+  if (history.length > 0 && history[0]?.role === "system") {
+    try {
+      history[0] = {
+        ...history[0]!,
+        content: repackContextAndSystemPrompt(ctx.input, ctx.route, ctx.plan, ctx.historicalMemories),
+      };
+    } catch {
+      /* repack is best-effort — keep the existing system prompt and reduce the body */
+    }
+  }
+
+  // 2. Summarize the middle (reuse the canonical compactor; thresholdRatio 0
+  //    because we are ALREADY over budget and must always collapse here).
+  try {
+    const compaction = await compactTurnHistory(history, ctx.provider, newLimit, {
+      cacheKey: ctx.cacheKey,
+      thresholdRatio: 0,
+    });
+    history = compaction.messages;
+  } catch {
+    /* compaction is best-effort — fall through to mechanical trimming */
+  }
+
+  // 3. Mechanical reduction until the estimate fits, protecting the system turn
+  //    (index 0) and the final/current message (last index).
+  let estimate = estimateMessagesTokens(history);
+  let guard = 0;
+  while (estimate > target && guard++ < 500) {
+    const lastIdx = history.length - 1;
+    let largestIdx = -1;
+    let largestLen = 0;
+    for (let i = 1; i < lastIdx; i++) {
+      const len = (history[i]?.content ?? "").length;
+      if (len > largestLen) {
+        largestLen = len;
+        largestIdx = i;
+      }
+    }
+    if (largestIdx === -1) break; // only system + final remain — cannot shrink further
+
+    if (largestLen > 2000) {
+      // Halve the largest body (keep the head — usually the salient part).
+      const c = history[largestIdx]!.content;
+      history[largestIdx] = {
+        ...history[largestIdx]!,
+        content: `${c.slice(0, Math.floor(c.length / 2))}\n…[trimmed to fit context]`,
+      };
+    } else {
+      // Bodies already small → drop the oldest middle turn entirely.
+      history.splice(largestIdx, 1);
+    }
+    estimate = estimateMessagesTokens(history);
+  }
+
+  return { messages: history, estimatedTokens: estimate, fits: estimate <= target };
+}
