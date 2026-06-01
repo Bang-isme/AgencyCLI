@@ -174,8 +174,19 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
 - **Running-summary XUYÊN LƯỢT ĐÃ XONG (2026-06-01, cont'd 20, commit `19cf875`):** `compactTurnHistory` nhận
   `cacheKey` (session id); lượt sau mà middle chỉ MỞ RỘNG middle đã tóm trước → chỉ tóm phần MỚI gộp vào summary cũ
   → O(new) thay vì O(all). Prefix-validate theo scope (không phục vụ summary cũ/lệch); không cacheKey → không cache →
-  byte-identical. Cả 2 turn path truyền `resolveSessionId`. Test `context-compaction.test.ts` (6→7). **Còn lại:**
-  in-loop compaction (nén ngay trong outer tool-loop) vẫn để sau; reactive context-limit handler vẫn là lưới mid-loop.
+  byte-identical. Cả 2 turn path truyền `resolveSessionId`. Test `context-compaction.test.ts` (6→7).
+- **IN-LOOP compaction ĐÃ XONG (2026-06-01, cont'd 21):** trước đây nén CHỈ 1 lần TRƯỚC outer tool-loop, nhưng
+  `turnHistory` lớn dần BÊN TRONG loop (mỗi vòng nối assistant turn + tool results) còn reactive context-limit
+  handler chỉ thu nhỏ *window* chứ không thu nhỏ *hội thoại* → loop dài vẫn có thể tràn giữa turn. Gom `if
+  (contextCompaction){…}` inline thành 1 closure `compactIfEnabled()` (mỗi turn path) gọi **trước loop VÀ ở đầu mỗi
+  vòng**; tái dùng `compactTurnHistory` canonical (không logic mới), `cacheKey` làm các lần nén in-loop incremental
+  (O(new)), no-op dưới ngưỡng + byte-identical khi cờ off. **Không cờ mới.** Test mới `in-loop-compaction.test.ts`
+  (+3: ON nén 1+2=3, OFF không nén). *Kèm:* gỡ một import cycle THẬT — `context/pack.ts` + `agents/orchestrator.ts`
+  import `chat/orchestrator.ts` chỉ để lấy 2 helper thuần `formatRouteSummary`/`buildSuggestedCommands` (back-edge
+  tầng-dưới→chat = vi phạm phân tầng + làm vỡ mock theo chu trình). Dời 2 helper sang leaf mới
+  `chat/route-presentation.ts` (orchestrator re-export → consumer giữ nguyên path); behaviour-preserving. Cạnh còn
+  lại `agents/orchestrator → stream → orchestrator` (dispatch chạy chat turn) là chu trình CHỨC NĂNG hợp lệ → giữ.
+  **§2.3 giờ đóng trọn: bound+chunk + incremental running-summary + in-loop.**
 
 ### 2.4 — Tầng tool chắc hơn  ← 🟡 PHẦN LỚN ĐÃ CÓ (2026-05-31)
 - **Sửa file diff/patch chính xác — ĐÃ WIRE.** `ast-compiler` (`utils/`, AST TypeScript THẬT — `ts.createSourceFile`, không regex) trước chỉ dùng nhẹ ở `approval-policy-engine` (risk-sim), CHƯA là tool model gọi được. Giờ phơi thành tool **`ast_edit`** (`skill/tool-harness.ts`): `rename_symbol` / `replace_function_body` / `replace_method_body` / `modify_import` / `delete_node` / `insert_function` — tái dùng nguyên các hàm ast-compiler (không nhân đôi logic edit), bổ sung cho `edit_file` (text replace) chứ không thay. Auto-quảng bá cho model qua `registry.listTools()` → `buildSystemPrompt` (không cần sửa prompt cứng). Approval-gated (category write). Test: `tool-harness.test.ts` (+5).

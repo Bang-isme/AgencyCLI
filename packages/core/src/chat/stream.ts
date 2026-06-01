@@ -222,8 +222,15 @@ export async function runChatTurnWithStream(
       { role: "user" as const, content: input.prompt },
     ];
 
-    // §2.3 — proactively compact a long history before it overflows the window.
-    if (getRuntimeFlags().contextCompaction) {
+    // §2.3 — compact a long history before it overflows the window. Run before
+    // the loop (initial history) AND at the top of each iteration, so the tool
+    // results accumulating across iterations are compacted too — the reactive
+    // context-limit handler shrinks the window but never the conversation, so a
+    // long tool-loop could still overflow mid-turn. No-op under threshold and
+    // byte-identical when the flag is off; the cacheKey makes the repeated
+    // in-loop compactions incremental (O(new turns), not O(all)).
+    const compactIfEnabled = async (): Promise<void> => {
+      if (!getRuntimeFlags().contextCompaction) return;
       const compaction = await compactTurnHistory(
         turnHistory,
         provider,
@@ -231,12 +238,14 @@ export async function runChatTurnWithStream(
         { cacheKey: resolvedSessionId }
       );
       turnHistory = compaction.messages;
-    }
+    };
+    await compactIfEnabled();
 
     loopCount = 0;
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
     while (loopCount < maxLoops) {
+      await compactIfEnabled();
       lastFinishReason = "";
       let currentText = "";
 

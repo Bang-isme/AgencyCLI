@@ -27,9 +27,9 @@ import {
   type TokenBudgetPlan,
 } from "../context/token-policy.js";
 import { type RouteResult } from "../router/model-router.js";
-import { getInvokeActions } from "../skill/invoke-actions.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
+import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
 import { providerHasKey, resolveRoute, repackContextAndSystemPrompt, compactTurnHistory, recordTurnTokenCost, resolveSessionId } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -82,56 +82,12 @@ export interface ChatTurnResult {
   };
 }
 
-export function formatRouteSummary(route: RouteResult): string {
-  const parts = [
-    `intent: ${route.intent}`,
-    `workflow: ${route.workflow}`,
-    `provider: ${route.provider}`,
-  ];
-  if (route.suggested_agent) {
-    parts.push(`agent: ${route.suggested_agent}`);
-  }
-  if (route.skills.length > 0) {
-    parts.push(`skills: ${route.skills.join(", ")}`);
-  }
-  if (route.warnings.length > 0) {
-    parts.push(`warnings: ${route.warnings.join("; ")}`);
-  }
-  return parts.join(" · ");
-}
-
-export function buildSuggestedCommands(
-  route: RouteResult,
-  projectRoot: string,
-  prompt: string
-): string[] {
-  const seen = new Set<string>();
-  const commands: string[] = [];
-  const add = (cmd: string) => {
-    if (!seen.has(cmd)) {
-      seen.add(cmd);
-      commands.push(cmd);
-    }
-  };
-
-  add(`agency workflow run ${route.workflow} --project-root .`);
-  if (route.suggested_agent) {
-    const escaped = prompt.replace(/"/g, '\\"');
-    add(
-      `agency agents dispatch ${route.suggested_agent} --task "${escaped}"`
-    );
-  }
-  for (const skill of route.skills) {
-    for (const action of getInvokeActions(skill, projectRoot)) {
-      add(action);
-    }
-  }
-  const trimmed = prompt.trim();
-  if (route.skills.length === 0 && trimmed.length > 0) {
-    add(`agency route "${trimmed.replace(/"/g, '\\"')}"`);
-  }
-  return commands;
-}
+// `formatRouteSummary` + `buildSuggestedCommands` live in the leaf module
+// `route-presentation.ts` (pure route→string helpers) so the context and
+// agents/skill layers no longer import this orchestrator — that back-edge formed
+// a runtime import cycle. Re-exported here so existing `from "./orchestrator.js"`
+// consumers (index.ts, stream.ts, agents/orchestrator.ts) keep one import path.
+export { formatRouteSummary, buildSuggestedCommands };
 
 export function formatRouteOnlyResponse(
   route: RouteResult,
@@ -262,8 +218,15 @@ export async function runChatTurn(
       { role: "user" as const, content: input.prompt },
     ];
 
-    // §2.3 — proactively compact a long history before it overflows the window.
-    if (getRuntimeFlags().contextCompaction) {
+    // §2.3 — compact a long history before it overflows the window. Run before
+    // the loop (initial history) AND at the top of each iteration, so the tool
+    // results accumulating across iterations are compacted too — the reactive
+    // context-limit handler shrinks the window but never the conversation, so a
+    // long tool-loop could still overflow mid-turn. No-op under threshold and
+    // byte-identical when the flag is off; the cacheKey makes the repeated
+    // in-loop compactions incremental (O(new turns), not O(all)).
+    const compactIfEnabled = async (): Promise<void> => {
+      if (!getRuntimeFlags().contextCompaction) return;
       const compaction = await compactTurnHistory(
         turnHistory,
         provider,
@@ -271,12 +234,14 @@ export async function runChatTurn(
         { cacheKey: resolvedSessionId }
       );
       turnHistory = compaction.messages;
-    }
+    };
+    await compactIfEnabled();
 
     loopCount = 0;
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
     while (loopCount < maxLoops) {
+      await compactIfEnabled();
       let currentText = "";
       let completionSuccess = false;
       let attempt = 0;

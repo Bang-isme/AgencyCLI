@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { execa } from "execa";
 import { spawnSync, type ChildProcess } from "node:child_process";
 import pidusage from "pidusage";
-import { buildSuggestedCommands } from "../chat/orchestrator.js";
+import { buildSuggestedCommands } from "../chat/route-presentation.js";
 import { runChatTurnWithStream } from "../chat/stream.js";
 import { runVerifyLoop } from "../task/verify-loop.js";
 import { parseFileEditSuggestions } from "../utils/file-parser.js";
