@@ -407,9 +407,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > `activityPhase` từ thought qua `activityPhaseFromThought` → status hết kẹt "Writing" >10s; bỏ subtask GIẢ ExecutionPanel →
 > activity thật)** · **§8.10-E ✅ (parser canonical) · §8.10-C ✅ (2026-06-02: diệt nhãn sai `getGroundedTargetName` + gỡ
 > `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN** · **§8.11-D ✅ (compact tool-docs args, cờ
-> `AGENCY_COMPACT_TOOL_DOCS`) · §8.11-E ✅ (2026-06-02: clarify grep mô tả cross-ref; KHÔNG rename/patch/index — ghi lý do) → §8.11 ĐÓNG TRỌN**.
-> Baseline giờ: core **388** · tui **148** · providers 852 · security 36 · ~2123 test · **31 cờ** · 18 tool.
-> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k / §8.7 index freshness / §8.8 sandbox edge. (Ngỏ: §8.10 in-tool progress callback; promote hardened→default cần BYOK eval + user OK.)**
+> `AGENCY_COMPACT_TOOL_DOCS`) · §8.11-E ✅ (clarify grep mô tả cross-ref) → §8.11 ĐÓNG TRỌN** · **§8.7 ✅ (2026-06-02: index
+> freshness — xóa changedFiles fast-path dead+buggy, full-merge path đúng new/deleted/changed)**.
+> Baseline giờ: core **390** · tui **148** · providers 852 · security 36 · ~2125 test · **31 cờ** · 18 tool.
+> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key) / §8.8 sandbox edge (ưu tiên thấp). (Ngỏ: §8.10 in-tool progress + index re-index worker-offload; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -508,12 +509,18 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   của eval (eval/replay dùng local). **SỬA:** thêm bài đo recall (precision@k trên corpus episode), rồi cân nhắc provider-embedder
   optional. Interface `Embedder` chính là điểm mở rộng — giữ nguyên, chỉ thêm impl.
 
-### 8.7 — Codebase indexing: kiểm incremental + độ tươi  ← 🟢 P2
+### 8.7 — Codebase indexing: kiểm incremental + độ tươi  ← ✅ XONG phần freshness (2026-06-02, commit `09443d6`)
 - **SỰ THẬT.** `index/workspace-indexer.ts` (`buildIndex`/`incrementalUpdateAsync`/`isIndexStale`/`writeIndex`/`loadIndex`);
-  ĐÃ wired vào context pack: `context/pack.ts:63 loadIndex` trong `buildContextPack` → index THỰC SỰ nuôi prompt (retrieval live).
-- **KIỂM.** (1) `incrementalUpdateAsync` có bỏ sót file đổi/đổi tên/xoá không (đối chiếu mtime/hash)? (2) `isIndexStale` ngưỡng
-  hợp lý? (3) index có chọn ĐÚNG file liên quan vào pack không (chất lượng retrieval, không chỉ có-mặt)? (4) re-index đồng bộ
-  trong dispatch là ứng viên offload worker-thread (đã ghi Phần 1). Đây là kiểm-chứng + cải thiện, không phải wiring.
+  ĐÃ wired vào context pack: `context/pack.ts loadIndex` trong `buildContextPack` → index THỰC SỰ nuôi prompt (retrieval live).
+- **✅ ĐÃ SỬA (1) freshness + dead-code:** audit `incrementalUpdateAsync` ra nhánh `changedFiles` fast-path **built-but-unwired**
+  (0 caller live truyền `changedFiles` — `updateKnowledgeGraphForFiles`/setup/index-cmd/TUI×2 đều gọi KHÔNG có) **+ BUGGY** (vòng
+  lặp chỉ duyệt `existing.files` → file MỚI TẠO không bao giờ được thêm = đúng file model vừa ghi) **+ lợi biên** (chỉ bỏ qua
+  *walk* rẻ; hashing đắt ĐÃ incremental ở full-merge path). XÓA fast-path + import `loadSymbolGraph` thừa + field `changedFiles`.
+  Full-merge path (re-walk bắt new/deleted/renamed + giữ hash cũ khi mtime+size không đổi) là path DUY NHẤT còn lại = mọi caller
+  đã dùng → behaviour-preserving. `loadSymbolGraph` GIỮ (live ở graph/builder + context/pack). Thay test dead-path bằng test
+  real-fs khóa 3 mutation (new thêm / deleted rớt / changed re-hash + unchanged giữ hash). core 388→390, −81 dòng ròng.
+- **CÒN NGỎ (P2, không bug):** (2) `isIndexStale` 5min — hợp lý, chưa đụng; (3) retrieval QUALITY (chọn đúng file vào pack, họ §8.6);
+  (4) re-index đồng bộ trong dispatch = ứng viên offload worker-thread (surface cao).
 
 ### 8.8 — Sandbox + built-in tools: rà path + edge-case  ← 🟢 P2
 - **SỰ THẬT.** `security/sandbox.ts`: ưu tiên **docker** (`isDockerAvailable`, `host.docker.internal`, proxy) + fallback
