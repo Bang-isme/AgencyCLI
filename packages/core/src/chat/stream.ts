@@ -31,7 +31,8 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, describeToolActivity } from "./turn-helpers.js";
+import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
@@ -421,6 +422,13 @@ export async function runChatTurnWithStream(
                 phase: `Running: ${tc.name}`,
                 step: { label: stepLabel, status: "active" }
               });
+            } else {
+              // §8.10-A — the main turn has no agentId (no worker panel). Narrate
+              // the tool to the cognition stream (the canonical narration producer)
+              // so the status line/CognitionPanel reflect what it's DOING in
+              // realtime — read→Reading, edit→Editing, exec→Running — instead of
+              // sticking on "Writing". No-op unless cognitionStream is on.
+              emitThought(describeToolActivity(tc.name, stepLabel));
             }
             const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;

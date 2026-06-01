@@ -45,6 +45,10 @@ vi.mock("../chat/turn-helpers.js", () => ({
   repackContextAndSystemPrompt: () => "system",
   recordTurnTokenCost: () => {},
   compactTurnHistory: compactSpy,
+  // The main-turn tool loop now narrates each tool via describeToolActivity →
+  // emitThought (§8.10-A); the stubbed turn-helpers must provide it or the
+  // unconditional call site throws (the tool path here writes t.txt, no agentId).
+  describeToolActivity: () => ({ source: "worker", phase: "editing", severity: "info", confidence: "high", message: "stub" }),
 }));
 
 import * as providers from "@agency/providers";
