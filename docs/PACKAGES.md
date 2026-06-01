@@ -727,6 +727,20 @@ grep -rEn --include='*.ts' "^export (async )?(function|class|const|interface|typ
 
 **Two-tier classification — don't over-delete.** A symbol used *only inside its own file* is **over-exported** (a minor smell — the `export` could be dropped) but **live**; do NOT delete it (e.g. `LeaseManager`/`globalLeaseManager` are used within `runner.ts`; the `@agency/benchmark` `tasks.ts` corpus consts fold into an in-file array). Only a **zero-reference** symbol (the command above) is dead. The `.tsx`/`.mts` includes matter — they catch consumers like `App.tsx` (the false-dead lesson). As of 2026-06-01 this scan is **empty** after pruning 13 truly-dead exports: `FailureClassifier`/`FailureCategory` (superseded by the live `FailureNormalizer`), `getInstallCommand` (install isn't an acceptance step), `resetCircuitBreaker` (an uncalled reset for the still-live `circuitBreakerState`), `addProject`/`removeProject` (superseded by `touchProject`'s upsert), `modeSkillPrefix` (a dead mode→skill-prefix helper in the live `agent-modes.ts`), `YOGA_SAFE_MARGIN`, `hasPendingStdinBytes`, `SemanticEvent`, `semanticEventBus` (an unused `EventBus` singleton — its sole `EventBus` import went too), and `TemporalChoreographyEngine`/`globalChoreography` (an orphan liveness-heartbeat superseded by the real TUI timers). This is a **lint-style sweep, not a CI guard** — a util committed just before its consumer would false-positive — so it stays a repeatable command, not a `pnpm verify` test; `knip`/`ts-prune` is the proper tool if hard enforcement is ever wanted.
 
+### Repeatable whole-file orphan sweep (all packages)
+
+The dead-export sweep finds dead *symbols*; a file whose exports are used *only within itself* (so the symbol sweep marks them live) can still be a **dead module nobody imports**. The cont'd-9 module sweep covered only `core/src`; this covers every package. Collect every imported module-specifier basename in one pass, then flag any non-entry `src` file whose basename appears in none:
+
+```bash
+grep -rhoE "(from|import\(|export[^;]*from)\s*[\"'][^\"']+[\"']" packages/*/src --include='*.ts' --include='*.tsx' --include='*.mts' \
+  | grep -oE "[\"'][^\"']+[\"']" | tr -d "\"'" | sed -E 's#.*/##; s#\.js$##' | sort -u > /tmp/imported.txt
+find packages -type f \( -name '*.ts' -o -name '*.tsx' \) ! -name '*.d.ts' ! -name 'index.ts' ! -name 'index.tsx' \
+  ! -path '*/__tests__/*' ! -path '*/node_modules/*' ! -path '*/dist/*' ! -path '*/skills/*' ! -name '*.config.ts' \
+  | while read -r f; do b=$(basename "$f"); b="${b%.*}"; grep -qxF "$b" /tmp/imported.txt || echo "ORPHAN? $f"; done
+```
+
+Excludes the legitimate roots: `index.ts` barrels, `*.config.ts` (vitest entry points), test files, and the `skills/` pack templates (standalone scaffolds shipped as data, not wired code). Basename-based, so it under-reports on collisions (conservative — verify each hit). As of 2026-06-01 this is **empty** after deleting `packages/memory/src/__benchmarks__/{benchmark-memory,chaos-stress}.ts` — self-executing benchmark scripts nothing ran (no script/import/doc/CI), compiled into the shipped `dist` (`files: ["dist"]`), where `chaos-stress.ts` duplicated the live `chaos-stress.test.ts` (8 tests). Lint-style sweep (a new file added before its importer false-positives), so a repeatable command — not a CI guard.
+
 ## Harness, built-in tools & skills (inventory)
 
 So this doesn't get re-derived each session. Verified 2026-06-01.

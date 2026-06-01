@@ -24,7 +24,6 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@agency/governance": "workspace:*",
     "better-sqlite3": "^11.8.0",
     "lru-cache": "^11.0.0"
   },

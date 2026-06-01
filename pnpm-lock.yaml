@@ -192,9 +192,6 @@ importers:
 
   packages/memory:
     dependencies:
-      '@agency/governance':
-        specifier: workspace:*
-        version: link:../governance
       better-sqlite3:
         specifier: ^11.8.0
         version: 11.10.0
