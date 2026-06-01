@@ -405,9 +405,10 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > resume khi chạm maxLoops, cờ `AGENCY_RESUME_CONTINUATION`)** · **§8.10-A realtime tool narration ✅ (2026-06-02: emitThought
 > tại main-turn tool loop → status line realtime, dùng cờ sẵn `cognitionStream`)** · **§8.10-B/D ✅ (2026-06-02: lái
 > `activityPhase` từ thought qua `activityPhaseFromThought` → status hết kẹt "Writing" >10s; bỏ subtask GIẢ ExecutionPanel →
-> activity thật)** · **§8.10-E ✅ (2026-06-02: 1 parser canonical `parseSystemActivityLine` + xóa dead `formatSystemActivityLine`)**.
-> Baseline giờ: core **381** · tui **143** · providers 852 · security 36 · ~2111 test · **30 cờ** · 18 tool.
-> ▶ FRONTIER: §8.10-C (inline-trace nhãn sai `lastToolTargets` vỡ parallel + progress per-tool) · §8.4 ảnh · §8.11-D/E.**
+> activity thật)** · **§8.10-E ✅ (parser canonical) · §8.10-C ✅ (2026-06-02: diệt nhãn sai `getGroundedTargetName` + gỡ
+> `lastToolTargets` vestigial vỡ parallel) → §8.10 ĐÓNG TRỌN**.
+> Baseline giờ: core **381** · tui **148** · providers 852 · security 36 · ~2116 test · **30 cờ** · 18 tool.
+> ▶ FRONTIER: §8.4 ảnh/multimodal · §8.11-D/E (tool-docs rút gọn arg → grep rename/patch/index-search). P2: §8.6/8.7/8.8.**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
@@ -560,10 +561,18 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > concise LIVE) — 2 bản đã drift (dead bản bold worker theo expandedTui, live luôn bold). Trích 1 hàm pure
 > `parseSystemActivityLine(line)→{kind,cleanLine,worker?,toolName?,target?,args?,len?,gate?}`; 2 renderer live switch theo
 > `kind`, JSX mỗi kind GIỮ NGUYÊN VĂN (output verbose/concise bất biến); XÓA `formatSystemActivityLine` (~135 dòng). Pure
-> refactor, KHÔNG cờ. `lastToolTargets` vẫn là việc của verbose renderer (bug parallel = C). Test `trace-telemetry-parse.test.ts`
-> (9). tui 134→143, −44 dòng ròng. **CÒN LẠI §8.10:** (C) inline-trace nhãn sai — `lastToolTargets` global-Map keyed theo
-> toolName vỡ khi parallel/cùng tool (`TraceTelemetry.tsx:15`, nhánh text-parse) + progress per-tool. (4 bề mặt: narration cấu
-> trúc §8.10-A/B đã là nguồn realtime; nhánh text-parse inline còn lại là fallback hiển thị message — C xử nốt nhãn sai.)
+> refactor, KHÔNG cờ. Test `trace-telemetry-parse.test.ts` (9). tui 134→143, −44 dòng ròng.
+>
+> **✅ §8.10-C ĐÃ XONG (2026-06-02, commit `fba316c`) → §8.10 ĐÓNG TRỌN:** 2 bug inline-trace, TUI-only. (1) **Nhãn sai**
+> (`list_dir · short video`): `getGroundedTargetName` (`tool-labels.ts`) khi args JSON KHÔNG có path/command field thì fallback
+> "first string value" → vớ nhầm free-text (task description). Giờ nhận thêm `TargetFile`/`AbsolutePath`/`SearchPath`/
+> `DirectoryPath`, hết thì trả "" (không đoán). (2) **Correlation vỡ parallel**: started→completed nối qua module-global Map
+> `lastToolTargets` keyed theo toolName → 2 tool song song/cùng tên ghi đè. Map THỰC RA vestigial — reader DUY NHẤT là nhánh
+> completed non-expanded của `SystemActivityLine`, mà caller DUY NHẤT (Conversation.tsx:1359) luôn `expandedTui={true}`
+> (dùng alias+char-count, KHÔNG target). Gỡ Map + set(exec) + get(completed) → hết state chia sẻ → hết collision.
+> Behaviour-preserving thực tế (nhánh live không đổi). Test `tool-labels.test.ts` (5). tui 143→148.
+> **§8.10 (TUI realtime) ĐÓNG: loop/resume + A narration + B/D phase&panel + E dedup + C label/correlation.** Còn để ngỏ
+> ( enhancement, KHÔNG bug): progress trong-tool dài (heartbeat giữa 1 tool chậm) — cần tool-level progress callback, surface cao.
 
 **(A) Main turn KHÔNG có event tool có cấu trúc — UI phải regex-parse text English (gốc lớn nhất).**
 - **SỰ THẬT.** Main turn báo hiệu tool bằng cách **nhồi text người-đọc** vào stream LLM:
