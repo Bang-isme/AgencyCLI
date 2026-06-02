@@ -107,7 +107,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.success} paddingX={1} marginY={0} width="100%">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={theme.success} bold>✦ CODEBASE INDEXED SUCCESSFULLY</Text>
+          <Text color={theme.success} bold>✦ Codebase indexed</Text>
         </Box>
         <Text color={theme.dimBorder}>──────────────────────────────────────────────────</Text>
         <Box flexDirection="row">
@@ -291,10 +291,10 @@ export const SystemNotice = memo(function SystemNotice({ theme, content, hideHea
   }, [content]);
 
   const headerText = isSubagent
-    ? "◈ SUBAGENT KERNEL"
+    ? "◈ Subagent"
     : isThinkingOrExplore
-      ? "◈ AGENT THINKING"
-      : "◈ SYSTEM";
+      ? "◈ Thinking"
+      : "◈ System";
 
   const headerColor = isSubagent
     ? theme.accent

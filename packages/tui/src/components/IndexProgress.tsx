@@ -32,7 +32,7 @@ export function IndexProgressPanel({
     <Box flexDirection="column" marginTop={1} marginBottom={0}>
       <Box marginLeft={2} flexDirection="row">
         <Text color={theme.accent} bold>
-          ◈ INDEXING CODEBASE{" "}
+          ◈ Indexing codebase{" "}
         </Text>
         <Text color={theme.accent}>{AGENCY_SPINNER[tick % AGENCY_SPINNER.length]}</Text>
       </Box>
