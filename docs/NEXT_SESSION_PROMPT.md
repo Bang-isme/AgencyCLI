@@ -2,7 +2,7 @@
 
 > **Cách dùng:** dán nguyên khối từ dòng `---` dưới đây vào tin nhắn đầu của một phiên Claude Code mới trên repo này.
 > Prompt **trỏ tới** docs/memory thật (không sao chép nội dung) nên không tự trở thành bản trùng lặp và luôn đồng bộ với docs.
-> Số liệu trong prompt là ảnh chụp lúc soạn (2026-06-02, HEAD `f2fb68a`) — phiên mới **xác nhận lại bằng docs + `git log` + `pnpm verify`**.
+> Số liệu trong prompt là ảnh chụp lúc soạn (2026-06-02, HEAD `16c2596`) — phiên mới **xác nhận lại bằng docs + `git log` + `pnpm verify`**.
 
 ---
 
@@ -16,7 +16,7 @@ Bạn tiếp quản **AgencyCLI** (`D:\AgencyCLI`) — monorepo **pnpm, 16 packa
 
 > **Bài học nhãn cũ:** khi kiểm dead-code phải grep CẢ `.ts` + `.tsx` + `.mts` (false-dead `semantic-orchestration.ts` từng wired qua `App.tsx`). Verify-đừng-assert áp cả cho **script audit tự viết** (background output có thể bị cắt). **Bài học mới (phiên này):** spawned background task có thể ghi đè working tree chính → `git add -A` gom NHẦM file lạ vào commit; LUÔN `git status`/`git show` soi diff trước/sau commit, tách commit nếu lẫn concern (soft-reset commit local chưa đẩy, KHÔNG amend lịch sử đã đẩy).
 
-## 1. ĐÃ XONG phiên 2026-06-02 (HEAD `f2fb68a` trên `master`, cây sạch) — ĐỪNG làm lại (chi tiết ROADMAP §8 + memory topic)
+## 1. ĐÃ XONG phiên 2026-06-02 (HEAD `16c2596` trên `master`, cây sạch) — ĐỪNG làm lại (chi tiết ROADMAP §8 + memory topic)
 > ⚠️ **NHẮC USER REBUILD/RESTART TUI:** các fix dưới ở `src` → TUI đang chạy `dist` CŨ vẫn lỗi cho tới khi `pnpm -r build` + khởi động lại. Ảnh self-kill/loop user gửi là **trước** fix.
 - **§8.10 TUI realtime — ĐÓNG TRỌN** (5 slice): `1c6fc75` loop/resume (`buildIncompleteTurnNotice` ở turn-helpers — chạm maxLoops → notice 1 dòng `[SYSTEM:]` + file-list size đĩa thật, nối `llmText`→history; cờ `AGENCY_RESUME_CONTINUATION`) · `710abb0` A: `emitThought` tại main-turn tool loop + `describeToolActivity` (turn-helpers) → status realtime, ride cờ `cognitionStream` · `47c2667` B/D: `activityPhaseFromThought` lái `activityPhase` (hết kẹt "Writing">10s) + bỏ subtask GIẢ ExecutionPanel + `computeExecutionPhaseStatuses` · `0849922` E: trích `parseSystemActivityLine` (1 classifier) + XÓA dead `formatSystemActivityLine` · `fba316c` C: diệt nhãn sai `getGroundedTargetName` + gỡ `lastToolTargets` vestigial.
 - **§8.11 token/clarity — ĐÓNG TRỌN** (A truncate + B caching + C approaches từ phiên trước; phiên này: `b40b1a6` **D** compact tool-docs args, cờ `AGENCY_COMPACT_TOOL_DOCS`, trích `describeZodArg`; `00f5312` **E** clarify mô tả grep cross-reference — CỐ Ý KHÔNG rename/patch/index, ghi lý do).
@@ -42,7 +42,7 @@ Bạn tiếp quản **AgencyCLI** (`D:\AgencyCLI`) — monorepo **pnpm, 16 packa
 
 ### 🟢 P2 còn lại
 - **§8.6** memory recall precision@k — embedder `LocalDeterministicEmbedder` là placeholder (feature-hashing, recall ngữ nghĩa yếu); thêm bài đo precision@k (không cần key) rồi cân nhắc **provider-embedder thật sau interface `Embedder`** (CẦN embeddings key, gate riêng giữ determinism eval/replay).
-- **§8.7(4)** re-index đồng bộ trong dispatch (`updateKnowledgeGraphForFiles`→`incrementalUpdateAsync` full-walk) = ứng viên offload worker-thread (surface cao). **§8.10 in-tool progress** (heartbeat giữa 1 tool chậm grep/đọc file lớn — cần tool-level progress callback). **§8.8** native-mode security-warning mạnh hơn (ưu tiên thấp).
+- **§8.7(4)** re-index đồng bộ trong dispatch (`updateKnowledgeGraphForFiles`→`incrementalUpdateAsync` full-walk) = ứng viên offload worker-thread (surface cao). **§8.8** native-mode security-warning mạnh hơn (ưu tiên thấp — `agency run` đã có warning native). **§9 enhancement** (marginal): consolidate gom memory (cần LLM), `agency status` đếm curated-memory.
 - **Promote `hardened`→default** (đích cuối): cần (i) eval delta sạch (BYOK key, corpus model fail-attempt-1 ổn định) + (ii) user OK rõ ràng. **KHÔNG tự flip.** Hiện 32 cờ off-legacy/on-hardened (gồm `fileMemory`, `cognitionStream` — realtime + §9 memory đều TẮT ở legacy mặc định).
 
 ## 3. NHỊP MỖI SLICE (bắt buộc, lặp lại)
@@ -55,4 +55,4 @@ investigate (đọc + grep CẢ `.ts/.tsx/.mts`, tra Canonical Homes) → phân 
 - Không tự `promote hardened→default` (cần BYOK eval delta sạch + user OK rõ ràng).
 - BYOK key (nếu user cấp): theo `SESSION_HANDOFF §6.1` — backup config, placeholder `${VAR}`, `trap … EXIT` restore trong CÙNG lệnh bash, key chỉ ở env per-command, xác nhận `grep -rn "nvapi-\|sk-" packages docs` RỖNG sau khi xong.
 
-**Bắt đầu:** đọc §0 → mở ROADMAP §8 (banner + §8.8/§8.4/§8.6) → **NHẮC user rebuild+restart TUI** để các fix `src` có hiệu lực → hỏi/chốt user muốn nhánh nào. Gợi ý verify-được-không-cần-key: **(A) hard-break turn loop trên circuit-breaker trip** (đóng nốt vòng churn user gặp ở ảnh) → rồi **(B) parseToolCalls robustness**. Mở §8.4 (multimodal) / §8.6 (provider-embedder) khi user cấp BYOK key (vision / embeddings) để verify e2e. → làm theo nhịp §3.
+**Bắt đầu:** đọc §0 → mở ROADMAP §8 (banner + §8.4/§8.6) → **NHẮC user rebuild+restart TUI** (`pnpm -r build`) để các fix `src` + tính năng sau-cờ có hiệu lực; muốn THẤY §8.10 realtime + §9 memory thì bật `AGENCY_PROFILE=hardened` hoặc `AGENCY_COGNITION_STREAM=1`/`AGENCY_FILE_MEMORY=1`. **Backlog không-cần-key đã CẠN** (§8.8-A/B, §8.10-F, §9 đều xong). Việc thật còn lại đều **cần BYOK key**: §8.4 ảnh/multimodal (vision key — verify body-shape thì không cần, round-trip thật thì cần) · §8.6 provider-embedder (embeddings key) · **eval delta để promote `hardened`→default** (cần key + user OK rõ ràng). → hỏi/chốt user: cấp key cho nhánh nào, hay chỉ một vùng cụ thể cần dọn thêm. Làm theo nhịp §3.
