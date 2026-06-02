@@ -1,9 +1,5 @@
 # AgencyCLI — Prompt tiếp nối phiên (nắm rõ source, chống trùng lặp)
 
-> **Khung tổng quát + templates:** `docs/AGENT_ONBOARDING.md` (điểm "Start here": read-order,
-> doc taxonomy, memory model 2 tầng, nhịp slice, copy-paste templates). Doc NÀY = rulebook chi
-> tiết + prompt dán-vào; số liệu §3/§6 là ảnh chụp, xác nhận lại bằng `pnpm verify` + `agency status`.
-
 > **Cách dùng:** dán nguyên khối dưới đây vào tin nhắn đầu của một phiên Claude Code mới
 > trên repo này. Prompt **trỏ tới** `docs/` + `memory/` thật (không sao chép nội dung) nên
 > không tự trở thành bản trùng lặp và luôn cập nhật theo docs. Số liệu trong mục 6 là ảnh

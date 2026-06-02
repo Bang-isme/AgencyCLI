@@ -1,8 +1,9 @@
 # Agency CLI — Documentation
 
-> **Start here if you're an AI/agent picking up this repo:**
-> [AGENT_ONBOARDING.md](./AGENT_ONBOARDING.md) — the context-loading + session-tracking
-> framework (read order, doc taxonomy, memory model, slice rhythm, copy-paste templates).
+> **Picking up this repo for ongoing work?** Start with the paste-in onboarding
+> prompt [SESSION_HANDOFF_PROMPT.md](./SESSION_HANDOFF_PROMPT.md) and the current
+> frontier in [NEXT_SESSION_PROMPT.md](./NEXT_SESSION_PROMPT.md) (see the
+> Process & Continuity index below).
 
 ## Overview
 
@@ -45,10 +46,9 @@ Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (Reac
 
 | Document | Role | Edit policy |
 |----------|------|-------------|
-| [AGENT_ONBOARDING.md](./AGENT_ONBOARDING.md) | **Framework** — how to load context, work in slices, and hand off (templates included) | Stable; edit only when the *method* changes |
+| [SESSION_HANDOFF_PROMPT.md](./SESSION_HANDOFF_PROMPT.md) | The rulebook + paste-in onboarding prompt (read order, anti-dup, verify, flags, slice rhythm) | Living |
 | [ROADMAP_HANDOFF.md](./ROADMAP_HANDOFF.md) | Live work map (`TRUTH → BUG → FIX`), §8 is current | Living — update in the same slice |
 | [NEXT_SESSION_PROMPT.md](./NEXT_SESSION_PROMPT.md) | Paste-in prompt: current frontier + next tasks | Living snapshot |
-| [SESSION_HANDOFF_PROMPT.md](./SESSION_HANDOFF_PROMPT.md) | The detailed rulebook + paste-in onboarding prompt | Living |
 | [HARDENING_HANDOFF.md](./HARDENING_HANDOFF.md) | Production-hardening campaign status + per-slice `cont'd N` log | Living (append) |
 | [EVAL_RESULTS.md](./EVAL_RESULTS.md) | BYOK eval results (legacy ↔ hardened) | Living (append) |
 | [PRODUCTION_AUDIT.md](./PRODUCTION_AUDIT.md), [PRODUCTION_AUDIT_APPENDIX.md](./PRODUCTION_AUDIT_APPENDIX.md) | Point-in-time audit | **Frozen — do not edit** |
