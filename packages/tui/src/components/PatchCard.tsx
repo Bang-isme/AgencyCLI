@@ -32,10 +32,10 @@ export interface PatchCardProps {
 }
 
 const ACTION_PREFIX: Record<PatchAction, string> = {
-  modify: "[MODIFY]",
-  add: "[ADD]",
-  remove: "[REMOVE]",
-  rename: "[RENAME]",
+  modify: "modify",
+  add: "add",
+  remove: "remove",
+  rename: "rename",
 };
 
 function actionColor(theme: ThemeTokens, action: PatchAction): string {
@@ -59,8 +59,8 @@ function actionColor(theme: ThemeTokens, action: PatchAction): string {
  *
  * Hides formatting-only edits and import reorder noise by default.
  * Example:
- *   [MODIFY] AuthService.login()
- *   [ADD] JWT refresh middleware
+ *   modify AuthService.login()
+ *   add JWT refresh middleware
  *   [+12 formatting-only changes hidden]
  */
 export const PatchCard = memo(function PatchCard({

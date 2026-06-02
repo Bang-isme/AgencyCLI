@@ -95,7 +95,7 @@ export function formatStructuredRuntimeCard(line: string, theme: ThemeTokens): R
     if (fileMatch && fileMatch[1]) {
       return (
         <Box flexDirection="row">
-          <Text color={theme.accent} bold>[MODIFY] </Text>
+          <Text color={theme.accent} bold>modify </Text>
           <Text color={theme.text}>{fileMatch[1]}</Text>
         </Box>
       );
