@@ -7,7 +7,7 @@ import {
   deleteNode,
   insertFunction,
 } from "../utils/ast-compiler.js";
-import { resolve, join, relative, dirname } from "node:path";
+import { resolve, join, relative, dirname, isAbsolute } from "node:path";
 import { runShellCommand } from "../terminal/sandbox.js";
 import { dispatchAgent } from "../agents/orchestrator.js";
 import { resolveSkillsRoot } from "../skills-root.js";
@@ -208,6 +208,29 @@ export function isFileWritingTool(name: string): boolean {
   return FILE_WRITING_TOOLS.has(name);
 }
 
+/** True if `target` is the project root or lives inside it. */
+function isWithinRoot(projectRoot: string, target: string): boolean {
+  const root = resolve(projectRoot);
+  const t = resolve(target);
+  if (t === root) return true;
+  const rel = relative(root, t);
+  // `relative` yields "" for the root, a "../"-prefixed path for an ancestor, or
+  // an absolute path when there's no relative route (e.g. a different drive).
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * Returns an error string if path confinement is on and `target` escapes the
+ * project root, else null. Mutating file tools call this after resolving a path
+ * so a `../` traversal (or absolute path) can't write/delete outside the
+ * workspace. Off (legacy) → always null → byte-identical.
+ */
+function pathConfinementError(projectRoot: string, target: string, label: string): string | null {
+  if (!getRuntimeFlags().pathConfinement) return null;
+  if (isWithinRoot(projectRoot, target)) return null;
+  return `Error: ${label} resolves outside the project root — refusing (path confinement is on; AGENCY_PATH_CONFINEMENT). Use a path inside the project.`;
+}
+
 /** Maps a tool invocation to an approval action + params for risk assessment. */
 function toApprovalAction(name: string, args: Record<string, any>): { action: string; params: Record<string, any> } {
   switch (name) {
@@ -367,6 +390,8 @@ registry.register({
     const contentArg = args.content || "";
     if (!pathArg) return "Error: 'path' argument is required for write_file.";
     const filePath = resolve(projectRoot, pathArg);
+    const confined = pathConfinementError(projectRoot, filePath, `write path "${pathArg}"`);
+    if (confined) return confined;
     try {
       // Create the parent directory so writing a new nested path (src/x/New.tsx
       // when src/x doesn't exist yet) succeeds instead of throwing ENOENT and
@@ -396,6 +421,8 @@ registry.register({
     const contentArg = args.content || "";
     if (!pathArg) return "Error: 'path' argument is required for append_file.";
     const filePath = resolve(projectRoot, pathArg);
+    const confined = pathConfinementError(projectRoot, filePath, `append path "${pathArg}"`);
+    if (confined) return confined;
     try {
       const existedBefore = existsSync(filePath);
       // Same as write_file: ensure the parent dir exists so the first append to a
@@ -548,6 +575,8 @@ registry.register({
     if (!existsSync(filePath)) {
       return `Error: File not found at path "${pathArg}"`;
     }
+    const confined = pathConfinementError(projectRoot, filePath, `edit path "${pathArg}"`);
+    if (confined) return confined;
     try {
       const currentContent = readFileSync(filePath, "utf8");
       if (!currentContent.includes(searchArg)) {
@@ -596,6 +625,8 @@ registry.register({
     if (!existsSync(filePath)) return `Error: File not found at path "${pathArg}"`;
     const splitList = (s?: string) =>
       (s || "").split(",").map((x) => x.trim()).filter(Boolean);
+    const confined = pathConfinementError(projectRoot, filePath, `ast_edit path "${pathArg}"`);
+    if (confined) return confined;
     try {
       const src = readFileSync(filePath, "utf8");
       let updated: string;
@@ -862,6 +893,8 @@ registry.register({
     if (!existsSync(filePath)) {
       return `Error: File not found at path "${pathArg}"`;
     }
+    const confined = pathConfinementError(projectRoot, filePath, `delete path "${pathArg}"`);
+    if (confined) return confined;
     try {
       unlinkSync(filePath);
       return `Success: File deleted "${pathArg}"`;
@@ -891,6 +924,10 @@ registry.register({
     if (!existsSync(sourcePath)) {
       return `Error: Source file not found at path "${sourceArg}"`;
     }
+    const srcConfined = pathConfinementError(projectRoot, sourcePath, `source "${sourceArg}"`);
+    if (srcConfined) return srcConfined;
+    const destConfined = pathConfinementError(projectRoot, destPath, `destination "${destArg}"`);
+    if (destConfined) return destConfined;
     try {
       // Ensure the destination's parent dir exists so a move/rename INTO a new
       // folder works instead of throwing ENOENT.
@@ -1012,6 +1049,8 @@ registry.register({
     const pathArg = args.path || "";
     if (!pathArg) return "Error: 'path' argument is required for create_directory.";
     const dirPath = resolve(projectRoot, pathArg);
+    const confined = pathConfinementError(projectRoot, dirPath, `directory path "${pathArg}"`);
+    if (confined) return confined;
     try {
       if (existsSync(dirPath)) {
         return `Success: Directory already exists at path "${pathArg}"`;
@@ -1087,6 +1126,8 @@ registry.register({
       return `Error parsing edits JSON: ${err.message || String(err)}`;
     }
 
+    const confined = pathConfinementError(projectRoot, filePath, `batch_edit path "${pathArg}"`);
+    if (confined) return confined;
     try {
       const originalContent = readFileSync(filePath, "utf8");
       let currentContent = originalContent;

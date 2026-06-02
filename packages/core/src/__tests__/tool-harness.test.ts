@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker } from "../skill/tool-harness.js";
@@ -398,6 +398,70 @@ Here is my decision:
         expect(res).toContain("Success");
         expect(existsSync(join(tempDir, "src.txt"))).toBe(false);
         expect(readFileSync(join(tempDir, "moved/here/dest.txt"), "utf8")).toBe("data");
+      });
+    });
+
+    // Path confinement (AGENCY_PATH_CONFINEMENT): mutating tools must refuse a
+    // path that resolves outside the project root. Root is a SUBDIR of tempDir so
+    // a "../" escape still lands inside tempDir (cleaned up) while being outside
+    // the root we pass.
+    describe("path confinement", () => {
+      const prev = process.env.AGENCY_PATH_CONFINEMENT;
+      const prevProfile = process.env.AGENCY_PROFILE;
+      let root: string;
+
+      beforeEach(() => {
+        delete process.env.AGENCY_PROFILE; // pin legacy so only the explicit flag matters
+        root = join(tempDir, "root");
+        mkdirSync(root, { recursive: true });
+      });
+      afterEach(() => {
+        if (prev === undefined) delete process.env.AGENCY_PATH_CONFINEMENT;
+        else process.env.AGENCY_PATH_CONFINEMENT = prev;
+        if (prevProfile === undefined) delete process.env.AGENCY_PROFILE;
+        else process.env.AGENCY_PROFILE = prevProfile;
+      });
+
+      it("ON: write_file refuses a path that escapes the root", async () => {
+        process.env.AGENCY_PATH_CONFINEMENT = "1";
+        const res = await executeTool("write_file", { path: "../escape.txt", content: "x" }, root);
+        expect(res).toContain("outside the project root");
+        expect(existsSync(join(tempDir, "escape.txt"))).toBe(false);
+      });
+
+      it("ON: delete_file refuses a traversal path", async () => {
+        process.env.AGENCY_PATH_CONFINEMENT = "1";
+        writeFileSync(join(tempDir, "victim.txt"), "data", "utf8");
+        const res = await executeTool("delete_file", { path: "../victim.txt" }, root);
+        expect(res).toContain("outside the project root");
+        expect(existsSync(join(tempDir, "victim.txt"))).toBe(true); // not deleted
+      });
+
+      it("ON: move_file refuses a traversal destination", async () => {
+        process.env.AGENCY_PATH_CONFINEMENT = "1";
+        writeFileSync(join(root, "in.txt"), "data", "utf8");
+        const res = await executeTool(
+          "move_file",
+          { source: "in.txt", destination: "../out.txt" },
+          root
+        );
+        expect(res).toContain("outside the project root");
+        expect(existsSync(join(root, "in.txt"))).toBe(true); // not moved
+      });
+
+      it("ON: a within-root write still works (no over-blocking)", async () => {
+        process.env.AGENCY_PATH_CONFINEMENT = "1";
+        const res = await executeTool("write_file", { path: "sub/ok.txt", content: "x" }, root);
+        expect(res).toContain("Success");
+        expect(readFileSync(join(root, "sub/ok.txt"), "utf8")).toBe("x");
+      });
+
+      it("OFF (legacy): a traversal write is NOT refused (byte-identical)", async () => {
+        delete process.env.AGENCY_PATH_CONFINEMENT;
+        const res = await executeTool("write_file", { path: "../legacy.txt", content: "x" }, root);
+        expect(res).not.toContain("outside the project root");
+        expect(res).toContain("Success");
+        expect(existsSync(join(tempDir, "legacy.txt"))).toBe(true);
       });
     });
 

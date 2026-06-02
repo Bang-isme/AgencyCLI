@@ -101,6 +101,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Auto-continue", value: f.autoContinue ? "on (resume on unfinished stop)" : "off", keys: ["autoContinue"] },
     { label: "Tool-call reassembly", value: f.toolCallReassembly ? "on (rejoin a write split by the output limit)" : "off", keys: ["toolCallReassembly"] },
     { label: "Tool-result tail", value: f.toolResultTailKept ? "on (keep head+tail of command output)" : "off (head only)", keys: ["toolResultTailKept"] },
+    { label: "Path confinement", value: f.pathConfinement ? "on (refuse writes/deletes outside project root)" : "off", keys: ["pathConfinement"] },
   ];
 }
 

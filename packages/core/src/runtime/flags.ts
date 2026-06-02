@@ -190,6 +190,19 @@ export interface RuntimeFlags {
    * regardless — their head is what was asked for and read_file ranges fetch more.
    */
   toolResultTailKept: boolean;
+  /**
+   * Confine the mutating file tools (write/append/edit/batch_edit/ast_edit/
+   * delete/move/create_directory) to the project root: a `path` that resolves
+   * outside projectRoot (via `../` traversal or an absolute path) is refused
+   * instead of writing/deleting wherever it points. The tools resolve with
+   * `resolve(projectRoot, path)` but never checked the result stayed inside, and
+   * the RiskAssessor has no traversal rule, so a confused or prompt-injected
+   * model could write or delete outside the workspace. Off in legacy (no
+   * confinement — byte-identical; an agent that legitimately edits sibling paths
+   * keeps working), on in hardened. Read tools are intentionally NOT confined
+   * (lower risk + would block legitimately reading a referenced file).
+   */
+  pathConfinement: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -326,5 +339,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // model sees errors at the end → different truncated content) → off in legacy
     // (head-only truncation byte-identical), on in hardened.
     toolResultTailKept: parseBool(env.AGENCY_TOOLRESULT_TAIL, hardened),
+    // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
+    // → off in legacy (no confinement, byte-identical), on in hardened.
+    pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),
   };
 }
