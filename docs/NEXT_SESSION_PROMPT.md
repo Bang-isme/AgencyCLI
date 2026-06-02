@@ -2,7 +2,7 @@
 
 > **Cách dùng:** dán nguyên khối từ dòng `---` dưới đây vào tin nhắn đầu của một phiên Claude Code mới trên repo này.
 > Prompt **trỏ tới** docs/memory thật (không sao chép nội dung) nên không tự trùng lặp và luôn đồng bộ với docs.
-> Số liệu là ảnh chụp lúc soạn (2026-06-02, HEAD `65c84a0` trên `master`, cây sạch) — phiên mới **xác nhận lại bằng docs + `git log` + `pnpm verify`**.
+> Số liệu là ảnh chụp lúc soạn (2026-06-02, HEAD `bd13978` trên `master`, cây sạch) — phiên mới **xác nhận lại bằng docs + `git log` + `pnpm verify`**.
 
 ---
 
@@ -31,10 +31,17 @@ User chốt rõ: **trước tiên đảm bảo MỌI THỨ trong AgencyCLI vận
   - `762f49d` auto-refresh model list ngay sau `/connect` lưu key.
   - `538810c` ConnectOverlay copy terse (bỏ "CONNECTION MANAGER"/"DANGER ZONE"/"CONFIRM DELETION"/"ACTIVE CREDENTIAL FOUND"/"Credentials Integration Setup"/"[CONNECTED]").
   - `65c84a0` de-shout headers: "✦ CODEBASE INDEXED SUCCESSFULLY"/"◈ SUBAGENT KERNEL"/"◈ AGENT THINKING" → sentence case.
+- **Amateur-tell sweep đợt 2 (5 commit, HEAD `bd13978`):**
+  - `c18a8d5` patch-action labels `[MODIFY]/[ADD]/[REMOVE]/[RENAME]` → lowercase (PatchCard + Conversation diff-header).
+  - `920c167` **de-fake Splash** (user chốt "de-fake giữ animation"): xóa log boot BỊA ("Decrypted system credentials"/"Launching agent operating system") → log honest; "AGENCY SYSTEM KERNEL"→"AGENCY", "ONLINE"→"ready", bỏ "execution kernel"/"orchestration runtime"/"BIOS"; GIỮ animation + cột Diagnostics/Environment thật. WelcomeMenu header cùng fix.
+  - `cd44274` **core approval card** (`approval-policy-engine`, WIRED): `[MODIFY]/[NEW]/…`→lowercase verb; "Semantic Architectural Changes Summary"→"Changes:"; budget banner hù dọa→honest.
+  - `3963ece` **`SemanticTranslator`** (nhãn panel subagent, bản dịch song song bị sót `5213685`) → vocab plain Read/Write/Edit/Run/Search/Find/Delegate. CÒN NGỎ: dedup 2 TUI translator (tool-labels ↔ SemanticTranslator).
+  - `bd13978` status/error copy: SUCCESS/FAILED/YES/NO→thường, "LOGS"→"Logs", bỏ "!" McpOverlay errors.
+  - **Đừng-điều-tra-lại:** output-engine `formatPatch` `[MODIFY]` = built-but-UNWIRED → CỐ Ý không đụng.
 - **Baseline verify:** build 16/16, **REAL_EXIT_CODE=0**, **~2190 test** (core **431** · cli 573 · tui **154** · providers **855** · memory 48 · benchmark 18 · workspace 11 · security 39 · tooling 14 · governance 7 · skills-bridge 14 · context 6 · heuristics 6 · browser 5 · telemetry 9). **33 cờ** · **20 tool**.
 
 ## 3. VIỆC KẾ TIẾP — chiến dịch amateur-tell + đúng-logic (iterative, không cần key)
-- **(a) Quét wording amateur còn lại** (no-rework, an toàn): các overlay CHƯA rà (Help/Status/Models/Skills/Plugins/Review/Mcp/Sessions/Splash/WelcomeMenu) — tìm SHOUTING/bracketed-CAPS/dramatic copy như đã làm ConnectOverlay; `PatchCard` `[MODIFY]/[REMOVE]/[RENAME]`; error message thô; viết hoa/chấm câu không nhất quán. Grep gợi ý: `\[[A-Z][A-Z _]{3,}\]`, `DANGER|WARNING:|SUCCESSFULLY|KERNEL|◈ [A-Z]{3,}`. Display-only, cập nhật test nếu assert chuỗi.
+- **(a) Quét wording amateur còn lại** (no-rework, an toàn): ĐÃ rà Splash/WelcomeMenu/PatchCard/Conversation/approval-card/SubagentsOverlay/McpOverlay/slash-diag/SemanticTranslator (đợt 2). CÒN: HelpOverlay/PluginsOverlay/RouteOverlay/SkillsPicker/Status copy + comment "Premium" (GlowingLogo/ModelsOverlay/SkillsPicker/WorkerProgress — internal, marginal) + `.toUpperCase()` data value (provider/thinkingType ở /model diag — debatable). Grep gợi ý: `\[[A-Z][A-Z _]{3,}\]`, `DANGER|WARNING:|SUCCESSFULLY|KERNEL|Premium|Synthesi|◈ [A-Z]{3,}`. Display-only, cập nhật test nếu assert chuỗi.
 - **(b) Badge "needs key" trong provider picker** (follow-up `eb19ba5`): provider hiện qua fallback nhưng CHƯA đánh dấu "chưa cấu hình" → user tưởng đã sẵn. Thêm dấu/hint + (lý tưởng) chọn keyless → mở `/connect`.
 - **(c) LỚN NHẤT — structured tool-card thay text-in-stream** (đòn bẩy "xịn hơn opencode" rõ nhất; rework NHIỀU SLICE, thiết kế cẩn thận): tool activity hiện là TEXT `⚡ [SYSTEM: Executing tool "X"...]` nhồi vào assistant message rồi **regex-parse lại** (`TraceTelemetry.parseSystemActivityLine`) = round-trip lossy. §8.10 cố ý KHÔNG làm vì là "surface thứ 5". Hướng: event tool-lifecycle cấu trúc (tái dùng EventBus, ĐỪNG thêm surface thứ 5 lạc) → render thành card riêng (tool · target · status · summary) tách khỏi prose. Lên kế hoạch trước khi code.
 - **(d) Rà ĐÚNG-LOGIC vận hành + tools hiệu quả:** chạy agent trên task thật (cần key — xem caveat), quan sát hành vi sai/tool kém hiệu quả; sửa gốc. Phần verify-without-key: đọc code path, tìm built-but-unwired/logic sai.
