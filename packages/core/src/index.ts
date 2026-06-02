@@ -188,6 +188,10 @@ export {
   type MergeResult,
 } from "./agents/orchestrator.js";
 export { coerceAgentId } from "./agents/profiles.js";
+// Re-export the canonical skill-alias map (single source of truth) so surfaces
+// that only depend on @agency/core — e.g. the TUI skills picker — resolve and
+// display aliases from the SAME map the router uses, instead of a divergent copy.
+export { SKILL_ALIASES, aliasesForSkill, resolveSkillAlias } from "@agency/skills-bridge";
 export {
   TeamConfigSchema,
   TeamMemberRoleSchema,

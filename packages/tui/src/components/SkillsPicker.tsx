@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThemeTokens } from "../themes/registry.js";
+import { aliasesForSkill } from "@agency/core";
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
 import { panelWidth } from "../layout/terminal-layout.js";
 
@@ -44,28 +45,16 @@ const ICON_MAP: Record<string, string> = {
   "codex-logical-decision-layer": "■",
 };
 
-const KNOWN_ALIASES: Record<string, string> = {
-  "codex-plan-writer": "$plan",
-  "codex-test-driven-development": "$tdd",
-  "codex-execution-quality-gate": "$gate",
-  "codex-runtime-hook": "$hook",
-  "codex-subagent-execution": "$sdd",
-  "codex-systematic-debugging": "$debug",
-  "codex-verification-discipline": "$verify",
-  "codex-project-memory": "$memory",
-  "codex-spec-driven-development": "$spec",
-  "codex-workflow-autopilot": "$workflow",
-  "codex-git-autopilot": "$git",
-  "codex-reasoning-rigor": "$rigor",
-  "codex-master-instructions": "$master",
-  "codex-intent-context-analyzer": "$intent",
-  "codex-security-specialist": "$security",
-};
-
+/**
+ * The canonical alias the picker shows + injects for a skill. Sourced from the
+ * shared `SKILL_ALIASES` map (via `aliasesForSkill`) so the injected token always
+ * resolves back to this exact skill in the router — no divergent local copy. The
+ * first registered alias is the primary; a skill with no alias falls back to its
+ * folder-derived `$<bare>` form (still works via the resolver's bare fallback).
+ */
 function getAlias(folderName: string): string {
-  if (KNOWN_ALIASES[folderName]) {
-    return KNOWN_ALIASES[folderName]!;
-  }
+  const known = aliasesForSkill(folderName);
+  if (known.length > 0) return known[0]!;
   const bare = folderName.replace(/^codex-/, "");
   return `$${bare}`;
 }
