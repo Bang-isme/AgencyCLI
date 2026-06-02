@@ -891,8 +891,23 @@ export function App({
       ]);
     };
 
+    // verify-main-turn: the self-heal loop ran out of rounds and the edit still
+    // doesn't pass acceptance. The intermediate "self-healing (round N)…" lines
+    // come from the per-turn `chat:self-healing` handler; this terminal event
+    // tells the user the result didn't ultimately verify (rather than silently
+    // returning the last broken attempt). Main-turn only — `verifyAndHeal` is the
+    // sole emitter; no-op unless verifyMainTurn is on.
+    const handleVerifyFailed = (event: any) => {
+      const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
+      const rounds = payload?.rounds ?? "the allotted";
+      addSystemLines([
+        `⚠ Verification still failing after ${rounds} self-heal round(s) — the changes may not build/lint cleanly. Review the errors above; ask me to continue for another attempt.`
+      ]);
+    };
+
     EventBus.getInstance().subscribe("system:warning", handleSystemWarning);
     EventBus.getInstance().subscribe("security:egress-denied", handleSecurityAlert);
+    EventBus.getInstance().subscribe("chat:verify-failed", handleVerifyFailed);
 
     return () => {
       delete (globalThis as any).onAgencyProviderWarning;
@@ -900,6 +915,7 @@ export function App({
       delete (globalThis as any).onAgencyRuntimeError;
       EventBus.getInstance().unsubscribe("system:warning", handleSystemWarning);
       EventBus.getInstance().unsubscribe("security:egress-denied", handleSecurityAlert);
+      EventBus.getInstance().unsubscribe("chat:verify-failed", handleVerifyFailed);
     };
   }, [addSystemLines, updateSession]);
 

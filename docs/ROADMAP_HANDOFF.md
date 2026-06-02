@@ -174,8 +174,11 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   + in dòng "⚙ self-healing (round N)…" qua event `chat:self-healing` (đã có sẵn) để re-run THẤY ĐƯỢC, không
   im lặng. Gate `verifyMainTurn` (=`verifyLoop`: off-legacy/on-hardened). Glue TUI không unit-test được trong
   harness hiện tại (App monolith); an toàn cấu trúc: off→delegate thẳng hàm cũ. `pnpm verify` REAL_EXIT_CODE=0.
-- **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build/stub (gắn với 2.1 còn lại); cân nhắc surface
-  cả `chat:verify-failed` (hết round vẫn fail) trong TUI = follow-up nhỏ.
+- **TUI surface `chat:verify-failed` XONG (2026-06-02):** khi self-heal hết round vẫn fail, TUI in 1 dòng cảnh
+  báo (thay vì im lặng trả attempt hỏng) — subscribe ở block event cố định (terminal event, không reset buffer
+  như `chat:self-healing`). Additive, no-op khi `verifyMainTurn` off.
+- **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build/stub (gắn với 2.1 còn lại). Robustness e2e
+  không-cần-key giờ ĐÃ CẠN — bước tiếp là keystone đo eval + promote `hardened`→default (CẦN BYOK key + user OK).
 
 ### 2.3 — Quản lý context window (compaction)  ← ✅ XONG (2026-05-31)
 - Hội thoại/task dài sẽ tràn context window. Cần nén lịch sử (tóm tắt lượt cũ, giữ phần
