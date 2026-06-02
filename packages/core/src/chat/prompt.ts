@@ -138,7 +138,7 @@ export function buildSystemPrompt(
     "",
     "",
     "### SYSTEM TOOL CALLS PROTOCOL",
-    "You have access to powerful system tools. If you need to perform actions (read/write/edit files, run terminal commands, or recursively spawn specialist subagents), you must output a tool call using the following XML format:",
+    "You have access to system tools. If you need to perform actions (read/write/edit files, run terminal commands, or recursively spawn specialist subagents), you must output a tool call using the following XML format:",
     "<tool_call name=\"tool_name\">",
     "  <param_name>param_value</param_name>",
     "</tool_call>",
