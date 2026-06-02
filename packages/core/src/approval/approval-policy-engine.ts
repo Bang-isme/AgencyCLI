@@ -526,26 +526,26 @@ export class ApprovalPolicyEngine {
 
       let details = "";
       if (p.type === "ReplaceMethodBody" && p.meta?.className) {
-        details = `${yellow}[MODIFY]${reset} class ${bold}${p.meta.className}${reset} ➔ method ${bold}${p.targetName}()${reset}`;
+        details = `${yellow}modify${reset} class ${bold}${p.meta.className}${reset} ➔ method ${bold}${p.targetName}()${reset}`;
       } else if (p.type === "ReplaceMethodBody" || p.type === "ReplaceFunctionBody") {
-        details = `${yellow}[MODIFY]${reset} function ${bold}${p.targetName}()${reset}`;
+        details = `${yellow}modify${reset} function ${bold}${p.targetName}()${reset}`;
       } else if (p.type === "InsertFunction") {
-        details = `${green}[NEW]${reset} function ${bold}${p.targetName}()${reset}`;
+        details = `${green}add${reset} function ${bold}${p.targetName}()${reset}`;
       } else if (p.type === "RenameSymbol") {
-        details = `${yellow}[RENAME]${reset} symbol ${bold}${p.targetName}${reset} ➔ ${bold}${p.replacementContent || "new"}${reset}`;
+        details = `${yellow}rename${reset} symbol ${bold}${p.targetName}${reset} ➔ ${bold}${p.replacementContent || "new"}${reset}`;
       } else if (p.type === "ModifyImport") {
-        details = `${yellow}[IMPORT]${reset} module ${bold}${p.targetName}${reset}`;
+        details = `${yellow}import${reset} module ${bold}${p.targetName}${reset}`;
       } else if (p.type === "DeleteNode") {
-        details = `${red}[DELETE]${reset} node ${bold}${p.targetName}${reset}`;
+        details = `${red}remove${reset} node ${bold}${p.targetName}${reset}`;
       } else {
-        details = `${yellow}[PATCH]${reset} ${p.type} ${bold}${p.targetName}${reset}`;
+        details = `${yellow}edit${reset} ${p.type} ${bold}${p.targetName}${reset}`;
       }
       grouped[file].push(`    ${details}`);
     }
 
     const lines: string[] = [];
     if (Object.keys(grouped).length > 0) {
-      lines.push(`  ${bold}Semantic Architectural Changes Summary:${reset}`);
+      lines.push(`  ${bold}Changes:${reset}`);
       for (const [file, ops] of Object.entries(grouped)) {
         lines.push(`   📄 ${bold}${file}${reset}`);
         for (const op of ops) {
@@ -573,7 +573,7 @@ export class ApprovalPolicyEngine {
 
     console.log(`\n${bold}⚠️  Action Requires Approval${reset}`);
     if (budgetExceeded) {
-      console.log(`  \x1b[31;1mSafe Interruption Budget Exceeded (${this.maxApprovalsPerWorkflow}/${this.maxApprovalsPerWorkflow}) — Security Emergency Override Applied!${reset}`);
+      console.log(`  \x1b[31;1mPast the approval budget (${this.maxApprovalsPerWorkflow}/${this.maxApprovalsPerWorkflow}) — high-risk actions still need your confirmation.${reset}`);
     }
     console.log(`  ${bold}${req.action}${reset} ${gray}(Risk: ${color}${req.risk.level}${reset}${gray})${reset}`);
     if (req.params.command || req.params.filePath) {
