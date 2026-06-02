@@ -42,7 +42,6 @@ import {
 import { buildSystemPrompt } from "./prompt.js";
 import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
-import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
 
 
@@ -450,7 +449,6 @@ export async function runChatTurnWithStream(
           handlers.onDelta(formatToolCallNotice(tc.name, tc.arguments));
         }
 
-        const prevFilesWrittenCount = filesWritten.size;
         const results = await Promise.all(
           toolCalls.map(async (tc) => {
             const agentId = input.agentId || process.env.AGENCY_AGENT_ID;
@@ -534,22 +532,10 @@ export async function runChatTurnWithStream(
         );
         const toolOutputs = results.join("");
 
-        let gateFailureText = "";
-        if (filesWritten.size > prevFilesWrittenCount && !input.noVerify) {
-          handlers.onDelta(`\n⚡ [SYSTEM: Running auto-verification (gate-quick)...]\n`);
-          const gateResult = await runGateQuick(input.projectRoot, input.skillsRoot);
-          if (gateResult.exitCode !== 0) {
-            gateFailureText = `\n\n[SYSTEM WARNING: Post-edit verification (gate-quick) failed with exit code ${gateResult.exitCode}.\nBuild/test output:\n${gateResult.stdout}\n\nPlease self-heal and resolve any compilation or test errors. Modify the code to fix these issues.]\n`;
-            handlers.onDelta(`⚡ [SYSTEM: Verification failed! Re-routing to self-heal...]\n`);
-          } else {
-            handlers.onDelta(`⚡ [SYSTEM: Verification passed successfully.]\n`);
-          }
-        }
-
         turnHistory = [
           ...turnHistory,
           { role: "assistant" as const, content: currentText },
-          { role: "user" as const, content: toolOutputs + gateFailureText },
+          { role: "user" as const, content: toolOutputs },
         ];
 
         // §8.8-A — the circuit breaker tripped inside executeTool (identical calls

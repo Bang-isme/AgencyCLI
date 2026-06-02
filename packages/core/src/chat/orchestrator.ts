@@ -35,7 +35,6 @@ import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
-import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
 
 
@@ -367,7 +366,6 @@ export async function runChatTurn(
           }
         }
 
-        const prevFilesWrittenCount = filesWritten.size;
         const results = await Promise.all(
           toolCalls.map(async (tc) => {
             const agentId = input.agentId || process.env.AGENCY_AGENT_ID;
@@ -447,18 +445,10 @@ export async function runChatTurn(
         );
         const toolOutputs = results.join("");
 
-        let gateFailureText = "";
-        if (filesWritten.size > prevFilesWrittenCount && !input.noVerify) {
-          const gateResult = await runGateQuick(input.projectRoot, input.skillsRoot);
-          if (gateResult.exitCode !== 0) {
-            gateFailureText = `\n\n[SYSTEM WARNING: Post-edit verification (gate-quick) failed with exit code ${gateResult.exitCode}.\nBuild/test output:\n${gateResult.stdout}\n\nPlease self-heal and resolve any compilation or test errors. Modify the code to fix these issues.]\n`;
-          }
-        }
-
         turnHistory = [
           ...turnHistory,
           { role: "assistant" as const, content: currentText },
-          { role: "user" as const, content: toolOutputs + gateFailureText },
+          { role: "user" as const, content: toolOutputs },
         ];
 
         // §8.8-A — hard-break on a circuit-breaker trip (see stream.ts). The
