@@ -317,8 +317,20 @@ registry.register({
       const startLineRaw = args.start_line || args.StartLine;
       const endLineRaw = args.end_line || args.EndLine;
       if (startLineRaw !== undefined || endLineRaw !== undefined) {
-        const startLine = Math.max(1, parseInt(String(startLineRaw) || "1", 10));
-        const endLine = Math.min(totalLines, parseInt(String(endLineRaw) || String(totalLines), 10));
+        // `String(undefined)` is "undefined" (not ""), so the old `|| "1"` /
+        // `|| totalLines` defaults never fired for a MISSING bound — parseInt
+        // returned NaN, producing "showing NaN-50" / a NaN-numbered dump (only
+        // end given) or an EMPTY slice (only start given → end=NaN → slice(_,0)).
+        // Parse each bound independently with a real fallback + NaN guard, then
+        // clamp into [1, totalLines] with end ≥ start so any partial/edge range
+        // returns sane lines. A fully-specified in-bounds range is unchanged.
+        const parseLineArg = (raw: unknown, fallback: number): number => {
+          if (raw === undefined || raw === null || String(raw).trim() === "") return fallback;
+          const n = parseInt(String(raw), 10);
+          return Number.isFinite(n) ? n : fallback;
+        };
+        const startLine = Math.min(totalLines, Math.max(1, parseLineArg(startLineRaw, 1)));
+        const endLine = Math.min(totalLines, Math.max(startLine, parseLineArg(endLineRaw, totalLines)));
         const slice = lines.slice(startLine - 1, endLine);
         const numbered = slice.map((line, i) => `${startLine + i}: ${line}`);
         return `File: ${pathArg} (${totalLines} lines total, showing ${startLine}-${endLine})\n${numbered.join("\n")}`;

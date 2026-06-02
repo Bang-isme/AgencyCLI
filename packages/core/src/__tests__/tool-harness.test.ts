@@ -260,6 +260,55 @@ Here is my decision:
       expect(readFileSync(join(tempDir, "b.ts"), "utf8")).toBe("function g() {\n    return y;\n}\n");
     });
 
+    // read_file range bounds: a MISSING start/end used to parse to NaN
+    // (String(undefined) === "undefined" defeated the `|| default`), giving
+    // "showing NaN-N" / a NaN-numbered dump (end only) or an EMPTY slice
+    // (start only → end=NaN → slice(_,0)). Each bound now defaults + clamps.
+    describe("read_file range bounds", () => {
+      const tenLines = Array.from({ length: 10 }, (_, i) => `L${i + 1}`).join("\n");
+
+      it("only end_line → start defaults to 1 (was NaN)", async () => {
+        writeFileSync(join(tempDir, "r.txt"), tenLines, "utf8");
+        const res = await executeTool("read_file", { path: "r.txt", end_line: 3 }, tempDir);
+        expect(res).not.toContain("NaN");
+        expect(res).toContain("showing 1-3");
+        expect(res).toContain("1: L1");
+        expect(res).toContain("3: L3");
+        expect(res).not.toContain("4: L4");
+      });
+
+      it("only start_line → end defaults to last line (was empty)", async () => {
+        writeFileSync(join(tempDir, "r.txt"), tenLines, "utf8");
+        const res = await executeTool("read_file", { path: "r.txt", start_line: 8 }, tempDir);
+        expect(res).toContain("showing 8-10");
+        expect(res).toContain("8: L8");
+        expect(res).toContain("10: L10");
+      });
+
+      it("a fully-specified in-bounds range is unchanged", async () => {
+        writeFileSync(join(tempDir, "r.txt"), tenLines, "utf8");
+        const res = await executeTool("read_file", { path: "r.txt", start_line: 2, end_line: 4 }, tempDir);
+        expect(res).toContain("showing 2-4");
+        expect(res).toContain("2: L2");
+        expect(res).toContain("4: L4");
+        expect(res).not.toContain("5: L5");
+      });
+
+      it("a start beyond EOF clamps to the last line (no empty result)", async () => {
+        writeFileSync(join(tempDir, "r.txt"), tenLines, "utf8");
+        const res = await executeTool("read_file", { path: "r.txt", start_line: 999 }, tempDir);
+        expect(res).toContain("showing 10-10");
+        expect(res).toContain("10: L10");
+      });
+
+      it("a non-numeric bound falls back instead of producing NaN", async () => {
+        writeFileSync(join(tempDir, "r.txt"), tenLines, "utf8");
+        const res = await executeTool("read_file", { path: "r.txt", end_line: "abc" }, tempDir);
+        expect(res).not.toContain("NaN");
+        expect(res).toContain("showing 1-10");
+      });
+    });
+
     it("should handle error for unknown or invalid tools", async () => {
       const result = await executeTool("super_secret_tool", {}, tempDir);
       expect(result).toContain("Error: Unknown tool");
