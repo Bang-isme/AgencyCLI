@@ -46,25 +46,27 @@ export class SemanticTranslator {
     switch (cleanTool) {
       case "read_file":
       case "view_file":
-        return filename ? `Inspecting ${filename} structure` : "Acquiring file context";
+        return filename ? `Read ${filename}` : "Read file";
       case "write_file":
       case "write_to_file":
-        return filename ? `Synthesizing ${filename} components` : "Writing workspace files";
+        return filename ? `Write ${filename}` : "Write file";
+      case "append_file":
+        return filename ? `Append to ${filename}` : "Append to file";
       case "edit_file":
       case "replace_file_content":
       case "multi_replace_file_content":
-        return filename ? `Integrating changes in ${filename}` : "Synthesizing workspace changes";
+        return filename ? `Edit ${filename}` : "Edit file";
       case "grep_search":
-        return filename ? `Scanning ${filename} dependencies` : "Mapping workspace references";
+        return filename ? `Search ${filename}` : "Search files";
       case "find_files":
-        return "Scanning workspace structure";
+        return "Find files";
       case "execute_command":
       case "run_command": {
         const cmdName = command.split(/\s+/)[0] || command;
-        return cmdName ? `Running validation suite via ${cmdName}` : "Running verification tasks";
+        return cmdName ? `Run ${cmdName}` : "Run command";
       }
       case "dispatch_subagent":
-        return "Spawning autonomous specialist";
+        return "Delegate to subagent";
       default:
         return `${toolName} ➔ ${filename || command || ""}`.trim();
     }
@@ -72,18 +74,18 @@ export class SemanticTranslator {
 
   public static translatePhase(phase: string, target = ""): string {
     const p = phase.toLowerCase();
-    if (p.includes("routing")) return `Routing execution strategy...`;
+    if (p.includes("routing")) return `Routing…`;
     if (p.includes("llm") || p.includes("thought") || p.includes("thinking")) {
-      return target ? `Analyzing ${target} structure...` : "Analyzing workspace plan...";
+      return target ? `Analyzing ${target}…` : "Thinking…";
     }
     if (p.includes("staging")) {
-      return target ? `Synthesizing staging changes for ${target}...` : "Staging layout changes...";
+      return target ? `Staging ${target}…` : "Staging changes…";
     }
     if (p.includes("verifying") || p.includes("validate") || p.includes("validating")) {
-      return target ? `Validating build integrity of ${target}...` : "Running verification quality checks...";
+      return target ? `Verifying ${target}…` : "Verifying…";
     }
     if (p.includes("commit")) {
-      return target ? `Integrating stable edits into ${target}...` : "Committing changes to workspace...";
+      return target ? `Committing ${target}…` : "Committing changes…";
     }
     return phase;
   }
