@@ -57,6 +57,7 @@ vi.mock("../chat/turn-helpers.js", () => ({
   // mocked module must export them).
   MAX_AUTO_CONTINUE: 3,
   detectIncompleteCompletion: () => false,
+  detectTruncatedArtifact: () => false,
   buildAutoContinueNudge: () => "",
 }));
 

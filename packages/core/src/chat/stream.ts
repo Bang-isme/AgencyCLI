@@ -31,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat, detectIncompleteCompletion, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -519,15 +519,17 @@ export async function runChatTurnWithStream(
       } else if (
         getRuntimeFlags().autoContinue &&
         autoContinueCount < MAX_AUTO_CONTINUE &&
-        detectIncompleteCompletion(currentText)
+        (detectIncompleteCompletion(currentText) ||
+          (filesWritten.size > 0 && detectTruncatedArtifact(filesWritten, input.projectRoot)))
       ) {
         // Completion-quality check: a no-tool-call turn normally ENDS the loop,
-        // but the model explicitly signalled the task is unfinished (an
-        // "I'll continue…" promise or a left-in "…rest of the code" placeholder)
-        // while it stopped calling tools. Nudge it to resume from the on-disk
-        // state and run another (bounded) iteration instead of returning a
-        // half-done turn the user must manually continue. Off → byte-identical
-        // break (legacy); capped by MAX_AUTO_CONTINUE within maxLoops.
+        // but the task looks unfinished — the model promised to continue (prose),
+        // OR a file it wrote this turn still has an on-disk "…rest of the code"
+        // placeholder (artifact-based, stronger: catches a clean-looking "Done."
+        // hiding a saved stub). Nudge it to resume from the on-disk state and run
+        // another (bounded) iteration instead of returning a half-done turn the
+        // user must manually continue. Off → byte-identical break (legacy);
+        // capped by MAX_AUTO_CONTINUE within maxLoops.
         autoContinueCount++;
         turnHistory = [
           ...turnHistory,

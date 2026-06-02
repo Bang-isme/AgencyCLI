@@ -23,7 +23,8 @@ import { routeUserPrompt } from "../router/model-router.js";
 import { clearRouteCache } from "../context/session-cache.js";
 import { runChatTurnWithStream } from "../chat/stream.js";
 import { runChatTurn } from "../chat/orchestrator.js";
-import { detectIncompleteCompletion, MAX_AUTO_CONTINUE } from "../chat/turn-helpers.js";
+import { detectIncompleteCompletion, detectTruncatedArtifact, MAX_AUTO_CONTINUE } from "../chat/turn-helpers.js";
+import { mkdtempSync as mkdtmp, writeFileSync as writeF } from "node:fs";
 import { closeAllDbs } from "@agency/memory";
 
 const mockedRoute = vi.mocked(routeUserPrompt);
@@ -57,6 +58,7 @@ describe("detectIncompleteCompletion (pure)", () => {
       detectIncompleteCompletion("```js\nfunction f() {\n  // ... rest of the code\n}\n```")
     ).toBe(true);
     expect(detectIncompleteCompletion("# ... remaining implementation below")).toBe(true);
+    expect(detectIncompleteCompletion("class A {\n  // ... existing code ...\n}")).toBe(true);
   });
 
   it("does NOT fire on a genuinely-complete turn", () => {
@@ -77,6 +79,32 @@ describe("detectIncompleteCompletion (pure)", () => {
         "I refactored the parser. Next we should consider caching, but that is optional and out of scope here."
       )
     ).toBe(false);
+  });
+});
+
+describe("detectTruncatedArtifact (on-disk, pure)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtmp(join(tmpdir(), "agency-artifact-"));
+  });
+  afterEach(() => {
+    if (existsSync(root)) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("fires when a written file contains a truncation/elision placeholder", () => {
+    writeF(join(root, "a.ts"), "export function f() {\n  // ... rest of the code\n}\n", "utf8");
+    expect(detectTruncatedArtifact(["a.ts"], root)).toBe(true);
+  });
+
+  it("fires on the '... existing code ...' elision marker", () => {
+    writeF(join(root, "b.ts"), "class B {\n  # ... existing code ...\n}\n", "utf8");
+    expect(detectTruncatedArtifact(["b.ts"], root)).toBe(true);
+  });
+
+  it("does NOT fire on a complete file, and never throws on a missing one", () => {
+    writeF(join(root, "c.ts"), "export const x = 1;\nexport const y = 2;\n", "utf8");
+    expect(detectTruncatedArtifact(["c.ts"], root)).toBe(false);
+    expect(detectTruncatedArtifact(["gone.ts"], root)).toBe(false);
   });
 });
 
@@ -170,5 +198,38 @@ describe("auto-continue wiring (unfinished natural stop)", () => {
     });
 
     expect(provider.complete).toHaveBeenCalledTimes(1 + MAX_AUTO_CONTINUE);
+  });
+
+  it("flag ON: an on-disk stub triggers one continue even when the prose looks done; stops once fixed", async () => {
+    process.env.AGENCY_AUTO_CONTINUE = "1";
+    // iter1 writes a file with a placeholder; iter2 says a clean "Done." (prose
+    // alone wouldn't trigger) → artifact scan finds the stub → continue; iter3
+    // overwrites with clean content; iter4 "Done." → no stub → loop ends.
+    let calls = 0;
+    const provider = {
+      id: "openrouter" as const,
+      complete: vi.fn(async () => {
+        calls++;
+        if (calls === 1) {
+          return 'Creating it:\n<tool_call name="write_file">\n  <path>app.ts</path>\n  <content>export function f() {\n  // ... rest of the code\n}</content>\n</tool_call>';
+        }
+        if (calls === 2) {
+          return "Done."; // clean prose, but the file still has the placeholder
+        }
+        if (calls === 3) {
+          return 'Finishing it:\n<tool_call name="write_file">\n  <path>app.ts</path>\n  <content>export function f() {\n  return 42;\n}</content>\n</tool_call>';
+        }
+        return "Done — the implementation is complete.";
+      }),
+    };
+    mockedGetProvider.mockReturnValue(provider);
+
+    await runChatTurnWithStream(
+      { prompt: "write app.ts in full", projectRoot: root, skillsRoot: "/skills", sessionId: "s-artifact", maxLoops: 10, noVerify: true },
+      { onRoute: () => {}, onDelta: () => {} }
+    );
+
+    // write-stub + "Done"(triggers) + write-fix + "Done"(no trigger → break) = 4.
+    expect(provider.complete).toHaveBeenCalledTimes(4);
   });
 });

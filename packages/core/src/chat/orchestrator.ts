@@ -29,7 +29,7 @@ import { type RouteResult } from "../router/model-router.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat, detectIncompleteCompletion, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -482,10 +482,12 @@ export async function runChatTurn(
       } else if (
         getRuntimeFlags().autoContinue &&
         autoContinueCount < MAX_AUTO_CONTINUE &&
-        detectIncompleteCompletion(currentText)
+        (detectIncompleteCompletion(currentText) ||
+          (filesWritten.size > 0 && detectTruncatedArtifact(filesWritten, input.projectRoot)))
       ) {
-        // Completion-quality check (see stream.ts): the model signalled the task
-        // is unfinished but stopped calling tools. Nudge it to resume from the
+        // Completion-quality check (see stream.ts): the task looks unfinished —
+        // the model promised to continue (prose) OR a file it wrote still has an
+        // on-disk "…rest of the code" placeholder. Nudge it to resume from the
         // on-disk state and run another bounded iteration instead of returning a
         // half-done turn. Off → byte-identical break (legacy).
         autoContinueCount++;

@@ -238,9 +238,17 @@ const CONTINUATION_PROMISE =
 const EXPLICIT_INCOMPLETE =
   /\b(to be continued|continued below|continuing below|more to come|i(?:'|’)?ll send the rest|rest to follow)\b/;
 
-/** Code-truncation placeholders left in fenced output ("// ... rest of the code"). */
+/** Code-truncation / elision placeholders ("// ... rest of the code",
+ *  "# ... existing code ...", "// ... unchanged ..."). Used on the model's
+ *  output text (detectIncompleteCompletion) AND on the on-disk contents of files
+ *  the turn wrote (detectTruncatedArtifact). */
 const CODE_PLACEHOLDER =
-  /(?:\/\/|#|--|\/\*)\s*\.\.\.\s*(?:the\s+)?(?:rest|remaining|continue|continued|more|other)\b|\.\.\.\s*(?:the\s+)?rest of (?:the\s+)?(?:code|file|implementation|function|method|class|component)\b/i;
+  /(?:\/\/|#|--|\/\*)\s*\.\.\.\s*(?:the\s+)?(?:rest|remaining|continue|continued|more|other|existing|unchanged|snip)\b|\.\.\.\s*(?:the\s+)?rest of (?:the\s+)?(?:code|file|implementation|function|method|class|component)\b/i;
+
+/** Cap on a single file scanned by {@link detectTruncatedArtifact} — a stub
+ *  placeholder lives near where generation stopped, so a huge file is almost
+ *  certainly not a truncated stub and isn't worth reading on every natural stop. */
+const MAX_ARTIFACT_SCAN_BYTES = 512 * 1024;
 
 /** Offer/question patterns that look like a promise but are asking the USER —
  *  these must NOT auto-continue. */
@@ -273,13 +281,41 @@ export function detectIncompleteCompletion(text: string): boolean {
 }
 
 /**
- * In-loop steering message used when {@link detectIncompleteCompletion} fires:
- * the model stopped calling tools but said it wasn't done. Tells it to resume
- * from the on-disk state (read first, then append/edit — never rewrite from
- * scratch) and to stop cleanly when genuinely finished. This is an INTERNAL
- * turn-history user message (NOT folded into the returned assistant text), like
- * the existing "you were cut off (length)" continuation nudge. Shared by both
- * turn paths; reuses {@link describeFilesWritten} for the file listing.
+ * Artifact-based completion check: did any file the turn WROTE end up with an
+ * on-disk truncation/elision placeholder ("// ... rest of the code",
+ * "# ... existing code ...")? This is a stronger signal than the model's prose —
+ * the stub was actually saved, so even a later clean-looking "Done." message
+ * can't hide it. Best-effort: skips missing/binary/oversized files, never throws.
+ * Only scans files in `filesWritten` (the turn's own artifacts), so it can't be
+ * tripped by unrelated repo files.
+ */
+export function detectTruncatedArtifact(
+  filesWritten: Iterable<string>,
+  projectRoot: string
+): boolean {
+  for (const rel of new Set(filesWritten)) {
+    try {
+      const abs = resolve(projectRoot, rel);
+      const st = statSync(abs);
+      if (!st.isFile() || st.size > MAX_ARTIFACT_SCAN_BYTES) continue;
+      if (CODE_PLACEHOLDER.test(readFileSync(abs, "utf8"))) return true;
+    } catch {
+      /* missing / unreadable / binary — skip */
+    }
+  }
+  return false;
+}
+
+/**
+ * In-loop steering message used when {@link detectIncompleteCompletion} OR
+ * {@link detectTruncatedArtifact} fires: the model stopped calling tools but the
+ * task looks unfinished (it promised to continue, or a file it wrote still has a
+ * "…rest of the code" placeholder). Tells it to resume from the on-disk state
+ * (read first, then append/edit — never rewrite from scratch) and to stop cleanly
+ * when genuinely finished. This is an INTERNAL turn-history user message (NOT
+ * folded into the returned assistant text), like the existing "you were cut off
+ * (length)" continuation nudge. Shared by both turn paths; reuses
+ * {@link describeFilesWritten} for the file listing.
  */
 export function buildAutoContinueNudge(
   filesWritten: Iterable<string>,
@@ -287,9 +323,8 @@ export function buildAutoContinueNudge(
 ): string {
   const detail = describeFilesWritten(filesWritten, projectRoot);
   const base =
-    "Continue the task — your previous message indicated it is not finished, but you stopped without calling a tool. " +
-    "Resume from where you left off: if you are editing a file, first read its current on-disk contents with read_file, " +
-    "then continue with append_file/edit_file — do NOT rewrite a file from scratch (that discards work already saved). " +
+    "Continue the task — it looks unfinished: you stopped without calling a tool, but either your message said you would continue or a file you wrote still contains a \"...rest of the code\"-style placeholder. " +
+    "Resume from where you left off: read the current on-disk contents with read_file, then fill in / continue the remaining parts with append_file/edit_file — do NOT rewrite a file from scratch (that discards work already saved). " +
     "When the task is genuinely complete, stop WITHOUT any further \"I will continue\" promises.";
   return detail.length > 0
     ? `${base}\nFiles modified so far this turn:\n${detail.join("\n")}`
