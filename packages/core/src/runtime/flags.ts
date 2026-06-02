@@ -178,6 +178,18 @@ export interface RuntimeFlags {
    * hardened. Roadmap §8.10 (large-file write robustness).
    */
   toolCallReassembly: boolean;
+  /**
+   * When a tool result exceeds the size cap, keep BOTH a head and a tail window
+   * for command-style output (`execute_command`) whose actionable part —
+   * compiler errors, test failures, the exit summary — lands at the END. The
+   * legacy cap kept only the head, so a verbose build that overflowed showed the
+   * model its progress logs plus a "truncated" note but dropped the real errors
+   * at the bottom (stderr + the tail of stdout): the model saw a non-zero exit it
+   * couldn't explain and churned. Off in legacy (head-only truncation preserved
+   * byte-identical), on in hardened. Other tools (read_file, grep) stay head-only
+   * regardless — their head is what was asked for and read_file ranges fetch more.
+   */
+  toolResultTailKept: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -310,5 +322,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // dropped) → off in legacy (latest-completion parse only, byte-identical),
     // on in hardened.
     toolCallReassembly: parseBool(env.AGENCY_TOOLCALL_REASSEMBLY, hardened),
+    // Behaviour-changing (keeps a head+tail window for command output so the
+    // model sees errors at the end → different truncated content) → off in legacy
+    // (head-only truncation byte-identical), on in hardened.
+    toolResultTailKept: parseBool(env.AGENCY_TOOLRESULT_TAIL, hardened),
   };
 }

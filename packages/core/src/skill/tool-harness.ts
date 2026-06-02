@@ -1169,7 +1169,19 @@ export function consumeCircuitBreakerTrip(): string | null {
 const MAX_TOOL_RESULT_CHARS = 30_000; // ~7,500 tokens
 const MAX_TOOL_RESULT_LINES = 500;
 
-export function truncateToolResult(_name: string, result: string, modelName?: string): string {
+/**
+ * A command-style tool result whose actionable part (compiler/test errors, the
+ * exit summary) is at the END rather than the head. `execute_command` formats
+ * its result as `Exit Code: …\nStdout:\n…\nStderr:\n…`, so the verdict — stderr
+ * and the tail of stdout — lands at the bottom. Detect by the canonical name OR
+ * that stable header, so an alias the model invented for the command tool still
+ * benefits.
+ */
+function isTailRelevantToolResult(name: string, result: string): boolean {
+  return name === "execute_command" || result.startsWith("Exit Code: ");
+}
+
+export function truncateToolResult(name: string, result: string, modelName?: string): string {
   let maxChars = MAX_TOOL_RESULT_CHARS;
   let maxLines = MAX_TOOL_RESULT_LINES;
 
@@ -1209,10 +1221,37 @@ export function truncateToolResult(_name: string, result: string, modelName?: st
   }
 
   if (result.length <= maxChars) return result;
+
+  // For command-style output the verdict (compiler/test errors, exit summary) is
+  // at the tail; head-only truncation would hide exactly what the model needs to
+  // diagnose a failure, so it churns blind. Keep head+tail when the flag is on.
+  // Off → legacy head-only (byte-identical). Other tools stay head-only either way.
+  const keepTail = getRuntimeFlags().toolResultTailKept && isTailRelevantToolResult(name, result);
+
   const lines = result.split("\n");
   if (lines.length > maxLines) {
+    if (keepTail) {
+      const headLines = Math.max(1, Math.floor(maxLines * 0.4));
+      const tailLines = maxLines - headLines;
+      const omitted = lines.length - headLines - tailLines;
+      return (
+        lines.slice(0, headLines).join("\n") +
+        `\n\n... [truncated: ${omitted} middle lines. Use read_file with start_line/end_line to view specific ranges.]\n\n` +
+        lines.slice(lines.length - tailLines).join("\n")
+      );
+    }
     const kept = lines.slice(0, maxLines);
     return kept.join("\n") + `\n\n... [truncated: ${lines.length - maxLines} more lines. Use read_file with start_line/end_line to view specific ranges.]`;
+  }
+  if (keepTail) {
+    const headChars = Math.max(1, Math.floor(maxChars * 0.4));
+    const tailChars = maxChars - headChars;
+    const omitted = result.length - headChars - tailChars;
+    return (
+      result.slice(0, headChars) +
+      `\n... [truncated: ${omitted} middle characters]\n` +
+      result.slice(result.length - tailChars)
+    );
   }
   return result.slice(0, maxChars) + `\n... [truncated: ${result.length - maxChars} more characters]`;
 }

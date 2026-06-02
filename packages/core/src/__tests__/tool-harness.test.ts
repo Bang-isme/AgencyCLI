@@ -322,6 +322,76 @@ Here is my decision:
     });
   });
 
+  // Command output (build/test) puts the verdict — compiler/test errors, the exit
+  // summary — at the END. Head-only truncation dropped it, so the model saw a
+  // non-zero exit it couldn't explain and churned. The toolResultTailKept flag
+  // keeps a head+tail window for command-style results.
+  describe("truncateToolResult command-output tail (AGENCY_TOOLRESULT_TAIL)", () => {
+    const prev = process.env.AGENCY_TOOLRESULT_TAIL;
+    const prevProfile = process.env.AGENCY_PROFILE;
+    // Past BOTH caps (> 500 lines AND > 30000 chars — the line path only runs
+    // once the char cap is also exceeded) with the real error at the very bottom.
+    const longCmd =
+      "Exit Code: 1\nStdout:\n" +
+      Array.from(
+        { length: 3000 },
+        (_, i) => `info line ${i} ........................................`
+      ).join("\n") +
+      "\nStderr:\nFATAL_ERROR_MARKER: build failed at the bottom";
+    // > maxChars (30000) on few lines → exercises the char-based path.
+    const wideCmd = "Exit Code: 1\nStdout:\n" + "x".repeat(40000) + "\nStderr:\nWIDE_TAIL_MARKER";
+
+    beforeEach(() => {
+      delete process.env.AGENCY_PROFILE; // pin legacy so only the explicit flag matters
+    });
+    afterEach(() => {
+      if (prev === undefined) delete process.env.AGENCY_TOOLRESULT_TAIL;
+      else process.env.AGENCY_TOOLRESULT_TAIL = prev;
+      if (prevProfile === undefined) delete process.env.AGENCY_PROFILE;
+      else process.env.AGENCY_PROFILE = prevProfile;
+    });
+
+    it("OFF (legacy): drops the trailing errors of a command result (reproduces the bug)", () => {
+      delete process.env.AGENCY_TOOLRESULT_TAIL;
+      const out = truncateToolResult("execute_command", longCmd);
+      expect(out).toContain("Exit Code: 1");
+      expect(out).not.toContain("FATAL_ERROR_MARKER");
+    });
+
+    it("ON: keeps both the head and the trailing errors (line-based)", () => {
+      process.env.AGENCY_TOOLRESULT_TAIL = "1";
+      const out = truncateToolResult("execute_command", longCmd);
+      expect(out).toContain("Exit Code: 1");
+      expect(out).toContain("FATAL_ERROR_MARKER");
+      expect(out).toContain("middle lines");
+    });
+
+    it("ON: keeps the tail on the char-based path too", () => {
+      process.env.AGENCY_TOOLRESULT_TAIL = "1";
+      const out = truncateToolResult("execute_command", wideCmd);
+      expect(out).toContain("Exit Code: 1");
+      expect(out).toContain("WIDE_TAIL_MARKER");
+    });
+
+    it("ON: detects a command result by its `Exit Code:` header even under an alias name", () => {
+      process.env.AGENCY_TOOLRESULT_TAIL = "1";
+      const out = truncateToolResult("run_shell", longCmd);
+      expect(out).toContain("FATAL_ERROR_MARKER");
+    });
+
+    it("ON: non-command tools (read_file) stay head-only", () => {
+      process.env.AGENCY_TOOLRESULT_TAIL = "1";
+      const fileLike =
+        Array.from(
+          { length: 3000 },
+          (_, i) => `line ${i} ........................................`
+        ).join("\n") + "\nLAST_LINE_MARKER";
+      const out = truncateToolResult("read_file", fileLike);
+      expect(out).toContain("line 0");
+      expect(out).not.toContain("LAST_LINE_MARKER");
+    });
+  });
+
   // §8.11-E — the two similarly-named search tools are distinct (single file vs
   // whole workspace); rather than rename them (a name change ripples through the
   // label map / narration / security escalation / recorded traces), the
