@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, isAbsolute, resolve } from "node:path";
 import { execa } from "execa";
 import { DagTaskNode } from "@agency/contracts";
+import { BUILTIN_SCRIPTS } from "@agency/skills-bridge";
 import { dispatchAgent } from "../agents/orchestrator.js";
 import { coerceAgentId } from "../agents/profiles.js";
 import type { AgentId } from "../agents/types.js";
@@ -381,10 +382,7 @@ export async function runGateQuick(
     return { exitCode: 0, stdout: "gate script bypassed in test environment" };
   }
 
-  const script = join(
-    skillsRoot,
-    "codex-execution-quality-gate/scripts/auto_gate.py"
-  );
+  const script = join(skillsRoot, BUILTIN_SCRIPTS.auto_gate);
   if (!existsSync(script)) {
     return { exitCode: 0, stdout: "gate script not installed — skipped" };
   }

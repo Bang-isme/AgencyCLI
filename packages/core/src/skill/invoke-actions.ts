@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { BUILTIN_SCRIPTS } from "@agency/skills-bridge";
 import { resolveSkillsRoot } from "../skills-root.js";
 
 const PLAN_CANDIDATES = ["plan.md", "agency-cli.md", "SPEC.md"] as const;
@@ -14,18 +15,12 @@ function findPlanFile(projectRoot: string): string | undefined {
 function autoGateScriptPath(): string | undefined {
   try {
     const root = resolveSkillsRoot();
-    const script = join(
-      root,
-      "codex-execution-quality-gate/scripts/auto_gate.py"
-    );
+    const script = join(root, BUILTIN_SCRIPTS.auto_gate);
     return existsSync(script) ? script : undefined;
   } catch {
     const envRoot = process.env.AGENCY_SKILLS_ROOT;
     if (!envRoot) return undefined;
-    const script = join(
-      envRoot,
-      "codex-execution-quality-gate/scripts/auto_gate.py"
-    );
+    const script = join(envRoot, BUILTIN_SCRIPTS.auto_gate);
     return existsSync(script) ? script : undefined;
   }
 }

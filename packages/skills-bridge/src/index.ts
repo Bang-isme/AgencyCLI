@@ -1,4 +1,5 @@
 export { loadPluginTools, type PluginTool } from "./registry.js";
+export { BUILTIN_SCRIPTS } from "./builtins.js";
 export {
   runTool,
   runBuiltinScript,
