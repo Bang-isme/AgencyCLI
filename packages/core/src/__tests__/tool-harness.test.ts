@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker } from "../skill/tool-harness.js";
 
 describe("Tool Harness Subsystem", () => {
   describe("parseToolCalls", () => {
@@ -130,6 +130,10 @@ Here is my decision:
 
     beforeEach(() => {
       tempDir = mkdtempSync(join(tmpdir(), "agency-test-"));
+      // Mirror a real turn start: the circuit breaker is a module-level singleton
+      // (§8.8) so several consecutive intentional tool failures in a row would
+      // otherwise trip it and make later tests get "Circuit breaker triggered".
+      resetToolCircuitBreaker();
     });
 
     afterEach(() => {
@@ -196,6 +200,64 @@ Here is my decision:
       );
       expect(res).toContain("Success");
       expect(readFileSync(join(tempDir, "m.js"), "utf8")).toBe(repl + "\nB");
+    });
+
+    // A failed search/replace used to return a generic "match exactly" message
+    // with nothing actionable → the model re-tried the same near-miss → churn.
+    // The diagnostic now explains WHY and (for whitespace) echoes the real text.
+    it("edit_file diagnoses an indentation-only mismatch and echoes the exact text", async () => {
+      writeFileSync(join(tempDir, "f.ts"), "function f() {\n    return x;\n}\n", "utf8");
+      const res = await executeTool(
+        "edit_file",
+        { path: "f.ts", search: "function f() {\n  return x;\n}", replace: "x" }, // 2-space, file has 4
+        tempDir
+      );
+      expect(res).toContain("indentation/whitespace differs");
+      expect(res).toContain("line 1");
+      expect(res).toContain("    return x;"); // the verbatim 4-space line to copy
+    });
+
+    it("edit_file diagnoses a CRLF-vs-LF line-ending mismatch", async () => {
+      writeFileSync(join(tempDir, "crlf.txt"), "alpha\r\nbeta\r\ngamma", "utf8");
+      const res = await executeTool(
+        "edit_file",
+        { path: "crlf.txt", search: "alpha\nbeta", replace: "X" },
+        tempDir
+      );
+      expect(res).toContain("CRLF");
+    });
+
+    it("edit_file reports a genuinely absent search block", async () => {
+      writeFileSync(join(tempDir, "g.txt"), "hello world", "utf8");
+      const res = await executeTool(
+        "edit_file",
+        { path: "g.txt", search: "goodbye", replace: "X" },
+        tempDir
+      );
+      expect(res).toContain("does not appear in the file");
+    });
+
+    it("edit_file locates the region by the first matching line", async () => {
+      writeFileSync(join(tempDir, "h.txt"), "line A\nline B\nline C", "utf8");
+      const res = await executeTool(
+        "edit_file",
+        { path: "h.txt", search: "line A\nDIFFERENT", replace: "X" },
+        tempDir
+      );
+      expect(res).toContain("first line of the search matches line 1");
+    });
+
+    it("batch_edit carries the same diagnostic on a failed edit", async () => {
+      writeFileSync(join(tempDir, "b.ts"), "function g() {\n    return y;\n}\n", "utf8");
+      const res = await executeTool(
+        "batch_edit",
+        { path: "b.ts", edits: JSON.stringify([{ search: "function g() {\n  return y;\n}", replace: "x" }]) },
+        tempDir
+      );
+      expect(res).toContain("index 0");
+      expect(res).toContain("indentation/whitespace differs");
+      // Atomic: nothing written on failure.
+      expect(readFileSync(join(tempDir, "b.ts"), "utf8")).toBe("function g() {\n    return y;\n}\n");
     });
 
     it("should handle error for unknown or invalid tools", async () => {

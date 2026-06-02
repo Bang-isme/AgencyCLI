@@ -456,6 +456,59 @@ registry.register({
   }
 });
 
+/**
+ * When an exact search/replace match fails, explain WHY so the model can fix it
+ * in one shot instead of churning on the same near-miss (the generic "match
+ * exactly" message gave it nothing to act on). Diagnoses the common causes:
+ *   - line-ending (CRLF vs LF) mismatch,
+ *   - indentation / trailing-whitespace-only differences — and echoes the EXACT
+ *     on-disk text so the model can copy it verbatim,
+ *   - a located first line (region found, block diverges below it),
+ *   - a genuinely-absent block.
+ * Bounded: the whitespace window scan early-exits per line; the echoed snippet
+ * is capped. Pure diagnostic — only runs on the already-failed path.
+ */
+function diagnoseEditMismatch(content: string, search: string): string {
+  if (!search) return "The search block is empty — provide the exact text to replace.";
+  const contentLF = content.replace(/\r\n/g, "\n");
+  const searchLF = search.replace(/\r\n/g, "\n");
+  if (content.includes("\r\n") && !search.includes("\r\n") && contentLF.includes(searchLF)) {
+    return "The file uses CRLF (\\r\\n) line endings but the search block uses LF (\\n). Match the file's line endings, or search for a single line without newlines.";
+  }
+  const contentLines = contentLF.split("\n");
+  const searchLines = searchLF.split("\n");
+  const searchTrim = searchLines.map((l) => l.trim());
+  // Indentation / trailing-whitespace-only difference: find a window whose
+  // trimmed lines all equal the trimmed search lines, then echo the REAL text.
+  const MAX_SNIPPET_LINES = 40;
+  for (let i = 0; i + searchLines.length <= contentLines.length; i++) {
+    let ok = true;
+    for (let j = 0; j < searchLines.length; j++) {
+      if (contentLines[i + j]!.trim() !== searchTrim[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      const shown = contentLines.slice(i, i + Math.min(searchLines.length, MAX_SNIPPET_LINES));
+      const more =
+        searchLines.length > MAX_SNIPPET_LINES
+          ? `\n… (+${searchLines.length - MAX_SNIPPET_LINES} more lines)`
+          : "";
+      return `The text exists at line ${i + 1} but the indentation/whitespace differs. Copy this EXACT text (verbatim, including leading spaces) as your search block:\n---\n${shown.join("\n")}${more}\n---`;
+    }
+  }
+  // First non-blank line locates the region even when the block diverges below it.
+  const firstTrim = searchTrim.find((l) => l.length > 0);
+  if (firstTrim) {
+    const idx = contentLines.findIndex((l) => l.trim() === firstTrim);
+    if (idx >= 0) {
+      return `The first line of the search matches line ${idx + 1}, but the block below it doesn't match. Re-read that region with read_file and copy it verbatim before editing.`;
+    }
+  }
+  return "The search text does not appear in the file. Re-read it with read_file and copy the target text exactly, or use ast_edit for a structural change.";
+}
+
 // 3. edit_file
 registry.register({
   name: "edit_file",
@@ -479,7 +532,7 @@ registry.register({
     try {
       const currentContent = readFileSync(filePath, "utf8");
       if (!currentContent.includes(searchArg)) {
-        return `Error: Search block not found exactly in "${pathArg}". Make sure whitespace, newlines, and content match exactly.`;
+        return `Error: Search block not found exactly in "${pathArg}". ${diagnoseEditMismatch(currentContent, searchArg)}`;
       }
       // Replace via a function so the replacement is inserted LITERALLY — a
       // plain-string replacement makes String.replace expand `$$`, `$&`, `` $` ``
@@ -999,7 +1052,7 @@ registry.register({
           return `Error: Edit at index ${idx} is missing 'search' or 'replace' properties.`;
         }
         if (!currentContent.includes(edit.search)) {
-          return `Error: Search block at index ${idx} not found exactly in "${pathArg}". Aborting all batch edits. No changes written.`;
+          return `Error: Search block at index ${idx} not found exactly in "${pathArg}". Aborting all batch edits. No changes written. ${diagnoseEditMismatch(currentContent, edit.search)}`;
         }
         // Function replacement → literal insertion (no `$$`/`$&`/`` $` ``/`$'`
         // expansion that would corrupt content containing those sequences).
