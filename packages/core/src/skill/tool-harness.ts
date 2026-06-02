@@ -7,7 +7,7 @@ import {
   deleteNode,
   insertFunction,
 } from "../utils/ast-compiler.js";
-import { resolve, join, relative } from "node:path";
+import { resolve, join, relative, dirname } from "node:path";
 import { runShellCommand } from "../terminal/sandbox.js";
 import { dispatchAgent } from "../agents/orchestrator.js";
 import { resolveSkillsRoot } from "../skills-root.js";
@@ -368,6 +368,10 @@ registry.register({
     if (!pathArg) return "Error: 'path' argument is required for write_file.";
     const filePath = resolve(projectRoot, pathArg);
     try {
+      // Create the parent directory so writing a new nested path (src/x/New.tsx
+      // when src/x doesn't exist yet) succeeds instead of throwing ENOENT and
+      // forcing the model to chain create_directory first (a common churn source).
+      mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, contentArg, "utf8");
       return `Success: File written successfully to "${pathArg}" (${contentArg.length} characters)`;
     } catch (err: any) {
@@ -394,6 +398,9 @@ registry.register({
     const filePath = resolve(projectRoot, pathArg);
     try {
       const existedBefore = existsSync(filePath);
+      // Same as write_file: ensure the parent dir exists so the first append to a
+      // new nested path creates it rather than failing with ENOENT.
+      mkdirSync(dirname(filePath), { recursive: true });
       appendFileSync(filePath, contentArg, "utf8");
       const totalChars = (() => {
         try {
@@ -885,6 +892,9 @@ registry.register({
       return `Error: Source file not found at path "${sourceArg}"`;
     }
     try {
+      // Ensure the destination's parent dir exists so a move/rename INTO a new
+      // folder works instead of throwing ENOENT.
+      mkdirSync(dirname(destPath), { recursive: true });
       renameSync(sourcePath, destPath);
       return `Success: Moved "${sourceArg}" to "${destArg}"`;
     } catch (err: any) {

@@ -364,6 +364,43 @@ Here is my decision:
       });
     });
 
+    // Writing/moving into a not-yet-existing nested path used to throw ENOENT,
+    // forcing the model to chain create_directory first (or churn). The write
+    // tools now create the parent directory.
+    describe("write tools auto-create the parent directory", () => {
+      it("write_file creates missing parent dirs", async () => {
+        const res = await executeTool(
+          "write_file",
+          { path: "a/b/c/new.txt", content: "hi" },
+          tempDir
+        );
+        expect(res).toContain("Success");
+        expect(readFileSync(join(tempDir, "a/b/c/new.txt"), "utf8")).toBe("hi");
+      });
+
+      it("append_file creates missing parent dirs on first append", async () => {
+        const res = await executeTool(
+          "append_file",
+          { path: "logs/run/out.txt", content: "line" },
+          tempDir
+        );
+        expect(res).toContain("Success");
+        expect(readFileSync(join(tempDir, "logs/run/out.txt"), "utf8")).toBe("line");
+      });
+
+      it("move_file creates the destination's parent dir", async () => {
+        writeFileSync(join(tempDir, "src.txt"), "data", "utf8");
+        const res = await executeTool(
+          "move_file",
+          { source: "src.txt", destination: "moved/here/dest.txt" },
+          tempDir
+        );
+        expect(res).toContain("Success");
+        expect(existsSync(join(tempDir, "src.txt"))).toBe(false);
+        expect(readFileSync(join(tempDir, "moved/here/dest.txt"), "utf8")).toBe("data");
+      });
+    });
+
     it("should handle error for unknown or invalid tools", async () => {
       const result = await executeTool("super_secret_tool", {}, tempDir);
       expect(result).toContain("Error: Unknown tool");
