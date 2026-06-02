@@ -375,7 +375,58 @@ async function runSubagentRouter(
   };
 }
 
+// ── Subagent fan-out concurrency cap ────────────────────────────────────────
+// A shared counting semaphore (same shape as the local one in
+// dispatchAgentsParallel) that bounds the WIDTH of concurrent subagent dispatch
+// across BOTH the runtime turn loop (which Promise.all's its tool calls) and the
+// CLI parallel path. Gated by `subagentConcurrencyCap`; off ⇒ acquire/release are
+// skipped and dispatch stays uncapped (legacy byte-identical).
+let subagentActive = 0;
+const subagentWaitQueue: Array<() => void> = [];
+
+function acquireSubagentSlot(limit: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (subagentActive < limit) {
+      subagentActive++;
+      resolve();
+    } else {
+      subagentWaitQueue.push(resolve);
+    }
+  });
+}
+
+function releaseSubagentSlot(): void {
+  subagentActive--;
+  if (subagentWaitQueue.length > 0) {
+    subagentActive++;
+    const next = subagentWaitQueue.shift();
+    if (next) next();
+  }
+}
+
+/**
+ * Dispatch a single specialist subagent. When `subagentConcurrencyCap` is on the
+ * call queues behind a shared semaphore so no more than `maxParallelAgents`
+ * subagents run at once (across the runtime and CLI paths); off ⇒ uncapped
+ * (legacy byte-identical). Delegates to {@link dispatchAgentImpl} for the work.
+ */
 export async function dispatchAgent(
+  req: AgentDispatchRequest,
+  opts: DispatchAgentOptions = {}
+): Promise<AgentDispatchResult> {
+  if (!getRuntimeFlags().subagentConcurrencyCap) {
+    return dispatchAgentImpl(req, opts);
+  }
+  const limit = Math.max(1, opts.maxParallelAgents ?? getRuntimeFlags().maxParallelAgents);
+  await acquireSubagentSlot(limit);
+  try {
+    return await dispatchAgentImpl(req, opts);
+  } finally {
+    releaseSubagentSlot();
+  }
+}
+
+async function dispatchAgentImpl(
   req: AgentDispatchRequest,
   opts: DispatchAgentOptions = {}
 ): Promise<AgentDispatchResult> {

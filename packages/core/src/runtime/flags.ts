@@ -207,6 +207,19 @@ export interface RuntimeFlags {
    * (lower risk + would block legitimately reading a referenced file).
    */
   pathConfinement: boolean;
+  /**
+   * Bound the WIDTH of concurrent subagent dispatch. The chat turn loop runs all
+   * tool calls in a completion via `Promise.all`, so several `dispatch_subagent`
+   * calls spawn full subagents concurrently on the same project root with no
+   * ceiling — the delegation guards bound recursion depth/hops/cycles, not fan-out
+   * breadth — risking a cost/resource runaway and concurrent edits racing on the
+   * same files. When on, a shared semaphore limits in-flight `dispatchAgent` calls
+   * (across the runtime AND the CLI parallel path) to `maxParallelAgents`; the
+   * excess queue and run as slots free. A single dispatch is unaffected. Off in
+   * legacy (uncapped `Promise.all`, byte-identical), on in hardened. Mirrors the
+   * cap `dispatchAgentsParallel` already applies to the CLI path.
+   */
+  subagentConcurrencyCap: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -349,5 +362,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
     // → off in legacy (no confinement, byte-identical), on in hardened.
     pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),
+    // Behaviour-changing (concurrent subagent dispatches queue at maxParallelAgents
+    // instead of all running at once) → off in legacy (uncapped Promise.all,
+    // byte-identical), on in hardened. Purely protective; single dispatch unaffected.
+    subagentConcurrencyCap: parseBool(env.AGENCY_SUBAGENT_CONCURRENCY_CAP, hardened),
   };
 }
