@@ -220,6 +220,18 @@ export interface RuntimeFlags {
    * cap `dispatchAgentsParallel` already applies to the CLI path.
    */
   subagentConcurrencyCap: boolean;
+  /**
+   * Cursor-aware prompt composer. The legacy composer was append-only — typed
+   * and pasted text could only be edited from the end (Backspace), the caret was
+   * pinned to the buffer end, and there was no undo. When on, the composer tracks
+   * a caret position: Left/Right (and Ctrl+←/→ word) navigation, Ctrl+A/Ctrl+E
+   * to line start/end, insert and Delete/Backspace at the caret, Ctrl+W delete
+   * word, and Ctrl+Z / Ctrl+Y undo/redo. Off in legacy (append-only input +
+   * end-pinned caret preserved byte-identical), on in hardened. The caret stays
+   * end-equivalent for the only previously-reachable state (typing at the end),
+   * so existing flows are unchanged; only mid-buffer editing is new.
+   */
+  composerCursorEdit: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -366,5 +378,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // instead of all running at once) → off in legacy (uncapped Promise.all,
     // byte-identical), on in hardened. Purely protective; single dispatch unaffected.
     subagentConcurrencyCap: parseBool(env.AGENCY_SUBAGENT_CONCURRENCY_CAP, hardened),
+    // Behaviour-changing (caret navigation + insert/delete-at-cursor + undo in the
+    // TUI composer) → off in legacy (append-only, end-pinned caret, byte-identical),
+    // on in hardened. Opt in with AGENCY_COMPOSER_CURSOR=1.
+    composerCursorEdit: parseBool(env.AGENCY_COMPOSER_CURSOR, hardened),
   };
 }

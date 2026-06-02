@@ -6,6 +6,20 @@ import { calculateFormattedLines, getMaxScrollOffset } from "../components/Conve
 import { getDegradationTier } from "../terminal/screen.js";
 import type { SessionMessage } from "../state/messages.js";
 import { applyTextInput } from "./useTextInput.js";
+import {
+  type EditBuffer,
+  type History,
+  clampCursor,
+  moveLeft,
+  moveRight,
+  moveWordLeft,
+  moveWordRight,
+  deleteWordBackward,
+  editFromInput,
+  recordEdit,
+  undo,
+  redo,
+} from "../utils/text-buffer.js";
 import { nextMode } from "../state/agent-modes.js";
 import { saveTuiConfig } from "../config/tui-config.js";
 export interface OverlayStates {
@@ -49,6 +63,13 @@ export interface UseKeyboardHandlersOptions {
   virtualLinesCount: number;
   buffer: string;
   setBuffer: React.Dispatch<React.SetStateAction<string>>;
+  // Cursor-editing (flag `composerCursorEdit`). When off, the legacy
+  // append-only `applyTextInput` path runs unchanged (byte-identical).
+  composerCursorEdit: boolean;
+  setCursorPos: React.Dispatch<React.SetStateAction<number>>;
+  editBufRef: React.MutableRefObject<EditBuffer>;
+  editHistoryRef: React.MutableRefObject<History>;
+  internalEditRef: React.MutableRefObject<boolean>;
   slashActive: any;
   slashSuggestions: any[];
   atActive: any;
@@ -108,6 +129,11 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
         virtualLinesCount,
         buffer,
         setBuffer,
+        composerCursorEdit,
+        setCursorPos,
+        editBufRef,
+        editHistoryRef,
+        internalEditRef,
         slashActive,
         slashSuggestions,
         atActive,
@@ -387,6 +413,67 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
     // Handle Submit
     if (key.return && input.length === 1) {
       void handleSubmit();
+      return;
+    }
+
+    // ── Cursor-aware composer editing (flag on) ──
+    if (composerCursorEdit) {
+      const cur: EditBuffer = {
+        text: editBufRef.current.text,
+        cursor: clampCursor(editBufRef.current.text, editBufRef.current.cursor),
+      };
+
+      // Move the caret only (text unchanged): no history entry, no buffer write.
+      const navTo = (cursor: number) => {
+        editBufRef.current = { text: cur.text, cursor };
+        setCursorPos(cursor);
+      };
+      // Apply a restored buffer from undo/redo.
+      const restore = (next: EditBuffer) => {
+        editBufRef.current = next;
+        internalEditRef.current = true;
+        setBuffer(next.text);
+        setCursorPos(next.cursor);
+      };
+      // Apply an edit: record undo state, write buffer + caret.
+      const apply = (next: EditBuffer, kind: "insert" | "delete", boundary: boolean) => {
+        if (next.text === cur.text) {
+          if (next.cursor !== cur.cursor) navTo(next.cursor);
+          return;
+        }
+        editHistoryRef.current = recordEdit(editHistoryRef.current, cur, kind, boundary);
+        editBufRef.current = next;
+        internalEditRef.current = true;
+        setBuffer(next.text);
+        setCursorPos(next.cursor);
+      };
+
+      // Caret navigation (Left/Right, Ctrl+←/→ word, Ctrl+A/Ctrl+E line ends).
+      if (key.leftArrow) { navTo((key.ctrl ? moveWordLeft : moveLeft)(cur).cursor); return; }
+      if (key.rightArrow) { navTo((key.ctrl ? moveWordRight : moveRight)(cur).cursor); return; }
+      if (key.ctrl && input === "a") { navTo(0); return; }
+      if (key.ctrl && input === "e") { navTo(cur.text.length); return; }
+
+      // Undo / redo.
+      if (key.ctrl && input === "z") {
+        const r = undo(editHistoryRef.current, cur);
+        if (r) { editHistoryRef.current = r.hist; restore(r.buffer); }
+        return;
+      }
+      if (key.ctrl && input === "y") {
+        const r = redo(editHistoryRef.current, cur);
+        if (r) { editHistoryRef.current = r.hist; restore(r.buffer); }
+        return;
+      }
+
+      // Delete word backward (Ctrl+W).
+      if (key.ctrl && input === "w") { apply(deleteWordBackward(cur), "delete", true); return; }
+
+      // Insert / Backspace / forward-Delete at the caret.
+      const edit = editFromInput(input, key, cur);
+      if (edit) { apply(edit.buffer, edit.kind, edit.boundary); return; }
+      // Unhandled key in cursor mode: ignore (do NOT fall through to the
+      // append-only path, which would desync the caret).
       return;
     }
 

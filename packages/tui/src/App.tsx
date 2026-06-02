@@ -17,7 +17,9 @@ import {
   type FileEditSuggestion,
   initializeMcpServers,
   normalizeWorkerName,
+  getRuntimeFlags,
 } from "@agency/core";
+import { emptyHistory, type History, type EditBuffer } from "./utils/text-buffer.js";
 import { loadAgencyConfig, saveAgencyConfig, resolveApiKey, getModelThinkingConfig, getModelSpec, type ProviderId } from "@agency/providers";
 import { Shell } from "./layout/Shell.js";
 import { StatusBar } from "./layout/StatusBar.js";
@@ -377,6 +379,32 @@ export function App({
     [updateSession]
   );
   const [buffer, setBuffer] = useState("");
+  // Cursor-editing state (flag `composerCursorEdit`). When off, cursorPos is
+  // unused and the composer stays append-only / end-pinned (byte-identical).
+  const composerCursorEdit = useMemo(() => getRuntimeFlags().composerCursorEdit, []);
+  const [cursorPos, setCursorPos] = useState(0);
+  // Authoritative editing state, read+written synchronously by the keystroke
+  // handler so rapid typing/paste bursts never read a batched-stale caret. The
+  // `cursorPos` React state is just a render mirror.
+  const editBufRef = useRef<EditBuffer>({ text: "", cursor: 0 });
+  const editHistoryRef = useRef<History>(emptyHistory());
+  // Set by the caret-aware edit path right before it updates the buffer, so the
+  // effect below can tell an internal edit (keep caret + undo history) from an
+  // external buffer change (slash inject, @ completion, alias, clear → caret to
+  // end + fresh history).
+  const internalEditRef = useRef(false);
+  useEffect(() => {
+    if (!composerCursorEdit) return;
+    if (internalEditRef.current) {
+      internalEditRef.current = false;
+      return;
+    }
+    // External buffer change: re-sync the editing ref and park the caret at the
+    // end with a fresh undo history.
+    editBufRef.current = { text: buffer, cursor: buffer.length };
+    setCursorPos(buffer.length);
+    editHistoryRef.current = emptyHistory();
+  }, [buffer, composerCursorEdit]);
   const [loading, setLoading] = useState(false);
   const [subagents, setSubagents] = useState<SubagentStatus[]>([]);
 
@@ -1988,6 +2016,11 @@ ${taskDesc}`;
     virtualLinesCount,
     buffer,
     setBuffer,
+    composerCursorEdit,
+    setCursorPos,
+    editBufRef,
+    editHistoryRef,
+    internalEditRef,
     slashActive,
     slashSuggestions,
     atActive,
@@ -2178,6 +2211,7 @@ ${taskDesc}`;
             <ComposerBlock
               theme={theme}
               buffer={buffer}
+              cursorPos={composerCursorEdit ? cursorPos : undefined}
               onBufferChange={setBuffer}
               loading={loading}
               showHelp={overlays.help}

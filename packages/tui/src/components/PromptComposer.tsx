@@ -7,6 +7,10 @@ import { BlinkCursor } from "./AnimatedText.js";
 import type { AgentMode } from "../state/agent-modes.js";
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
 import { extractPathCandidates, shouldShowAttachmentChip, wrapText, type ResolvedPath } from "../utils/text.js";
+import { clampCursor } from "../utils/text-buffer.js";
+
+/** Zero-width-safe marker for the caret position inside the wrapped display text. */
+const CARET_SENTINEL = "\u0000";
 
 // Micro-cache to prevent duplicate disk reads
 const pathCache = new Map<string, ResolvedPath>();
@@ -58,6 +62,12 @@ export interface PromptComposerProps {
   /** Skip rendering the border (when wrapped by an outer anchor frame) */
   noBorder?: boolean;
   project?: string;
+  /**
+   * Caret offset into `value`. When provided (cursor-editing mode), the block
+   * cursor renders at this position instead of being pinned to the end. Omit for
+   * the legacy append-only composer (caret at the end).
+   */
+  cursorPos?: number;
 }
 
 export function getComposerModeColor(mode: AgentMode, theme: ThemeTokens): string {
@@ -87,10 +97,16 @@ export const PromptComposer = memo(function PromptComposer({
   thinkingLabel: _thinkingLabel,
   noBorder = false,
   project,
+  cursorPos,
 }: PromptComposerProps) {
   const { composerWidth, composerInnerWidth } = useTerminalLayout();
   const isPlaceholder = value.length === 0;
   const showCursor = !disabled && focused;
+  // Cursor-editing mode: render the caret at `cursorPos` (sentinel-marked inside
+  // the wrapped text). Legacy mode (cursorPos undefined) keeps the end-pinned
+  // block cursor. Disabled/blurred → no caret either way (matches legacy).
+  const useCaret = showCursor && cursorPos != null;
+  const caretOffset = useCaret ? clampCursor(value, cursorPos!) : 0;
   const modeColor = getComposerModeColor(agentMode, theme);
   const borderColor = focused && !disabled ? modeColor : theme.border;
   const hintWidth = 18;
@@ -145,8 +161,14 @@ export const PromptComposer = memo(function PromptComposer({
   const cursorPrefix = 2; // "❯ "
   const innerWidth = composerInnerWidth - padding - cursorPrefix;
 
+  // In caret mode, splice a sentinel at the caret so the wrap places it on the
+  // correct visual line/column; the renderer swaps it for the block cursor.
+  const displayValue = useCaret
+    ? value.slice(0, caretOffset) + CARET_SENTINEL + value.slice(caretOffset)
+    : value;
+
   const wrappedLines: string[] = [];
-  const rawLines = value.split("\n");
+  const rawLines = displayValue.split("\n");
   for (let i = 0; i < rawLines.length; i++) {
     const rawLine = rawLines[i]!;
     if (i === 0) {
@@ -239,15 +261,29 @@ export const PromptComposer = memo(function PromptComposer({
       <Box flexDirection="column">
         {visibleLines.map((line, idx) => {
           const isFirstLine = idx === 0 && !isTruncated;
+          const prefix = isFirstLine ? (
+            <Text color={focused && !disabled ? modeColor : theme.muted}>❯ </Text>
+          ) : (
+            (idx === 0 && isTruncated) ? "" : "  "
+          );
+          // Caret mode: render the line split around the sentinel so the block
+          // cursor sits exactly at the caret column.
+          const sentIdx = useCaret ? line.indexOf(CARET_SENTINEL) : -1;
+          if (sentIdx !== -1) {
+            return (
+              <Text key={idx} color={disabled ? theme.muted : theme.text}>
+                {prefix}
+                {line.slice(0, sentIdx)}
+                <BlinkCursor active />
+                {line.slice(sentIdx + CARET_SENTINEL.length)}
+              </Text>
+            );
+          }
           return (
             <Text key={idx} color={disabled ? theme.muted : theme.text}>
-              {isFirstLine ? (
-                <Text color={focused && !disabled ? modeColor : theme.muted}>❯ </Text>
-              ) : (
-                (idx === 0 && isTruncated) ? "" : "  "
-              )}
+              {prefix}
               {line}
-              {showCursor && idx === visibleLines.length - 1 ? <BlinkCursor active /> : null}
+              {!useCaret && showCursor && idx === visibleLines.length - 1 ? <BlinkCursor active /> : null}
             </Text>
           );
         })}

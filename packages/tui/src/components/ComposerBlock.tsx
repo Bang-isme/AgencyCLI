@@ -12,6 +12,8 @@ import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
 export interface ComposerBlockProps {
   theme: ThemeTokens;
   buffer: string;
+  /** Caret offset for cursor-editing mode; undefined → legacy end-pinned caret. */
+  cursorPos?: number;
   onBufferChange: (next: string) => void;
   loading: boolean;
   showHelp: boolean;
@@ -48,6 +50,7 @@ export function getModeBorderColor(mode: AgentMode, theme: ThemeTokens): string 
 export const ComposerBlock = memo(function ComposerBlock({
   theme,
   buffer,
+  cursorPos,
   onBufferChange,
   loading,
   showHelp,
@@ -205,6 +208,7 @@ export const ComposerBlock = memo(function ComposerBlock({
         <PromptComposer
           theme={theme}
           value={buffer}
+          cursorPos={cursorPos}
           disabled={loading}
           focused={isFocused}
           noBorder
