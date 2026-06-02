@@ -481,7 +481,10 @@ registry.register({
       if (!currentContent.includes(searchArg)) {
         return `Error: Search block not found exactly in "${pathArg}". Make sure whitespace, newlines, and content match exactly.`;
       }
-      const newContent = currentContent.replace(searchArg, replaceArg);
+      // Replace via a function so the replacement is inserted LITERALLY — a
+      // plain-string replacement makes String.replace expand `$$`, `$&`, `` $` ``
+      // and `$'` (corrupting any code/text that legitimately contains them).
+      const newContent = currentContent.replace(searchArg, () => replaceArg);
       writeFileSync(filePath, newContent, "utf8");
       return `Success: File edited successfully at "${pathArg}"`;
     } catch (err: any) {
@@ -998,7 +1001,9 @@ registry.register({
         if (!currentContent.includes(edit.search)) {
           return `Error: Search block at index ${idx} not found exactly in "${pathArg}". Aborting all batch edits. No changes written.`;
         }
-        currentContent = currentContent.replace(edit.search, edit.replace);
+        // Function replacement → literal insertion (no `$$`/`$&`/`` $` ``/`$'`
+        // expansion that would corrupt content containing those sequences).
+        currentContent = currentContent.replace(edit.search, () => edit.replace);
       }
 
       writeFileSync(filePath, currentContent, "utf8");

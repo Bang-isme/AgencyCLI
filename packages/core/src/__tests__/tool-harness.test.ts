@@ -172,6 +172,32 @@ Here is my decision:
       expect(content).toBe("const x = 9999;\nconst y = 100;");
     });
 
+    it("inserts the replacement literally — no $$/$&/$`/$' expansion (edit_file)", async () => {
+      writeFileSync(join(tempDir, "code.js"), "const price = OLD;", "utf8");
+      // A replacement containing every String.replace special: $$ $& $` $'
+      const replacement = "total = $$ + $& + a$`b + $'end";
+      const res = await executeTool(
+        "edit_file",
+        { path: "code.js", search: "OLD", replace: replacement },
+        tempDir
+      );
+      expect(res).toContain("Success");
+      // Literal insertion — NOT $$→$, $&→match, etc.
+      expect(readFileSync(join(tempDir, "code.js"), "utf8")).toBe("const price = " + replacement + ";");
+    });
+
+    it("inserts each replacement literally — no $ pattern expansion (batch_edit)", async () => {
+      writeFileSync(join(tempDir, "m.js"), "A\nB", "utf8");
+      const repl = "x $$ $& y";
+      const res = await executeTool(
+        "batch_edit",
+        { path: "m.js", edits: JSON.stringify([{ search: "A", replace: repl }]) },
+        tempDir
+      );
+      expect(res).toContain("Success");
+      expect(readFileSync(join(tempDir, "m.js"), "utf8")).toBe(repl + "\nB");
+    });
+
     it("should handle error for unknown or invalid tools", async () => {
       const result = await executeTool("super_secret_tool", {}, tempDir);
       expect(result).toContain("Error: Unknown tool");
