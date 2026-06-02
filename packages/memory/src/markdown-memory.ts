@@ -141,6 +141,16 @@ function tokenize(text: string): Set<string> {
 }
 
 export class MarkdownMemoryStore {
+  /**
+   * Construct a store at the conventional per-project location. This is the
+   * single source of the `.agency/memory/` path convention — callers (recall +
+   * the `remember`/`forget` tools) use this instead of re-joining the path, so
+   * the location lives in exactly one place (mirrors `EventJournal.resolvePath`).
+   */
+  static forProject(projectRoot: string): MarkdownMemoryStore {
+    return new MarkdownMemoryStore(join(projectRoot, ".agency", "memory"));
+  }
+
   constructor(private readonly root: string) {}
 
   private indexPath(): string {

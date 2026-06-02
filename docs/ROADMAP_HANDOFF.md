@@ -411,8 +411,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > freshness — xóa changedFiles fast-path dead+buggy)** · **§8.8 ✅ (2026-06-02: self-kill HARD-refuse — báo user `c03b9a2`;
 > DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`; **§8.8-A turn-loop
 > HARD-break trên circuit-breaker trip + §8.8-B tolerate malformed `</tool_call>` wrappers `64e945a`** → §8.8 ĐÓNG TRỌN)**.
-> **§9 Curated cross-session MARKDOWN memory ✅ (user-requested): đem cơ chế memory kiểu Claude-Code (index + topic file frontmatter) vào AgencyCLI — `MarkdownMemoryStore` (@agency/memory) + tool `remember` + recall vào prompt, cờ `AGENCY_FILE_MEMORY`; phân biệt rõ với SQLite episodic store tự động.**
-> Baseline giờ: core **409** · memory **49** · tui **148** · providers 852 · security **39** · ~2161 test · **32 cờ** · 19 tool.
+> **§9 Curated cross-session MARKDOWN memory ✅ (user-requested): đem cơ chế memory kiểu Claude-Code (index + topic file frontmatter) vào AgencyCLI — `MarkdownMemoryStore` (@agency/memory) + tool `remember`/`forget` + recall vào prompt, cờ `AGENCY_FILE_MEMORY`; phân biệt rõ với SQLite episodic store tự động + `agency memory` bridge (knowledge/genome) sẵn có — KHÔNG gộp.**
+> Baseline giờ: core **410** · memory **49** · tui **148** · providers 852 · security **39** · ~2162 test · **32 cờ** · 20 tool.
 > ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)

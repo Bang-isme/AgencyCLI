@@ -29,10 +29,12 @@ function describeZodArg(val: unknown): { isOptional: boolean; typeStr: string } 
 // fewer tokens. MCP tools (which carry per-arg descriptions worth keeping) stay
 // verbose in both modes. Off → the verbose form, byte-identical to legacy.
 function formatToolDocs(compact: boolean, fileMemoryOn: boolean): string {
-  // The `remember` tool is only advertised when curated markdown memory is on, so
-  // the legacy prompt is byte-identical (the tool stays registered/executable, it
-  // just isn't offered to the model). All other tools are always advertised.
-  const tools = registry.listTools().filter((t) => fileMemoryOn || t.name !== "remember");
+  // The curated-memory tools (`remember`/`forget`) are only advertised when
+  // markdown memory is on, so the legacy prompt is byte-identical (they stay
+  // registered/executable, just not offered to the model). All other tools are
+  // always advertised.
+  const MEMORY_TOOLS = new Set(["remember", "forget"]);
+  const tools = registry.listTools().filter((t) => fileMemoryOn || !MEMORY_TOOLS.has(t.name));
   return tools.map((tool, idx) => {
     const lines = [`${idx + 1}. \`${tool.name}\`: ${tool.description}`];
 

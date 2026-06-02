@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
 import {
   getDb,
   EpisodicStore,
@@ -91,7 +90,7 @@ export async function loadHistoricalMemories(
 function loadFileMemoryBlock(projectRoot: string, userPrompt: string): string {
   if (!getRuntimeFlags().fileMemory) return "";
   try {
-    const store = new MarkdownMemoryStore(join(projectRoot, ".agency", "memory"));
+    const store = MarkdownMemoryStore.forProject(projectRoot);
     return store.recall({
       query: userPrompt,
       // Reuse the same local embedder the SQLite recall uses when semantic recall

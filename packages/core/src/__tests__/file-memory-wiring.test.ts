@@ -70,16 +70,30 @@ describe("§file-memory wiring (remember tool + markdown recall + flag gating)",
     expect(recall).not.toContain("curated, durable memories");
   });
 
-  it("flag ON: the `remember` tool + memory protocol appear in the system prompt; OFF: neither", () => {
+  it("the `forget` tool removes a saved memory (and reports a no-op for an unknown name)", async () => {
+    await executeTool("remember", { description: "temp note", content: "to be removed", type: "project" }, root, "/skills");
+    expect(existsSync(join(root, ".agency", "memory", "temp-note.md"))).toBe(true);
+
+    const removed = await executeTool("forget", { name: "temp-note" }, root, "/skills");
+    expect(removed).toMatch(/Removed memory "temp-note"/);
+    expect(existsSync(join(root, ".agency", "memory", "temp-note.md"))).toBe(false);
+
+    const noop = await executeTool("forget", { name: "does-not-exist" }, root, "/skills");
+    expect(noop).toMatch(/nothing removed/);
+  });
+
+  it("flag ON: the `remember`+`forget` tools + memory protocol appear in the system prompt; OFF: none", () => {
     process.env.AGENCY_FILE_MEMORY = "1";
     const on = buildSystemPrompt(route, "hi", "", root);
     expect(on).toContain("`remember`");
+    expect(on).toContain("`forget`");
     expect(on).toContain("PERSISTENT MEMORY PROTOCOL");
 
     delete process.env.AGENCY_FILE_MEMORY;
     const off = buildSystemPrompt(route, "hi", "", root);
     expect(off).not.toContain("PERSISTENT MEMORY PROTOCOL");
-    // The remember tool must not be advertised in the legacy tool docs.
+    // Neither curated-memory tool may be advertised in the legacy tool docs.
     expect(off).not.toMatch(/\d+\.\s+`remember`/);
+    expect(off).not.toMatch(/\d+\.\s+`forget`/);
   });
 });

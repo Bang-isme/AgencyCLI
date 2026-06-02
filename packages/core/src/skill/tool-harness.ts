@@ -403,7 +403,7 @@ registry.register({
     if (!description) return "Error: 'description' is required for remember (a one-line summary).";
     if (!content) return "Error: 'content' is required for remember (the fact to save).";
     try {
-      const store = new MarkdownMemoryStore(resolve(projectRoot, ".agency", "memory"));
+      const store = MarkdownMemoryStore.forProject(projectRoot);
       const slug = store.upsert({
         name: args.name,
         description,
@@ -413,6 +413,31 @@ registry.register({
       return `Success: Saved memory "${slug}" (type: ${args.type || "project"}). It will be recalled in future sessions.`;
     } catch (err: any) {
       return `Error saving memory: ${err.message || String(err)}`;
+    }
+  }
+});
+
+// 2d. forget — remove a stale/incorrect memory from curated cross-session memory
+registry.register({
+  name: "forget",
+  description:
+    "Remove a memory from your curated cross-session memory by its `name` (the slug shown in the memory index). Use only when a saved memory is stale or wrong and updating it via `remember` (same name) isn't enough — deletion is permanent.",
+  category: "write",
+  schema: z.object({
+    name: z.string(),
+  }),
+  execute: async (args: any, context: any) => {
+    const { projectRoot } = context;
+    const name = (args.name || "").trim();
+    if (!name) return "Error: 'name' is required for forget (the memory slug to remove).";
+    try {
+      const store = MarkdownMemoryStore.forProject(projectRoot);
+      const removed = store.remove(name);
+      return removed
+        ? `Success: Removed memory "${name}".`
+        : `No memory named "${name}" exists (nothing removed).`;
+    } catch (err: any) {
+      return `Error removing memory: ${err.message || String(err)}`;
     }
   }
 });
