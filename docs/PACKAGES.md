@@ -769,6 +769,8 @@ So this doesn't get re-derived each session. Verified 2026-06-01.
 
 MCP tools register into the **same** registry with an `mcpSchema` marker and are approval-gated as external (MEDIUM-floored). "Which tools write files" → `isFileWritingTool` (single source; see Canonical Homes).
 
+> **Runtime ToolRegistry ≠ `plugin-tools.json` — two intentionally distinct tool universes (don't try to "sync" them).** The 20 tools above are the agent's **in-process LLM tools** (the model calls them mid-turn). `plugin-tools.json` (`.system/references/plugin-tools.json`, ~10 tools loaded by `loadPluginTools`) is the pack's **external plugin-SDK contract** — Python maintenance/validation/release/memory scripts (`pack_health`, `codex_plugin_validate`, `release_zip_dry_run`, `memory_status`, …) run via `runTool` from `agency plugin`/`doctor` and external plugin harnesses, **not** from a chat turn. Zero overlap by design; a sync guard between them would conflate the two layers. Their script paths *are* guarded for existence by `cli/__tests__/workflow-pack-integrity.test.ts` (alongside `WORKFLOWS` steps + `BUILTIN_SCRIPTS`).
+
 ### Skills pack (bundled in `@agency/cli`)
 - **Home:** `packages/cli/skills/` (shipped via the cli `files` field). Manifest: `.system/manifest.json`.
 - **Contents (2026-06-01):** 28 skills (`codex-*` dirs, each a `SKILL.md`) + 8 agents (== `MANIFEST_AGENTS` in `core/agents/types.ts`) + 8 workflows + a `load_order` (always / on-demand). Two meta-skills live under `.system/` (`skill-creator`, `skill-installer`) and are intentionally not pack skills.

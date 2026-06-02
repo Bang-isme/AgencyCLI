@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { WORKFLOWS } from "@agency/core";
-import { BUILTIN_SCRIPTS } from "@agency/skills-bridge";
+import { BUILTIN_SCRIPTS, loadPluginTools } from "@agency/skills-bridge";
 
 /**
  * Tight-coupling guard for the workflow composer ↔ bundled skills pack.
@@ -17,10 +17,14 @@ import { BUILTIN_SCRIPTS } from "@agency/skills-bridge";
  * "machinery wired to a path that no longer exists" defect class. This test fails
  * loudly in `pnpm verify` the moment a referenced script goes missing.
  *
- * Reuses the real `WORKFLOWS` definition and `BUILTIN_SCRIPTS` map (the single
- * source of truth the runtime call sites resolve through) rather than re-listing
- * paths. Lives in @agency/cli because it is the only package that both bundles the
- * pack and sits atop the dep graph (it can import `WORKFLOWS` from core).
+ * Reuses the real `WORKFLOWS` definition, the `BUILTIN_SCRIPTS` map, and the
+ * `plugin-tools.json` contract (`loadPluginTools`) — the single sources of truth
+ * the runtime/CLI resolve through — rather than re-listing paths. The plugin-tools
+ * contract is the pack's external plugin-SDK tool set (Python maintenance/release/
+ * memory scripts), distinct from the runtime ToolRegistry; checking it here catches
+ * a renamed pack script without needing a Python interpreter in CI. Lives in
+ * @agency/cli because it is the only package that both bundles the pack and sits
+ * atop the dep graph (it can import `WORKFLOWS` from core).
  */
 
 const PKG_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "../..");
@@ -37,11 +41,14 @@ function referencedScripts(): Array<[string, string]> {
   for (const [name, rel] of Object.entries(BUILTIN_SCRIPTS)) {
     out.push([`builtin ${name}`, rel]);
   }
+  for (const tool of loadPluginTools(SKILLS_ROOT).tools) {
+    out.push([`plugin-tool ${tool.name}`, tool.script]);
+  }
   return out;
 }
 
 describe("workflow composer ↔ pack script integrity", () => {
-  it("every workflow step + builtin script path exists in the bundled pack", () => {
+  it("every workflow step + builtin + plugin-tool script path exists in the bundled pack", () => {
     const missing = referencedScripts().filter(
       ([, rel]) => !existsSync(join(SKILLS_ROOT, rel))
     );
