@@ -3,6 +3,21 @@ import type { RouteResult } from "../router/model-router.js";
 import type { ChatMessage } from "./orchestrator.js";
 import { registry } from "../skill/tool-harness.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
+import { getAgentRegistrySnapshot } from "../agents/agent-registry.js";
+
+/**
+ * Advertise the dispatchable specialist roster (agentId → role) so the model
+ * passes a REAL `agentId` to `dispatch_subagent` instead of guessing a name.
+ * Sourced from the agent registry (single source of truth) — adding a specialist
+ * there surfaces it here automatically. Only the immutable id + role are
+ * rendered, so the block is deterministic across turns (keeps the cached prefix
+ * stable; mutable health/utilization are deliberately excluded).
+ */
+function formatSpecialistRoster(): string {
+  const agents = getAgentRegistrySnapshot();
+  if (agents.length === 0) return "(none available)";
+  return agents.map((a) => `- \`${a.id}\`: ${a.role}`).join("\n");
+}
 
 /** Resolve a built-in (zod) arg's optional flag + display type. */
 function describeZodArg(val: unknown): { isOptional: boolean; typeStr: string } {
@@ -147,6 +162,9 @@ export function buildSystemPrompt(
     "1. IMMEDIATE TOOL INVOCATION: If the user asks you to read/edit a file, run a command, or spawn/dispatch a specialist subagent, you MUST output the XML tool call block immediately in your response! Never respond with plain text like 'I will spawn a subagent' or 'I will analyze' without including the corresponding `<tool_call>` block in the exact same turn. Doing so will freeze the system without executing the action. You must trigger the tool call immediately.",
     "2. SPAWNING SUBAGENTS: If the user requests to spawn a subagent, delegate to a specialist, or perform deep code analysis/restructuring, immediately call `dispatch_subagent` with the correct specialist `<agentId>` and a clear, descriptive `<task>`. The TUI will render a dedicated real-time worker progress panel displaying the subagent's execution phase, elapsed time, and findings. Trigger this tool call immediately so the user can see the progress of the worker.",
     "3. Once you output a tool call, execution will pause, the tool will run, and you will receive the tool's result in the next turn as a User message so you can continue your task.",
+    "",
+    "AVAILABLE SPECIALISTS (pass one of these ids as `dispatch_subagent`'s `agentId`; pick by best capability match):",
+    formatSpecialistRoster(),
     "",
     "AVAILABLE TOOLS:",
     formatToolDocs(flags.compactToolDocs, flags.fileMemory),

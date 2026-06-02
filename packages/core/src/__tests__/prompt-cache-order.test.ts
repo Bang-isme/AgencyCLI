@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { buildSystemPrompt } from "../chat/prompt.js";
+import { getAgentRegistrySnapshot } from "../agents/agent-registry.js";
 import type { RouteResult } from "../router/model-router.js";
 
 /**
@@ -97,6 +98,30 @@ describe("buildSystemPrompt prompt-cache ordering", () => {
     process.env.AGENCY_PROMPT_CACHE = "on";
     const withOverride = buildSystemPrompt(route, PROMPT, CONTEXT, "/repo", undefined, override, MEMORIES);
     expect(withOverride.startsWith(`${override}\n\n`)).toBe(true);
+  });
+});
+
+describe("buildSystemPrompt specialist roster (dispatch_subagent coupling)", () => {
+  beforeEach(() => {
+    delete process.env.AGENCY_PROFILE;
+    delete process.env.AGENCY_PROMPT_CACHE;
+  });
+
+  it("advertises every dispatchable specialist agentId from the registry", () => {
+    const out = build();
+    expect(out).toContain("AVAILABLE SPECIALISTS");
+    const agents = getAgentRegistrySnapshot();
+    expect(agents.length).toBeGreaterThan(0);
+    for (const a of agents) {
+      // the exact agentId the model must pass to dispatch_subagent
+      expect(out).toContain(`\`${a.id}\``);
+    }
+  });
+
+  it("places the roster with the static tool docs (before the variable tail in cache mode)", () => {
+    process.env.AGENCY_PROMPT_CACHE = "on";
+    const out = build();
+    expect(out.indexOf("AVAILABLE SPECIALISTS")).toBeLessThan(out.indexOf("User intent:"));
   });
 });
 
