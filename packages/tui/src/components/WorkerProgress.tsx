@@ -31,7 +31,7 @@ function stepColor(status: StepStatus): keyof ThemeTokens {
 }
 
 /**
- * Premium technical styled checklist progress for worker sub-tasks.
+ * Checklist-style progress for worker sub-tasks.
  * - Shows nice branch tree connectors (├─ / └─)
  * - ◆ completed steps in green (Agency lifecycle "done" marker)
  * - the signature arc spinner for the active step, in accent color

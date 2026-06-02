@@ -229,7 +229,7 @@ export function parseAssistantContent(content: string): AssistantBlock[] {
     const knownBadges = [
       "EXPLORE", "READ", "WRITE", "TODOS", "ENTER PLAN MODE",
       "PLAN MODE", "HARNESS", "GATE", "SYSTEM", "GOAL",
-      "TODO", "DONE", "RUNNING", "BREWING", "HONING", "SCULPTING", "CALIBRATING"
+      "TODO", "DONE", "RUNNING"
     ];
 
     if (badgeMatch && knownBadges.includes(badgeMatch[1]!.trim())) {

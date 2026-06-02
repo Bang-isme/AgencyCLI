@@ -167,7 +167,7 @@ const COMPACT_SLOT = COMPACT_LETTER_W + GAP;        // 5
 /**
  * Animated pixel-art logo for AGENCYCLI.
  *
- * Premium multi-layered neon animation system with responsive sizing:
+ * Multi-layered neon animation with responsive sizing:
  * ┌─────────────────────────────────────────────────────────┐
  * │ Full mode:  7×6 rounded bitmaps (62 cols, ≥64 width)   │
  * │ Compact:    5×4 bitmaps (44 cols, <64 width)           │
@@ -179,7 +179,7 @@ const COMPACT_SLOT = COMPACT_LETTER_W + GAP;        // 5
  * │                                                         │
  * │ Layer 2: Horizontal Scanner Beam                        │
  * │   A sharp white highlight glides across all rows,       │
- * │   creating a premium holographic scan effect.           │
+ * │   creating a holographic scan effect.                   │
  * │                                                         │
  * │ Layer 3: Micro-Sparkle                                  │
  * │   Rare, subtle white glints on individual pixels        │

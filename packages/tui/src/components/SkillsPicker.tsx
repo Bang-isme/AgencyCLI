@@ -261,7 +261,7 @@ export function SkillsPicker({
       </Text>
       <Text color={theme.dimBorder}>{dividerStr}</Text>
 
-      {/* Premium Search Input Box */}
+      {/* Search input */}
       <Box
         paddingX={1}
         marginY={0}

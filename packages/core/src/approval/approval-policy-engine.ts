@@ -343,8 +343,8 @@ export class ApprovalPolicyEngine {
 
     this.pendingRequests.set(requestId, request);
 
-    // Format calm Codex-style visual UX card output
-    this.printPremiumUXCard(request);
+    // Render the approval card to the console
+    this.printApprovalCard(request);
 
     await this.eventBus.publish("approval:required", request);
 
@@ -560,10 +560,10 @@ export class ApprovalPolicyEngine {
   }
 
   /**
-   * Outputs a calm, minimal, clear visual action card to the console.
-   * Adheres to absolute Codex/Cursor UX principles: extremely sparse, zero-jargon.
+   * Renders a compact approval card to the console: action, risk, the affected
+   * command/file, any structured patch summary, and the choices.
    */
-  private printPremiumUXCard(req: ApprovalRequest): void {
+  private printApprovalCard(req: ApprovalRequest): void {
     const color = req.risk.level === "HIGH" ? "\x1b[31;1m" : "\x1b[33;1m"; // Red for HIGH, Yellow for MEDIUM
     const reset = "\x1b[0m";
     const bold = "\x1b[1m";
