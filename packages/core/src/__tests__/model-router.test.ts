@@ -18,7 +18,7 @@ vi.mock("@agency/providers", async (importOriginal) => {
 
 import { loadAgencyConfig } from "@agency/providers";
 import { routePrompt } from "../router/prompt-bridge.js";
-import { routeUserPrompt } from "../router/model-router.js";
+import { routeUserPrompt, skillsFromPromptAliases } from "../router/model-router.js";
 import { heuristicRoute } from "../router/fallback-router.js";
 
 const mockedRoutePrompt = vi.mocked(routePrompt);
@@ -130,6 +130,57 @@ describe("routeUserPrompt", () => {
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("skillsFromPromptAliases (explicit $alias → skill)", () => {
+  it("resolves a known alias to its skill", () => {
+    expect(skillsFromPromptAliases("$design make a landing page")).toEqual(["codex-design-system"]);
+    expect(skillsFromPromptAliases("$tdd add a test")).toEqual(["codex-test-driven-development"]);
+  });
+
+  it("resolves hyphenated/multi aliases and dedupes", () => {
+    expect(skillsFromPromptAliases("$check-full then $gate")).toEqual(["codex-execution-quality-gate"]);
+    expect(skillsFromPromptAliases("$design and $security audit")).toEqual([
+      "codex-design-system",
+      "codex-security-specialist",
+    ]);
+  });
+
+  it("ignores non-alias dollar tokens (no false positives)", () => {
+    expect(skillsFromPromptAliases("it costs $5 and uses $PATH and $myvar")).toEqual([]);
+    expect(skillsFromPromptAliases("no dollar here")).toEqual([]);
+  });
+});
+
+describe("routeUserPrompt explicit-alias activation", () => {
+  it("activates the chosen skill even when the fuzzy router picks another", async () => {
+    // The intent router classifies "$design …" as a plan (codex-plan-writer),
+    // but the explicit $design must still activate codex-design-system, first.
+    mockedRoutePrompt.mockResolvedValue({
+      intent: "other",
+      workflow: "plan",
+      skills: ["codex-plan-writer"],
+      warnings: [],
+    });
+
+    const result = await routeUserPrompt(SKILLS_ROOT, "$design a hero section");
+
+    expect(result.skills[0]).toBe("codex-design-system");
+    expect(result.skills).toContain("codex-plan-writer");
+  });
+
+  it("leaves skills unchanged when no $alias is present", async () => {
+    mockedRoutePrompt.mockResolvedValue({
+      intent: "build",
+      workflow: "create",
+      skills: ["codex-test-driven-development"],
+      warnings: [],
+    });
+
+    const result = await routeUserPrompt(SKILLS_ROOT, "build a dashboard");
+
+    expect(result.skills).toEqual(["codex-test-driven-development"]);
   });
 });
 
