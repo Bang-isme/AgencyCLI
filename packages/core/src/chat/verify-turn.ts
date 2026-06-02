@@ -40,9 +40,11 @@ async function runAcceptance(
  *
  * The production verify loop only wrapped subagent dispatches; a direct "fix
  * this" on the main turn never self-corrected. This closes that gap for the
- * one-shot CLI (the interactive TUI is intentionally NOT wired — re-running a
- * turn 3× under the user mid-conversation is a separate UX decision; `--json` is
- * also left un-verified so machine consumers get a single deterministic result).
+ * one-shot CLI AND the interactive TUI (App.tsx wraps its turn with
+ * `runChatTurnWithVerify`, resets the live stream buffer + surfaces each
+ * self-heal round via the `chat:self-healing` event so the re-run is visible).
+ * `--json` is left un-verified so machine consumers get a single deterministic
+ * result.
  *
  * Off (flags) → a single turn, byte-identical to calling the engine directly.
  * On → after the turn, if it actually edited files AND the project defines real

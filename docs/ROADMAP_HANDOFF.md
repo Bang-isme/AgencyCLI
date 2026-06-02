@@ -168,8 +168,14 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   && detectTruncatedArtifact(...))` ở CẢ 2 path. Best-effort (skip missing/binary/>512KB, never throw), chỉ quét
   artifact của chính turn (không vớ file repo khác). Mạnh hơn prose vì stub đã LƯU ĐĨA. core 420→**424** (+4 test:
   detector đĩa ×3 + wiring stub-then-fix ×1). `pnpm verify` REAL_EXIT_CODE=0.
-- **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build/stub (gắn với 2.1 còn lại); verify-main-turn CHƯA
-  wire vào TUI (cố ý, UX — re-run turn giữa hội thoại tương tác là quyết định riêng).
+- **VERIFY-MAIN-TURN ĐÃ WIRE VÀO TUI (2026-06-02):** trước chỉ `agency chat` one-shot tự-sửa; giờ `App.tsx`
+  gọi `runChatTurnWithVerify` (byte-identical với `runChatTurnWithStream` khi cờ off) → turn TUI có edit cũng
+  chạy acceptance + tự-sửa. UX: mỗi round self-heal RESET buffer stream live (round N THAY N-1, không nối chồng)
+  + in dòng "⚙ self-healing (round N)…" qua event `chat:self-healing` (đã có sẵn) để re-run THẤY ĐƯỢC, không
+  im lặng. Gate `verifyMainTurn` (=`verifyLoop`: off-legacy/on-hardened). Glue TUI không unit-test được trong
+  harness hiện tại (App monolith); an toàn cấu trúc: off→delegate thẳng hàm cũ. `pnpm verify` REAL_EXIT_CODE=0.
+- **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build/stub (gắn với 2.1 còn lại); cân nhắc surface
+  cả `chat:verify-failed` (hết round vẫn fail) trong TUI = follow-up nhỏ.
 
 ### 2.3 — Quản lý context window (compaction)  ← ✅ XONG (2026-05-31)
 - Hội thoại/task dài sẽ tràn context window. Cần nén lịch sử (tóm tắt lượt cũ, giữ phần

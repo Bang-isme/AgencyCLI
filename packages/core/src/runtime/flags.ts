@@ -64,7 +64,9 @@ export interface RuntimeFlags {
    * Also wrap the MAIN chat turn (not just subagent dispatches) in the verify
    * loop, so a direct "fix this" self-corrects too. Defaults to `verifyLoop`'s
    * resolved value; separate so the (build-on-every-edit) cost can be turned off
-   * independently. Only the one-shot CLI path is wired today (not the interactive TUI).
+   * independently. Wired into both the one-shot CLI (`runChatTurnWithVerify`) and
+   * the interactive TUI (which resets the live buffer + surfaces each self-heal
+   * round on the `chat:self-healing` event so the re-run is visible).
    */
   verifyMainTurn: boolean;
   /** Max attempts in the verify loop (only used when verifyLoop is on). */

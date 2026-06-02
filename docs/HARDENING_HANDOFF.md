@@ -314,9 +314,11 @@ Inspect any time with `agency status` / `agency status --json`.
 > wraps `agency chat`: after a turn that *edits files*, it runs the project's real acceptance scripts
 > (`buildAcceptanceCommandsStrict` — build/lint/test, `[]` if none so a plain Q&A turn or script-less repo is a
 > no-op) and self-heals on failure. Flag `AGENCY_VERIFY_MAIN_TURN` (defaults to `verifyLoop`: off legacy / on
-> hardened; independently switchable). **The 4 interactive TUI call sites are deliberately NOT wired** (re-running
-> a turn 3× mid-conversation under the user is a separate UX call). Edit-detection via `utils/workspace-snapshot.ts`.
-> Tests: `core/__tests__/main-turn-verify.test.ts` (12). Green: core **341**, cli **547**, builds clean;
+> hardened; independently switchable). **UPDATE (2026-06-02): the interactive TUI IS now wired** — `App.tsx`'s
+> chat turn calls `runChatTurnWithVerify` (byte-identical to `runChatTurnWithStream` when the flags are off), and
+> it resets the live stream buffer + prints a "self-healing (round N)…" system line on the `chat:self-healing`
+> event so the re-run is visible rather than a silent re-stream (the original UX concern). Edit-detection via
+> `utils/workspace-snapshot.ts`. Tests: `core/__tests__/main-turn-verify.test.ts` (12). Green: core **341**, cli **547**, builds clean;
 > (c) scope tests to changed files ("relevant tests" vs full suite); (d) context compaction (Phần 2.3).
 >
 > **UPDATE (2026-05-31b) — eval harness made actually-runnable (two defects the previous "green" claim hid).**

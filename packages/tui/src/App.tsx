@@ -6,7 +6,7 @@ import { join } from "node:path";
 import {
   fuzzySearchFiles,
   resolveSkillsRoot,
-  runChatTurnWithStream,
+  runChatTurnWithVerify,
   toPresentationTurn,
   loadMcpConfigs,
   type McpServerStatus,
@@ -1551,7 +1551,27 @@ ${taskDesc}`;
             content: m.content,
           }));
 
-        const result = await runChatTurnWithStream(
+        // verify-main-turn in the TUI: when `verifyMainTurn` is on, the turn
+        // self-heals after a file edit (re-runs with the build/lint errors fed
+        // back) instead of leaving a broken edit. Each self-heal round REPLACES
+        // the previous round's streamed text (round N is the corrected version,
+        // not an addition), so reset the live buffer + message when a new round
+        // begins, and surface it as a system line so the re-run isn't a silent
+        // mysterious re-stream. Off (flags) → `runChatTurnWithVerify` delegates
+        // straight to `runChatTurnWithStream`, byte-identical.
+        const onSelfHeal = (event: any) => {
+          const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
+          accumulatedContent = "";
+          accumulatedThought = "";
+          if (flushTimeout) { clearTimeout(flushTimeout); flushTimeout = null; }
+          patchMessage(assistantId, { content: "", thought: "" }, false);
+          addSystemLines([`⚙ Verification failed — self-healing (round ${payload?.round ?? 2})…`]);
+        };
+        EventBus.getInstance().subscribe("chat:self-healing", onSelfHeal);
+
+        let result: Awaited<ReturnType<typeof runChatTurnWithVerify>>;
+        try {
+          result = await runChatTurnWithVerify(
           {
             prompt: finalPrompt,
             projectRoot: project,
@@ -1600,7 +1620,10 @@ ${taskDesc}`;
               triggerThrottledFlush();
             },
           }
-        );
+          );
+        } finally {
+          EventBus.getInstance().unsubscribe("chat:self-healing", onSelfHeal);
+        }
 
         if (flushTimeout) {
           clearTimeout(flushTimeout);
