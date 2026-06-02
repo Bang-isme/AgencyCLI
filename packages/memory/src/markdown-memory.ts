@@ -36,8 +36,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { Embedder } from "./embedder.js";
-import { computeCosineSimilarity } from "./vector-store.js";
 
 export type MemoryType = "user" | "feedback" | "project" | "reference";
 
@@ -57,20 +55,15 @@ export interface MemoryRecord {
 export interface MemoryRecallOptions {
   /** the current user prompt / query to rank `project`/`reference` memories against. */
   query?: string;
-  /** max topic bodies to include in the recall block (excludes always-on user/feedback). */
-  limit?: number;
-  /** hard cap on the whole recall block size. */
+  /** hard cap on the whole recall block size (the only bound — relevance ordering decides what fits). */
   charBudget?: number;
-  /** optional embedder → semantic (cosine) ranking; omitted → keyword overlap. */
-  embedder?: Embedder;
 }
 
 const INDEX_FILE = "MEMORY.md";
-const DEFAULT_RECALL_LIMIT = 6;
 const DEFAULT_RECALL_BUDGET = 6000;
 
 /** Normalize an arbitrary string into a safe kebab-case slug usable as a filename. */
-export function slugifyMemoryName(raw: string): string {
+function slugifyMemoryName(raw: string): string {
   const s = raw
     .toLowerCase()
     .trim()
@@ -90,7 +83,7 @@ function coerceType(raw: string | undefined): MemoryType {
  * edited by hand (or a model) shouldn't throw; missing fields fall back so the
  * record is still usable. Returns null only when there is no body at all.
  */
-export function parseMemoryFile(raw: string, fallbackName: string): MemoryRecord | null {
+function parseMemoryFile(raw: string, fallbackName: string): MemoryRecord | null {
   let name = fallbackName;
   let description = "";
   let type: MemoryType = "project";
@@ -118,7 +111,7 @@ export function parseMemoryFile(raw: string, fallbackName: string): MemoryRecord
 }
 
 /** Serialize a record to topic-file text (frontmatter + body). */
-export function serializeMemoryFile(rec: MemoryRecord): string {
+function serializeMemoryFile(rec: MemoryRecord): string {
   return (
     `---\n` +
     `name: ${rec.name}\n` +
@@ -253,11 +246,10 @@ export class MarkdownMemoryStore {
   }
 
   /**
-   * Build the recall block injected into the prompt: the index (always) plus the
-   * most relevant topic bodies within `charBudget`. `user`/`feedback` memories
-   * are always surfaced (standing instructions); `project`/`reference` are ranked
-   * by the query — semantically when an embedder is supplied, else by keyword
-   * overlap. Returns "" when there is nothing saved. Never throws.
+   * Build the recall block injected into the prompt: `user`/`feedback` memories
+   * first (standing instructions, always included), then `project`/`reference`
+   * ordered by keyword overlap with the query, taking as many as fit in
+   * `charBudget`. Returns "" when there is nothing saved. Never throws.
    */
   recall(opts: MemoryRecallOptions = {}): string {
     let records: MemoryRecord[];
@@ -268,73 +260,37 @@ export class MarkdownMemoryStore {
     }
     if (records.length === 0) return "";
 
-    const limit = opts.limit ?? DEFAULT_RECALL_LIMIT;
     const budget = opts.charBudget ?? DEFAULT_RECALL_BUDGET;
     const query = (opts.query ?? "").trim();
 
     const standing = records.filter((r) => r.type === "user" || r.type === "feedback");
-    const rankable = records.filter((r) => r.type === "project" || r.type === "reference");
-
-    // Rank the non-standing memories by relevance to the query.
-    let ranked: MemoryRecord[];
-    if (query && opts.embedder) {
-      const qv = opts.embedder.embed(query);
-      ranked = rankable
-        .map((r) => ({
-          r,
-          score: safeCosine(opts.embedder!, qv, `${r.description}\n${r.body}`),
-        }))
-        .sort((a, b) => b.score - a.score)
-        .map((x) => x.r);
-    } else if (query) {
+    let rankable = records.filter((r) => r.type === "project" || r.type === "reference");
+    if (query) {
       const qTokens = tokenize(query);
-      ranked = rankable
-        .map((r) => {
-          const rTokens = tokenize(`${r.description} ${r.body}`);
-          let overlap = 0;
-          for (const w of qTokens) if (rTokens.has(w)) overlap++;
-          return { r, score: overlap };
-        })
+      rankable = rankable
+        .map((r) => ({ r, score: overlap(qTokens, tokenize(`${r.description} ${r.body}`)) }))
         .sort((a, b) => b.score - a.score)
         .map((x) => x.r);
-    } else {
-      ranked = rankable;
     }
-
-    const selected = [...standing, ...ranked.slice(0, Math.max(0, limit))];
 
     const header =
       "The following are your curated, durable memories from past sessions " +
       "(.agency/memory). Treat `user` and `feedback` memories as STANDING instructions.";
-    const parts: string[] = [header, "", "## Memory index", this.indexSummary(records)];
-
-    let used = parts.join("\n").length;
-    const bodies: string[] = ["", "## Relevant memories"];
-    for (const r of selected) {
+    const parts: string[] = [header, ""];
+    let used = header.length;
+    for (const r of [...standing, ...rankable]) {
       const block = `### ${r.description || r.name} (${r.type})\n${r.body.trim()}`;
-      if (used + block.length > budget && bodies.length > 2) break;
-      bodies.push(block, "");
+      if (used + block.length > budget && parts.length > 2) break;
+      parts.push(block, "");
       used += block.length;
     }
-    if (bodies.length > 2) parts.push(...bodies);
-
     return parts.join("\n").trim();
-  }
-
-  /** Compact one-line-per-memory summary (used inside the recall block). */
-  private indexSummary(records: MemoryRecord[]): string {
-    return records
-      .slice()
-      .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
-      .map((r) => `- (${r.type}) ${r.name}: ${r.description}`)
-      .join("\n");
   }
 }
 
-function safeCosine(embedder: Embedder, queryVec: number[], text: string): number {
-  try {
-    return computeCosineSimilarity(queryVec, embedder.embed(text));
-  } catch {
-    return 0;
-  }
+/** Count how many of `qTokens` appear in `rTokens`. */
+function overlap(qTokens: Set<string>, rTokens: Set<string>): number {
+  let n = 0;
+  for (const w of qTokens) if (rTokens.has(w)) n++;
+  return n;
 }

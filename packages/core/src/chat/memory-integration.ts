@@ -90,13 +90,7 @@ export async function loadHistoricalMemories(
 function loadFileMemoryBlock(projectRoot: string, userPrompt: string): string {
   if (!getRuntimeFlags().fileMemory) return "";
   try {
-    const store = MarkdownMemoryStore.forProject(projectRoot);
-    return store.recall({
-      query: userPrompt,
-      // Reuse the same local embedder the SQLite recall uses when semantic recall
-      // is on → semantic ranking of memories; otherwise keyword overlap.
-      embedder: getRuntimeFlags().memorySemantic ? getEmbedder() : undefined,
-    });
+    return MarkdownMemoryStore.forProject(projectRoot).recall({ query: userPrompt });
   } catch {
     return "";
   }

@@ -2,13 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  MarkdownMemoryStore,
-  parseMemoryFile,
-  serializeMemoryFile,
-  slugifyMemoryName,
-  LocalDeterministicEmbedder,
-} from "../index.js";
+import { MarkdownMemoryStore } from "../index.js";
 
 describe("MarkdownMemoryStore (curated cross-session markdown memory)", () => {
   let root: string;
@@ -23,22 +17,22 @@ describe("MarkdownMemoryStore (curated cross-session markdown memory)", () => {
   });
 
   describe("slug + frontmatter round-trip", () => {
-    it("slugifies arbitrary text to a safe kebab filename", () => {
-      expect(slugifyMemoryName("User prefers TypeScript!")).toBe("user-prefers-typescript");
-      expect(slugifyMemoryName("   ")).toBe("memory");
+    it("slugifies arbitrary description text to a safe kebab filename", () => {
+      expect(store.upsert({ description: "User prefers TypeScript!", type: "user", body: "x" })).toBe("user-prefers-typescript");
+      expect(store.upsert({ description: "   ", body: "x" })).toBe("memory");
     });
 
-    it("serializes then parses back identically (frontmatter + body)", () => {
-      const rec = { name: "x", description: "a fact", type: "project" as const, body: "the body\nline2" };
-      const round = parseMemoryFile(serializeMemoryFile(rec), "fallback");
-      expect(round).toEqual(rec);
+    it("write→read round-trips frontmatter + body exactly", () => {
+      store.upsert({ name: "x", description: "a fact", type: "project", body: "the body\nline2" });
+      expect(store.get("x")).toEqual({ name: "x", description: "a fact", type: "project", body: "the body\nline2" });
     });
 
-    it("parse is tolerant: missing frontmatter / unknown type fall back, no throw", () => {
-      const noFm = parseMemoryFile("just a body, no frontmatter", "fb");
-      expect(noFm).toEqual({ name: "fb", description: "", type: "project", body: "just a body, no frontmatter" });
-      const badType = parseMemoryFile("---\nname: n\ndescription: d\nmetadata:\n  type: bogus\n---\nbody", "fb");
-      expect(badType!.type).toBe("project");
+    it("read is tolerant: a hand-written file with no frontmatter / unknown type falls back, no throw", () => {
+      store.upsert({ name: "seed", description: "s", body: "s" }); // creates the memory dir
+      writeFileSync(join(root, "memory", "fb.md"), "just a body, no frontmatter", "utf8");
+      expect(store.get("fb")).toEqual({ name: "fb", description: "", type: "project", body: "just a body, no frontmatter" });
+      writeFileSync(join(root, "memory", "bt.md"), "---\nname: bt\ndescription: d\nmetadata:\n  type: bogus\n---\nbody", "utf8");
+      expect(store.get("bt")!.type).toBe("project");
     });
   });
 
@@ -93,26 +87,19 @@ describe("MarkdownMemoryStore (curated cross-session markdown memory)", () => {
       expect(block).toContain("Always pnpm."); // user memory present despite no query match
     });
 
-    it("ranks project memories by keyword overlap with the query", () => {
+    it("orders project memories by keyword overlap with the query (most relevant first)", () => {
       store.upsert({ name: "auth", description: "auth uses JWT", type: "project", body: "tokens via JWT middleware" });
       store.upsert({ name: "css", description: "styling with tailwind", type: "project", body: "utility classes" });
-      const block = store.recall({ query: "how does JWT authentication work", limit: 1 });
-      expect(block).toContain("tokens via JWT middleware");
-      expect(block).not.toContain("utility classes"); // lower-ranked, dropped at limit 1
+      const block = store.recall({ query: "how does JWT authentication work" });
+      // The JWT memory matches the query → it is ordered before the unrelated one.
+      expect(block.indexOf("tokens via JWT middleware")).toBeLessThan(block.indexOf("utility classes"));
     });
 
-    it("semantic ranking via an embedder is accepted and never throws", () => {
-      store.upsert({ name: "a", description: "database indexing", type: "reference", body: "B-tree indexes" });
-      const block = store.recall({ query: "index performance", embedder: new LocalDeterministicEmbedder(), limit: 1 });
-      expect(block).toContain("B-tree indexes");
-    });
-
-    it("respects the char budget (drops bodies beyond it but keeps the index)", () => {
+    it("respects the char budget (drops the least-relevant bodies beyond it)", () => {
       store.upsert({ name: "big1", description: "d1", type: "project", body: "X".repeat(500) });
       store.upsert({ name: "big2", description: "d2", type: "project", body: "Y".repeat(500) });
       const block = store.recall({ query: "d", charBudget: 300 });
-      expect(block).toContain("## Memory index"); // index always kept
-      // budget too small for both 500-char bodies → at most one body block
+      // budget too small for both 500-char bodies → at most one body block fits
       const bodyBlocks = (block.match(/### d\d/g) ?? []).length;
       expect(bodyBlocks).toBeLessThanOrEqual(1);
     });
