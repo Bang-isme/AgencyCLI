@@ -444,7 +444,14 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > **§9 Curated cross-session MARKDOWN memory ✅ (user-requested): đem cơ chế memory kiểu Claude-Code (index + topic file frontmatter) vào AgencyCLI — `MarkdownMemoryStore` (@agency/memory) + tool `remember`/`forget` + recall vào prompt, cờ `AGENCY_FILE_MEMORY`; phân biệt rõ với SQLite episodic store tự động + `agency memory` bridge (knowledge/genome) sẵn có — KHÔNG gộp.**
 > **§2.2 completion-detection — auto-continue turn chính ✅ (2026-06-02):** model tự-ý-dừng-giữa-việc (prose "I'll continue…"/code-placeholder, ngừng gọi tool) HOẶC để stub trên đĩa (`// ...rest of the code`) giờ được nudge tiếp tục có chặn trần thay vì trả turn dở; cờ `AGENCY_AUTO_CONTINUE`, canonical `turn-helpers.detectIncompleteCompletion`+`detectTruncatedArtifact`+`buildAutoContinueNudge`. Xem §2.2.
 > Baseline giờ: core **424** · memory **48** · tui **148** · providers 852 · security **39** · ~2175 test · **33 cờ** · 20 tool.
-> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
+> **CẬP NHẬT 2026-06-02 (HEAD `6c0a9f6`, user OK): CHURN-CLUSTER PROMOTE → ON-BY-DEFAULT.** 4 cờ churn-correctness
+> `toolCallReassembly`/`toolResultTailKept`/`resumeContinuation`/`autoContinue` lật default `hardened`→`true` (on cả 2
+> profile; `AGENCY_*=0` vẫn opt-out về legacy) — vì user chạy legacy nên trước đó 4 fix churn (`cb932d8`/`9a0a03f`/
+> `34a0f23`+`4d97563`/`1c6fc75`) vô dụng (bằng chứng ảnh anime-data.ts 14m56s churn). 3 cờ đầu correctness zero-cost;
+> autoContinue thêm ≤MAX_AUTO_CONTINUE completion chỉ khi model báo unfinished. flags.ts JSDoc/comment cập nhật; 4 test
+> OFF-case set `AGENCY_*=0` tường minh. `pnpm verify` REAL_EXIT_CODE=0 (core 474, cli 573). 36 cờ giữ 36 (chỉ default đổi).
+> ⚠ User VẪN phải `pnpm -r build` + restart TUI (dist cũ vẫn churn). Live churn repro cần key (config placeholder).
+> ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: index re-index worker-offload + native-mode warning; promote hardened→default cho CÁC cờ CÒN LẠI [security enforce/prompt-cache/semantic-memory/context-compaction/path-confinement…] vẫn cần BYOK eval + user OK — churn-cluster ĐÃ tách ra promote riêng vì là correctness không cần key.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
 > **Đã làm:** helper dùng chung `reduceHistoryToFit(turnHistory, newLimit, ctx)` (`chat/turn-helpers.ts`,
