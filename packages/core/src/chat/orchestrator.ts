@@ -33,7 +33,7 @@ import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, r
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
 import { EventBus } from "../events/event-bus.js";
 import { runGateQuick } from "../task/runner.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
@@ -241,6 +241,10 @@ export async function runChatTurn(
 
     loopCount = 0;
     let autoContinueCount = 0; // bounded auto-continues on a detected-unfinished stop
+    // §8.10 — partial tool-call XML carried across token-limit continuations so a
+    // write_file split by the output limit reassembles into one executable call.
+    let carryOverText = "";
+    const MAX_TOOLCALL_CARRYOVER = 1_000_000; // give up reassembly past ~1MB
     resetToolCircuitBreaker(); // fresh breaker per turn (no cross-turn leak)
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
@@ -349,9 +353,14 @@ export async function runChatTurn(
       llmText += currentText;
       traceRecorder?.recordLlmResponse(currentText, lastFinishReason);
 
-      // Check for XML tool calls
-      const toolCalls = parseToolCalls(currentText);
+      // Check for XML tool calls. When reassembly is on and a previous
+      // completion left a partial (length-truncated) tool call, parse the
+      // combined buffer so a split write_file resolves into one complete call.
+      const reassembleToolCalls = getRuntimeFlags().toolCallReassembly;
+      const toolCallSource = reassembleToolCalls && carryOverText ? carryOverText + currentText : currentText;
+      const toolCalls = parseToolCalls(toolCallSource);
       if (toolCalls.length > 0) {
+        carryOverText = ""; // consumed — the call(s) parsed completely
         for (const tc of toolCalls) {
           if (isFileWritingTool(tc.name) && tc.arguments.path) {
             filesWritten.add(tc.arguments.path);
@@ -470,6 +479,14 @@ export async function runChatTurn(
 
       const lowerReason = lastFinishReason.toLowerCase();
       if (lowerReason === "length" || lowerReason === "max_tokens" || lowerReason === "max_token_tokens" || lowerReason === "max_tokens_budget") {
+        // Carry a tool call cut off mid-content forward so the next completion's
+        // tail reassembles it (see stream.ts); off → carryOverText stays "".
+        carryOverText =
+          reassembleToolCalls &&
+          hasUnclosedToolCall(toolCallSource) &&
+          toolCallSource.length <= MAX_TOOLCALL_CARRYOVER
+            ? toolCallSource
+            : "";
         turnHistory = [
           ...turnHistory,
           { role: "assistant" as const, content: currentText },
@@ -491,6 +508,7 @@ export async function runChatTurn(
         // on-disk state and run another bounded iteration instead of returning a
         // half-done turn. Off → byte-identical break (legacy).
         autoContinueCount++;
+        carryOverText = ""; // a normal (non-tool, non-length) completion — drop any partial
         turnHistory = [
           ...turnHistory,
           { role: "assistant" as const, content: currentText },
@@ -498,6 +516,7 @@ export async function runChatTurn(
         ];
         loopCount++;
       } else {
+        carryOverText = "";
         break;
       }
     }

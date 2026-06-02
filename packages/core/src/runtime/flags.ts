@@ -165,6 +165,19 @@ export interface RuntimeFlags {
    * §2.2 / §8 completion detection.
    */
   autoContinue: boolean;
+  /**
+   * Reassemble a tool call that the output-token limit split across
+   * length-continuations. A large `write_file` whose content exceeds one
+   * response is cut off before its closing `</tool_call>` tag; `parseToolCalls`
+   * needs that tag, so the call is dropped and the write never happens — the
+   * model then sees the file as missing/"corrupted", rewrites it (truncating
+   * again), and churns to the loop limit. When on, the turn loop carries the
+   * partial tool-call XML forward and parses the combined buffer once the model
+   * finishes it on the next completion, so the write executes exactly once. Off
+   * in legacy (only the latest completion is parsed → byte-identical), on in
+   * hardened. Roadmap §8.10 (large-file write robustness).
+   */
+  toolCallReassembly: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -292,5 +305,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // another bounded loop iteration instead of ending) → off in legacy (the
     // turn ends, byte-identical), on in hardened.
     autoContinue: parseBool(env.AGENCY_AUTO_CONTINUE, hardened),
+    // Behaviour-changing (carries a split tool call across continuations and
+    // parses the combined buffer → a large write executes once instead of being
+    // dropped) → off in legacy (latest-completion parse only, byte-identical),
+    // on in hardened.
+    toolCallReassembly: parseBool(env.AGENCY_TOOLCALL_REASSEMBLY, hardened),
   };
 }

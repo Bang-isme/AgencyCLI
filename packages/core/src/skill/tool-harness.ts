@@ -76,6 +76,20 @@ export function parseToolCalls(text: string): ToolCall[] {
 }
 
 /**
+ * True when `text` contains a tool-call opening tag with no matching close tag —
+ * i.e. a tool call cut off mid-stream (typically a large `write_file` whose
+ * content exceeded the output-token limit). `parseToolCalls` needs the closing
+ * tag, so such a call is otherwise dropped and never executed; the turn loop
+ * uses this to detect the situation and reassemble the call across the model's
+ * length-continuations instead of silently losing the write.
+ */
+export function hasUnclosedToolCall(text: string): boolean {
+  const opens = (text.match(/<(?:tool_call|invoke|invoke_call)\b/g) || []).length;
+  const closes = (text.match(/<\/\s*(?:tool_call|invoke|invoke_call)\s*>/g) || []).length;
+  return opens > closes;
+}
+
+/**
  * Retry configuration for tool execution with exponential backoff
  */
 const RETRY_CONFIG = {
