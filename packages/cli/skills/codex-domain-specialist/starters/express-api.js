@@ -1,5 +1,5 @@
 ﻿// ============================================
-// EXPRESS API STARTER - Production-Ready
+// EXPRESS API STARTER
 // ============================================
 import express from 'express';
 import cors from 'cors';

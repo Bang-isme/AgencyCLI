@@ -30,6 +30,8 @@ GENERIC_PHRASES = (
     "robust solution",
     "seamless workflow",
     "optimize the process",
+    "industry standard",
+    "proper implementation",
     "improve quality",
     "user-friendly",
     "production-ready",
@@ -42,6 +44,35 @@ GENERIC_PHRASES = (
     "sẵn sàng production",
     "tối ưu quy trình",
 )
+# Self-congratulatory marketing puffery — an "amateur tell" in a technical
+# deliverable. These describe greatness without evidence; the fix is always to
+# replace them with a measured claim (a benchmark number, a comparison, a named
+# constraint). Domain-legitimate words ("premium"/"luxury"/"editorial" design
+# vocabulary, "next-generation firewall") are deliberately excluded to avoid
+# false positives. Folded into GENERIC_PHRASES for scoring.
+MARKETING_PUFFERY = (
+    "enterprise-grade",
+    "world-class",
+    "best-in-class",
+    "state-of-the-art",
+    "cutting-edge",
+    "bleeding-edge",
+    "battle-tested",
+    "rock-solid",
+    "industry-leading",
+    "game-changing",
+    "game-changer",
+    "blazing fast",
+    "blazing-fast",
+    "lightning fast",
+    "lightning-fast",
+    "supercharged",
+    "supercharge",
+    "turnkey",
+    "đẳng cấp thế giới",
+    "hàng đầu ngành",
+)
+GENERIC_PHRASES = GENERIC_PHRASES + MARKETING_PUFFERY
 MOJIBAKE_FRAGMENTS = (
     "Ãƒ",
     "Ã¢",
