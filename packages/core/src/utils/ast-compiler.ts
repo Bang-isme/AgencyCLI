@@ -47,7 +47,14 @@ export function replaceMethodBody(
 }
 
 /**
- * Replaces the body of a standalone function declaration.
+ * Replaces the body of a function by name. Handles all three common shapes a
+ * model writes a named function as:
+ *   - a declaration:           function NAME(...) { ... }
+ *   - an arrow const:          const NAME = (...) => { ... }
+ *   - a function-expression:   const NAME = function (...) { ... }
+ * Only block bodies (`{ ... }`) are replaceable; an expression-body arrow
+ * (`const NAME = () => expr`) has no block to swap and is left to throw so the
+ * caller falls back to edit_file rather than silently changing return semantics.
  */
 export function replaceFunctionBody(
   sourceCode: string,
@@ -55,11 +62,25 @@ export function replaceFunctionBody(
   newBody: string
 ): string {
   const sourceFile = ts.createSourceFile("file.ts", sourceCode, ts.ScriptTarget.Latest, true);
-  let targetNode: ts.FunctionDeclaration | undefined;
+  let bodyNode: ts.Block | undefined;
 
   function findNode(node: ts.Node) {
-    if (ts.isFunctionDeclaration(node) && node.name && node.name.text === functionName) {
-      targetNode = node;
+    if (bodyNode) return;
+    // function NAME(...) { ... }
+    if (ts.isFunctionDeclaration(node) && node.name && node.name.text === functionName && node.body) {
+      bodyNode = node.body;
+      return;
+    }
+    // const/let/var NAME = (...) => { ... }  |  = function (...) { ... }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === functionName &&
+      node.initializer &&
+      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) &&
+      ts.isBlock(node.initializer.body)
+    ) {
+      bodyNode = node.initializer.body;
       return;
     }
     ts.forEachChild(node, findNode);
@@ -67,12 +88,14 @@ export function replaceFunctionBody(
 
   findNode(sourceFile);
 
-  if (!targetNode || !targetNode.body) {
-    throw new Error(`Function ${functionName} not found or has no body.`);
+  if (!bodyNode) {
+    throw new Error(
+      `Function ${functionName} not found or has no replaceable block body (an expression-body arrow has no block — use edit_file).`
+    );
   }
 
-  const start = targetNode.body.getStart(sourceFile);
-  const end = targetNode.body.getEnd();
+  const start = bodyNode.getStart(sourceFile);
+  const end = bodyNode.getEnd();
 
   let bodyReplacement = newBody.trim();
   if (!bodyReplacement.startsWith("{")) {

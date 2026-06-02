@@ -432,6 +432,32 @@ Here is my decision:
       expect(content).not.toContain("a - b");
     });
 
+    it("ast_edit replace_function_body works on an arrow-function const", async () => {
+      writeFileSync(join(tempDir, "arrow.ts"), "const add = (a, b) => {\n  return a - b;\n};", "utf8");
+      const res = await executeTool(
+        "ast_edit",
+        { path: "arrow.ts", operation: "replace_function_body", target: "add", replacement: "return a + b;" },
+        tempDir
+      );
+      expect(res).toContain("Success");
+      const content = readFileSync(join(tempDir, "arrow.ts"), "utf8");
+      expect(content).toContain("return a + b;");
+      expect(content).not.toContain("a - b");
+      // The arrow wrapper is preserved — only the block body was swapped.
+      expect(content).toContain("const add = (a, b) =>");
+    });
+
+    it("ast_edit replace_function_body works on a function-expression const", async () => {
+      writeFileSync(join(tempDir, "fe.ts"), "const mul = function (a, b) {\n  return 0;\n};", "utf8");
+      const res = await executeTool(
+        "ast_edit",
+        { path: "fe.ts", operation: "replace_function_body", target: "mul", replacement: "return a * b;" },
+        tempDir
+      );
+      expect(res).toContain("Success");
+      expect(readFileSync(join(tempDir, "fe.ts"), "utf8")).toContain("return a * b;");
+    });
+
     it("ast_edit returns a clear error on missing operation args", async () => {
       writeFileSync(join(tempDir, "x.ts"), "const a = 1;", "utf8");
       const res = await executeTool(

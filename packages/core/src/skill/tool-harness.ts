@@ -569,7 +569,7 @@ registry.register({
 registry.register({
   name: "ast_edit",
   description:
-    "Precise TypeScript/JavaScript structural edit via the AST — more reliable than edit_file's text search/replace for renames and whole-body swaps. operation: rename_symbol (target=old name, replacement=new name) | replace_function_body (target=fn name, replacement=new body) | replace_method_body (className + target=method, replacement=new body) | modify_import (target=module, addImports/removeImports=comma-separated) | delete_node (target=fn/class/var name) | insert_function (replacement=full function code).",
+    "Precise TypeScript/JavaScript structural edit via the AST — more reliable than edit_file's text search/replace for renames and whole-body swaps. operation: rename_symbol (target=old name, replacement=new name) | replace_function_body (target=fn name, replacement=new body; works on `function NAME(){}`, `const NAME = () => {}`, and `const NAME = function(){}` with a `{}` body) | replace_method_body (className + target=method, replacement=new body) | modify_import (target=module, addImports/removeImports=comma-separated) | delete_node (target=fn/class/var name) | insert_function (replacement=full function code).",
   category: "write",
   schema: z.object({
     path: z.string(),
