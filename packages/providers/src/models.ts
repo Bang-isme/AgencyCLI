@@ -40,6 +40,26 @@ const GOOGLE_MODELS: ModelInfo[] = [
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", contextWindow: 1_000_000, provider: "google" },
 ];
 
+// Minimal static catalogs for the built-in remote providers (openai / openrouter
+// / nvidia) whose model lists normally require an API call (and therefore a key).
+// Without one, the provider used to vanish entirely from the picker — confusing
+// ("where did NVIDIA go?"). Surfacing their well-known default model keeps every
+// built-in provider visible (mirrors the hardcoded anthropic/google lists); the
+// user picks it and runs /connect to add a key. The live /models fetch replaces
+// these the moment a key resolves.
+const REMOTE_FALLBACK_MODELS: Partial<Record<ProviderId, ModelInfo[]>> = {
+  openai: [
+    { id: "gpt-4o", name: "GPT-4o", contextWindow: 128_000, provider: "openai" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini", contextWindow: 128_000, provider: "openai" },
+  ],
+  openrouter: [
+    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", contextWindow: 128_000, provider: "openrouter" },
+  ],
+  nvidia: [
+    { id: "meta/llama3-70b-instruct", name: "Llama3 70B Instruct", contextWindow: 8_192, provider: "nvidia" },
+  ],
+};
+
 function extractModelName(id: string): string {
   // Clean up model IDs to human-readable names
   const base = id.split("/").pop() ?? id;
@@ -47,6 +67,25 @@ function extractModelName(id: string): string {
     .replace(/[-_]/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .slice(0, 40);
+}
+
+/**
+ * Static catalog for a built-in remote provider with no resolvable API key yet,
+ * so it still appears in the picker (the user's configured model first, then the
+ * provider defaults). Returns [] for providers that have no fallback entry.
+ */
+function keylessFallbackModels(
+  providerId: ProviderId,
+  profile?: ProviderProfile,
+): ModelInfo[] {
+  const base = REMOTE_FALLBACK_MODELS[providerId] ?? [];
+  if (profile?.model && !base.some((m) => m.id === profile.model)) {
+    return [
+      { id: profile.model, name: extractModelName(profile.model), provider: providerId },
+      ...base,
+    ];
+  }
+  return base;
 }
 
 async function fetchModelsFromEndpoint(
@@ -137,7 +176,9 @@ export async function listProviderModels(
 
   const apiKey = resolveApiKey(profile);
   const isBuiltInRemote = ["openai", "openrouter", "nvidia"].includes(providerId);
-  if (!apiKey && isBuiltInRemote) return [];
+  // No key yet → don't drop the provider; surface its static fallback catalog so
+  // it stays visible in the picker (the user picks it, then /connect to add a key).
+  if (!apiKey && isBuiltInRemote) return keylessFallbackModels(providerId, profile);
 
   let fetched: ModelInfo[] = [];
 
@@ -183,13 +224,10 @@ export async function listAllModels(
   const providers = Array.from(new Set([...builtIns, ...configured]));
 
   const results = await Promise.allSettled(
-    providers.map(async (id) => {
-      const profile = config.providers[id];
-      const key = resolveApiKey(profile);
-      const isBuiltInRemote = ["openai", "openrouter", "nvidia"].includes(id);
-      if (!key && isBuiltInRemote) return [];
-      return listProviderModels(id, profile, fetchImpl);
-    })
+    // `listProviderModels` now handles the keyless-remote case itself (returns a
+    // static fallback catalog instead of [] without making a network call), so a
+    // built-in provider stays visible in the picker even before a key is added.
+    providers.map((id) => listProviderModels(id, config.providers[id], fetchImpl))
   );
 
   return results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));

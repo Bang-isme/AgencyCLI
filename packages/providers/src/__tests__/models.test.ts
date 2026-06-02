@@ -120,6 +120,50 @@ describe("providers/models", () => {
     expect(modelsFail[0].id).toBe("my-custom-model");
   });
 
+  it("keyless built-in remote providers surface a static fallback (don't vanish from the picker)", async () => {
+    // No profile → no API key. Must NOT hit the network and MUST return a
+    // non-empty catalog so nvidia/openai/openrouter stay visible.
+    const fetchImpl = vi.fn();
+
+    const nvidia = await listProviderModels("nvidia", undefined, fetchImpl as unknown as typeof fetch);
+    expect(nvidia.length).toBeGreaterThan(0);
+    expect(nvidia[0].provider).toBe("nvidia");
+    expect(nvidia.some((m) => m.id === "meta/llama3-70b-instruct")).toBe(true);
+
+    const openai = await listProviderModels("openai", undefined, fetchImpl as unknown as typeof fetch);
+    expect(openai.some((m) => m.id === "gpt-4o-mini")).toBe(true);
+
+    const openrouter = await listProviderModels("openrouter", undefined, fetchImpl as unknown as typeof fetch);
+    expect(openrouter.length).toBeGreaterThan(0);
+
+    // A keyless remote provider must never make a network call for its fallback.
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keyless fallback puts the user's configured model first", async () => {
+    const fetchImpl = vi.fn();
+    const models = await listProviderModels(
+      "nvidia",
+      { model: "minimaxai/minimax-m2.7" },
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(models[0].id).toBe("minimaxai/minimax-m2.7");
+    expect(models.some((m) => m.id === "meta/llama3-70b-instruct")).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("a built-in remote provider WITH a key still fetches live models (fallback not used)", async () => {
+    const fetchImpl = mockFetch({ json: { data: [{ id: "nvidia/live-model" }] } });
+    const models = await listProviderModels(
+      "nvidia",
+      { apiKey: "real-key" },
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(models).toHaveLength(1);
+    expect(models[0].id).toBe("nvidia/live-model");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("queries standard OpenAI-compatible /models endpoint for custom providers", async () => {
     const fetchImpl = mockFetch({
       json: {
