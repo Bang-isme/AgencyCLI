@@ -124,8 +124,8 @@ describe("§8.10 tool-call reassembly across token-limit continuations", () => {
     expect(readFileSync(target, "utf8")).toBe("PART1PART2");
   });
 
-  it("flag OFF (legacy stream): the split write is dropped — file never written (byte-identical)", async () => {
-    delete process.env.AGENCY_TOOLCALL_REASSEMBLY; // legacy default = off
+  it("flag OFF (opt-out stream): the split write is dropped — file never written (legacy path preserved)", async () => {
+    process.env.AGENCY_TOOLCALL_REASSEMBLY = "0"; // explicit opt-out (now on by default)
     mockedGetProvider.mockReturnValue(splitWriter("out.txt") as any);
 
     await runChatTurnWithStream(

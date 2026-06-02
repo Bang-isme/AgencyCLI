@@ -644,8 +644,8 @@ Here is my decision:
       else process.env.AGENCY_PROFILE = prevProfile;
     });
 
-    it("OFF (legacy): drops the trailing errors of a command result (reproduces the bug)", () => {
-      delete process.env.AGENCY_TOOLRESULT_TAIL;
+    it("OFF (opt-out): drops the trailing errors of a command result (legacy head-only path)", () => {
+      process.env.AGENCY_TOOLRESULT_TAIL = "0"; // explicit opt-out (now on by default)
       const out = truncateToolResult("execute_command", longCmd);
       expect(out).toContain("Exit Code: 1");
       expect(out).not.toContain("FATAL_ERROR_MARKER");

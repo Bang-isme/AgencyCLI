@@ -126,9 +126,10 @@ export interface RuntimeFlags {
    * of every file the turn modified with its current size. The legacy notice was
    * a generic "response truncated" line that was never folded into the returned
    * text, so the NEXT turn's history had no record of it and a "continue"
-   * restarted the file from scratch. Off in legacy (legacy notice preserved
-   * byte-identical, not persisted to history), on in hardened. Roadmap §8.10
-   * (loop/resume robustness).
+   * restarted the file from scratch. On by default in both profiles (churn-cluster
+   * correctness fix); set AGENCY_RESUME_CONTINUATION=0 to restore the legacy
+   * generic, never-persisted truncation notice. Roadmap §8.10 (loop/resume
+   * robustness).
    */
   resumeContinuation: boolean;
   /**
@@ -160,8 +161,9 @@ export interface RuntimeFlags {
    * promise, a "to be continued" marker, or a left-in "…rest of the code"
    * placeholder. Instead of returning a half-done turn (the user then has to
    * notice and type "continue"), feed a bounded resume nudge and run another loop
-   * iteration (capped at MAX_AUTO_CONTINUE, still within maxLoops). Off in legacy
-   * (a no-tool-call turn ends the loop, byte-identical), on in hardened. Roadmap
+   * iteration (capped at MAX_AUTO_CONTINUE, still within maxLoops). On by default
+   * in both profiles (churn-cluster correctness fix); set AGENCY_AUTO_CONTINUE=0 to
+   * restore the legacy behaviour where a no-tool-call turn ends the loop. Roadmap
    * §2.2 / §8 completion detection.
    */
   autoContinue: boolean;
@@ -173,9 +175,10 @@ export interface RuntimeFlags {
    * model then sees the file as missing/"corrupted", rewrites it (truncating
    * again), and churns to the loop limit. When on, the turn loop carries the
    * partial tool-call XML forward and parses the combined buffer once the model
-   * finishes it on the next completion, so the write executes exactly once. Off
-   * in legacy (only the latest completion is parsed → byte-identical), on in
-   * hardened. Roadmap §8.10 (large-file write robustness).
+   * finishes it on the next completion, so the write executes exactly once. On by
+   * default in both profiles (churn-cluster correctness fix); set
+   * AGENCY_TOOLCALL_REASSEMBLY=0 to restore the legacy latest-completion-only parse.
+   * Roadmap §8.10 (large-file write robustness).
    */
   toolCallReassembly: boolean;
   /**
@@ -185,9 +188,10 @@ export interface RuntimeFlags {
    * legacy cap kept only the head, so a verbose build that overflowed showed the
    * model its progress logs plus a "truncated" note but dropped the real errors
    * at the bottom (stderr + the tail of stdout): the model saw a non-zero exit it
-   * couldn't explain and churned. Off in legacy (head-only truncation preserved
-   * byte-identical), on in hardened. Other tools (read_file, grep) stay head-only
-   * regardless — their head is what was asked for and read_file ranges fetch more.
+   * couldn't explain and churned. On by default in both profiles (churn-cluster
+   * correctness fix); set AGENCY_TOOLRESULT_TAIL=0 to restore the legacy head-only
+   * truncation. Other tools (read_file, grep) stay head-only regardless — their
+   * head is what was asked for and read_file ranges fetch more.
    */
   toolResultTailKept: boolean;
   /**
@@ -315,10 +319,11 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Behaviour-changing (relaxes the "exactly 5 approaches" output rule) → off
     // in legacy (rule preserved verbatim), on in hardened.
     softApproaches: parseBool(env.AGENCY_SOFT_APPROACHES, hardened),
-    // Behaviour-changing (folds a resume notice into the assistant text at loop
-    // exhaustion → changes the returned text + next-turn history) → off in legacy
-    // (the generic truncation notice preserved byte-identical), on in hardened.
-    resumeContinuation: parseBool(env.AGENCY_RESUME_CONTINUATION, hardened),
+    // Churn-cluster correctness fix → on by default in BOTH profiles: a "continue"
+    // after loop exhaustion must see the on-disk state, not restart from scratch.
+    // Opt out with AGENCY_RESUME_CONTINUATION=0 to restore the legacy generic,
+    // never-persisted truncation notice.
+    resumeContinuation: parseBool(env.AGENCY_RESUME_CONTINUATION, true),
     // Behaviour-changing (shortens the per-turn tool docs → fewer prompt tokens)
     // → off in legacy (verbose docs byte-identical), on in hardened.
     compactToolDocs: parseBool(env.AGENCY_COMPACT_TOOL_DOCS, hardened),
@@ -326,19 +331,21 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // advertises the `remember` tool) → off in legacy (no markdown recall, tool
     // not advertised → byte-identical), on in hardened.
     fileMemory: parseBool(env.AGENCY_FILE_MEMORY, hardened),
-    // Behaviour-changing (a no-tool-call turn that signals "unfinished" runs
-    // another bounded loop iteration instead of ending) → off in legacy (the
-    // turn ends, byte-identical), on in hardened.
-    autoContinue: parseBool(env.AGENCY_AUTO_CONTINUE, hardened),
-    // Behaviour-changing (carries a split tool call across continuations and
-    // parses the combined buffer → a large write executes once instead of being
-    // dropped) → off in legacy (latest-completion parse only, byte-identical),
-    // on in hardened.
-    toolCallReassembly: parseBool(env.AGENCY_TOOLCALL_REASSEMBLY, hardened),
-    // Behaviour-changing (keeps a head+tail window for command output so the
-    // model sees errors at the end → different truncated content) → off in legacy
-    // (head-only truncation byte-identical), on in hardened.
-    toolResultTailKept: parseBool(env.AGENCY_TOOLRESULT_TAIL, hardened),
+    // Churn-cluster correctness fix → on by default in BOTH profiles: a turn that
+    // explicitly signalled unfinished work continues instead of stranding the user
+    // on a half-done result. Bounded by MAX_AUTO_CONTINUE within maxLoops. Opt out
+    // with AGENCY_AUTO_CONTINUE=0 to restore the legacy turn-ends-immediately path.
+    autoContinue: parseBool(env.AGENCY_AUTO_CONTINUE, true),
+    // Churn-cluster correctness fix → on by default in BOTH profiles: a write split
+    // across token-limit continuations is rejoined and executes once instead of
+    // being dropped (→ no "file corrupted, rewrite from scratch" churn). Opt out
+    // with AGENCY_TOOLCALL_REASSEMBLY=0 to restore the legacy latest-completion parse.
+    toolCallReassembly: parseBool(env.AGENCY_TOOLCALL_REASSEMBLY, true),
+    // Churn-cluster correctness fix → on by default in BOTH profiles: an overflowing
+    // command result keeps its trailing compiler/test errors + exit summary so the
+    // model isn't blind to why a build failed. Opt out with AGENCY_TOOLRESULT_TAIL=0
+    // to restore the legacy head-only truncation. Other tools stay head-only.
+    toolResultTailKept: parseBool(env.AGENCY_TOOLRESULT_TAIL, true),
     // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
     // → off in legacy (no confinement, byte-identical), on in hardened.
     pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),

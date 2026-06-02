@@ -129,8 +129,8 @@ describe("§8.10 resume-continuation wiring (loop exhaustion)", () => {
     expect(result.assistantText).not.toContain("Response truncated");
   });
 
-  it("flag OFF (legacy): generic truncation notice only, nothing folded into assistantText (byte-identical)", async () => {
-    delete process.env.AGENCY_RESUME_CONTINUATION; // legacy default = off
+  it("flag OFF (opt-out): generic truncation notice only, nothing folded into assistantText (legacy path preserved)", async () => {
+    process.env.AGENCY_RESUME_CONTINUATION = "0"; // explicit opt-out (now on by default)
     mockedGetProvider.mockReturnValue(neverFinishingWriter("page.html"));
     const deltas: string[] = [];
 

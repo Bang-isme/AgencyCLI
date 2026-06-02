@@ -154,8 +154,8 @@ describe("auto-continue wiring (unfinished natural stop)", () => {
     expect(provider.complete).toHaveBeenCalledTimes(1 + MAX_AUTO_CONTINUE);
   });
 
-  it("flag OFF (legacy): a no-tool-call turn ends the loop immediately (byte-identical)", async () => {
-    delete process.env.AGENCY_AUTO_CONTINUE; // legacy default = off
+  it("flag OFF (opt-out): a no-tool-call turn ends the loop immediately (legacy path preserved)", async () => {
+    process.env.AGENCY_AUTO_CONTINUE = "0"; // explicit opt-out (now on by default)
     const provider = alwaysPromising();
     mockedGetProvider.mockReturnValue(provider);
 
