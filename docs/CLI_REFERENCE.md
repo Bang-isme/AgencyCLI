@@ -19,7 +19,9 @@ agency <command> [opts] → Headless (Commander subcommand)
 
 ---
 
-## Headless Commands (21 subcommands)
+## Headless Commands
+
+> The list below may lag the code — `agency --help` (and `agency <cmd> --help`) is the authoritative, live command list.
 
 ### `agency chat <prompt>`
 Run a single hybrid route + LLM reply turn (human-readable by default).

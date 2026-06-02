@@ -130,7 +130,7 @@ pnpm agency run "npm test"
 ### 3. Testing
 
 ```bash
-# ▶ THE ground-truth gate — build all 16 packages + run the full suite (~2001 tests).
+# ▶ THE ground-truth gate — build all 16 packages + run the full test suite.
 #   Run this before claiming "green" or committing a change. Don't assert green — verify it.
 pnpm verify            # = pnpm -r build && pnpm -r test
 

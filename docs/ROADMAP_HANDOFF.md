@@ -372,7 +372,7 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
   **tree sạch**: `0d216b9`(init/recovery, 981 file) → `656498d`(fix memory observability) →
   `1cb58c1`(verify gate + CI) → `b9f33e9`(§2.3 compaction). Chi tiết: HARDENING_HANDOFF.md §6.
 - **Quy tắc: chạy `pnpm verify` (build+test cả 16 package) TRƯỚC khi claim green** — trị bệnh "xanh ảo"
-  tái diễn của repo. Baseline đã tự verify: build 16/16, ~2001 test, exit 0 (core 350 · cli 547 · tui 115 …).
+  tái diễn của repo. Baseline đã tự verify: build 16/16, exit 0 (số khi LẬP gate: ~2001 test / core 350 · cli 547 · tui 115 — đã cũ; số HIỆN TẠI ở §8 banner đầu mục).
   Commit kết thúc message bằng trailer `Co-Authored-By`. CI kích hoạt khi có remote GitHub (hiện local-only).
 - **Bắt đầu session sau:** đọc HARDENING_HANDOFF.md §5 (banner **LATEST** → git history + verify gate +
   §2.3 compaction + audit wired-or-dead; top pick = wire-or-delete 1 module dead, hoặc đo eval corpus khó hơn).

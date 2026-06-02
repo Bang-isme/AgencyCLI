@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Agency CLI là một **monorepo AI agent CLI** gồm 16 packages, xây dựng bằng TypeScript (ESM, NodeNext), chạy trên Node ≥22, quản lý bằng pnpm workspaces. Hệ thống cung cấp cả chế độ **headless CLI** (21 subcommands) và **TUI tương tác** (React/Ink terminal UI).
+Agency CLI là một **monorepo AI agent CLI** gồm 16 packages, xây dựng bằng TypeScript (ESM, NodeNext), chạy trên Node ≥22, quản lý bằng pnpm workspaces. Hệ thống cung cấp cả chế độ **headless CLI** (chạy `agency --help` để xem danh sách lệnh hiện tại) và **TUI tương tác** (React/Ink terminal UI).
 
 ## Cấu trúc Monorepo
 

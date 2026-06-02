@@ -27,7 +27,7 @@
 | `@agency/governance` | 1 | 3 |
 | `@agency/contracts` | 0 | 0 |
 
-**Total: 127 test files, ~1,876 tests across 15 packages (1 skipped).**
+**Total: run `pnpm verify` (= `pnpm -r build && pnpm -r test`) for the live count across all 16 packages — the single source of truth. The per-package numbers above are an illustrative snapshot and drift every slice; the ROADMAP §8 banner carries the latest totals.**
 
 > The "Tests" column is the count Vitest reports at runtime. Several suites generate tests programmatically inside loops — `@agency/providers` (831, across the 23-model thinking-spec matrix) and `@agency/cli`'s `native-harness.test.ts` (520 in one file) — so the runtime count is far higher than a static count of `it()` literals in the source.
 

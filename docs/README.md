@@ -27,7 +27,7 @@ Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (Reac
 |----------|-------------|
 | [CLI_REFERENCE.md](./CLI_REFERENCE.md) | Complete command reference: 21 headless commands and 20+ TUI slash commands with all options |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Development guide: build system, conventions, adding packages/commands/components/providers, CI/CD scripts |
-| [TESTING.md](./TESTING.md) | Test infrastructure: 127 test files, ~1,876 tests across 15 packages, patterns per package, coverage gaps |
+| [TESTING.md](./TESTING.md) | Test infrastructure: patterns per package, coverage gaps (run `pnpm verify` for live test counts) |
 
 ### Security & Safety
 
@@ -109,4 +109,4 @@ pnpm -r test
 - **6 LLM providers**: OpenAI, Anthropic, Google, OpenRouter, NVIDIA, local (Ollama)
 - **Deterministic replay**: Full session recording + replay for regression detection
 - **Defense-in-depth**: 3-layer security (approval → escalation → sandbox)
-- **127 test files, ~1,876 tests**: Vitest across 15 packages
+- **Vitest across all 16 packages** (run `pnpm verify` for the live test count)
