@@ -53,10 +53,10 @@ export function WelcomeMenu({
         {/* Header Title */}
         <Box justifyContent="space-between" overflow="hidden">
           <Text color={theme.accent} bold wrap="truncate">
-            {headerIcon} {isNarrow ? "AGENCY" : "AGENCY SYSTEM KERNEL"}
+            {headerIcon} AGENCY
           </Text>
           <Text color={theme.success} bold>
-            <Text color={tick % 16 < 8 ? theme.success : theme.accent}>●</Text> ONLINE
+            <Text color={tick % 16 < 8 ? theme.success : theme.accent}>●</Text> ready
           </Text>
         </Box>
 

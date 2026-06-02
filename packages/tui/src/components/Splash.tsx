@@ -134,22 +134,21 @@ export function GlitchLogo({ logo, tick, theme, stage }: GlitchLogoProps) {
 
 const getExitLogLine = (index: number): string => {
   const logs = [
-    "→ Establishing secure communications...",
-    "✓ Decrypted system credentials",
-    "✓ Workspace memory allocated",
-    "✓ Provider endpoint verification passed",
-    "→ Spawning cognitive execution layers...",
-    "✓ Injecting runtime skills hooks",
-    "✓ Secure local client socket ready",
-    "→ Verifying workspace integrity...",
-    "✓ Environment verification completed",
-    "→ Launching agent operating system...",
+    "→ Loading skills…",
+    "✓ Skills bridge ready",
+    "→ Reading workspace context…",
+    "✓ Workspace ready",
+    "→ Connecting providers…",
+    "✓ Providers ready",
+    "→ Starting runtime…",
+    "✓ Runtime ready",
+    "→ Launching…",
   ];
   return logs[index % logs.length]!;
 };
 
 /**
- * BIOS System Control Dashboard Splash screen.
+ * Animated startup splash screen.
  */
 export function Splash({
   theme,
@@ -242,9 +241,9 @@ export function Splash({
       >
         {/* Header Title */}
         <Box justifyContent="space-between" paddingBottom={0} overflow="hidden">
-          <Text color={theme.accent} bold wrap="truncate">{headerIcon} {cols < 65 ? "AGENCY" : "AGENCY SYSTEM KERNEL"}</Text>
+          <Text color={theme.accent} bold wrap="truncate">{headerIcon} AGENCY</Text>
           <Text color={theme.success} bold wrap="truncate">
-            <Text color={tick % 16 < 8 ? theme.success : theme.accent}>●</Text> ONLINE
+            <Text color={tick % 16 < 8 ? theme.success : theme.accent}>●</Text> ready
           </Text>
         </Box>
 
@@ -264,7 +263,7 @@ export function Splash({
         {/* Divider */}
         <ScanningDivider width={innerWidth} tick={tick} theme={theme} phaseOffset={15} />
 
-        {/* Telemetry Columns or Exit Decryption Logs */}
+        {/* Diagnostics columns or exit log lines */}
         {exitTickCount !== null ? (
           <Box flexDirection="column" paddingY={1} height={isNarrow ? 5 : 7} overflow="hidden">
             {Array.from({ length: isNarrow ? 3 : 5 }).map((_, i) => {
@@ -366,15 +365,15 @@ export function Splash({
         <Box justifyContent="center" paddingBottom={1} overflow="hidden">
           {exitTickCount !== null ? (
             <Text color={theme.warning} bold wrap="truncate">
-              → Launching execution kernel...
+              → Launching…
             </Text>
           ) : ready ? (
             <Text color={theme.success} bold wrap="truncate">
-              {cols < 65 ? "● Kernel ready · Press any key" : "● Kernel ready · Press any key to initialize runtime"}
+              {cols < 65 ? "● Ready · press any key" : "● Ready · press any key to continue"}
             </Text>
           ) : (
             <Text color={theme.warning} bold wrap="truncate">
-              {spinner} {cols < 65 ? "Booting runtime" : "Initializing orchestration runtime"}{dots}
+              {spinner} {cols < 65 ? "Starting" : "Starting Agency"}{dots}
             </Text>
           )}
         </Box>
