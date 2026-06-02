@@ -2,7 +2,7 @@
 
 > **Cách dùng:** dán nguyên khối từ dòng `---` dưới đây vào tin nhắn đầu của một phiên Claude Code mới trên repo này.
 > Prompt **trỏ tới** docs/memory thật (không sao chép nội dung) nên không tự trùng lặp và luôn đồng bộ với docs.
-> Số liệu là ảnh chụp lúc soạn (2026-06-02, HEAD `bd13978` trên `master`, cây sạch) — phiên mới **xác nhận lại bằng docs + `git log` + `pnpm verify`**.
+> Số liệu là ảnh chụp lúc soạn (2026-06-02, HEAD `b600b45` trên `master`, cây sạch) — phiên mới **xác nhận lại bằng docs + `git log` + `pnpm verify`**.
 
 ---
 
@@ -19,7 +19,7 @@ Bạn tiếp quản **AgencyCLI** (`D:\AgencyCLI`) — monorepo **pnpm, 16 packa
 ## 1. ƯU TIÊN HIỆN TẠI CỦA USER (quan trọng nhất — đọc kỹ)
 User chốt rõ: **trước tiên đảm bảo MỌI THỨ trong AgencyCLI vận hành ĐÚNG hướng, đúng logic, tools hiệu quả, và TUI/UX rõ ràng như opencode NHƯNG tinh chỉnh để XỊN HƠN + chuyên nghiệp hơn.** **QUY TẮC TỐI THƯỢNG: KHÔNG được có amateur tell — triệt để amateur tell ở MỌI NGÓC NGÁCH source.** **BYOK (eval legacy↔hardened + promote `hardened`→default) là bước KIỂM TRA CUỐI CÙNG**, chỉ làm SAU khi mọi thứ vận hành đúng + UX chuyên nghiệp. **ĐỪNG nhảy vào BYOK/eval sớm.**
 
-## 2. ĐÃ XONG phiên 2026-06-02 (HEAD `65c84a0`, cây sạch) — ĐỪNG làm lại
+## 2. ĐÃ XONG phiên 2026-06-02 (HEAD `b600b45`, cây sạch) — ĐỪNG làm lại
 > ⚠️ **NHẮC USER REBUILD/RESTART TUI** (`pnpm -r build`): fix ở `src`, TUI đang chạy `dist` cũ chưa thấy hiệu lực.
 - **Robustness e2e bậc 3-4 (completion-detection + self-heal) ĐÓNG đáng kể:**
   - **Auto-continue khi model dừng giữa việc** — prose `34a0f23` (`detectIncompleteCompletion`: lời-hứa-tiếp-tục/"to be continued"/placeholder, neo cuối message, loại câu hỏi/lời-mời) + artifact `4d97563` (`detectTruncatedArtifact`: quét file vừa ghi tìm `// ...rest of the code`/`// ...existing code...` trên đĩa). Cờ MỚI `AGENCY_AUTO_CONTINUE`, chặn trần `MAX_AUTO_CONTINUE`=3, canonical `turn-helpers.ts`. Off-legacy byte-identical=break.
@@ -46,11 +46,12 @@ User chốt rõ: **trước tiên đảm bảo MỌI THỨ trong AgencyCLI vận
 
 - **Edit/replace `$`-corruption 3 site FIXED `25bd0d4`+`6e7d43b` (phổ quát, KHÔNG cờ):** `String.replace(s, replaceSTRING)` nở `$$`/`$&`/`` $` ``/`$'` → content model chứa chúng (template/shell/regex/sed/`$&`) bị **corrupt âm thầm khi ghi** → build fail → churn. Sửa `edit_file`+`batch_edit` (tool-harness) + `applySearchReplace` fast-path (file-parser, đường Aider SEARCH/REPLACE wired ở orchestrator+TUI) → function-replacement `()=>replace` (literal). **Pattern soi tương lai: mọi `.replace(x, modelContentVar)` phải dùng function-replacement.** core 438→443.
 
-## 3. VIỆC KẾ TIẾP — chiến dịch amateur-tell + đúng-logic (iterative, không cần key)
+## 3. VIỆC KẾ TIẾP — 2 luồng song song (iterative, không cần key)
+> **Lưu ý trọng tâm:** cuối phiên này user CHUYỂN sang **fix lỗi vận hành THẬT** (báo qua ảnh: churn ghi file lớn). Ưu tiên luồng (d) ngang/hơn luồng amateur-tell khi có lỗi thật. **(d) là luồng nóng nhất hiện tại.**
 - **(a) Quét wording amateur còn lại** (no-rework, an toàn): ĐÃ rà Splash/WelcomeMenu/PatchCard/Conversation/approval-card/SubagentsOverlay/McpOverlay/slash-diag/SemanticTranslator (đợt 2). CÒN: HelpOverlay/PluginsOverlay/RouteOverlay/SkillsPicker/Status copy + comment "Premium" (GlowingLogo/ModelsOverlay/SkillsPicker/WorkerProgress — internal, marginal) + `.toUpperCase()` data value (provider/thinkingType ở /model diag — debatable). Grep gợi ý: `\[[A-Z][A-Z _]{3,}\]`, `DANGER|WARNING:|SUCCESSFULLY|KERNEL|Premium|Synthesi|◈ [A-Z]{3,}`. Display-only, cập nhật test nếu assert chuỗi.
 - **(b) Badge "needs key" trong provider picker** (follow-up `eb19ba5`): provider hiện qua fallback nhưng CHƯA đánh dấu "chưa cấu hình" → user tưởng đã sẵn. Thêm dấu/hint + (lý tưởng) chọn keyless → mở `/connect`.
 - **(c) LỚN NHẤT — structured tool-card thay text-in-stream** (đòn bẩy "xịn hơn opencode" rõ nhất; rework NHIỀU SLICE, thiết kế cẩn thận): tool activity hiện là TEXT `⚡ [SYSTEM: Executing tool "X"...]` nhồi vào assistant message rồi **regex-parse lại** (`TraceTelemetry.parseSystemActivityLine`) = round-trip lossy. §8.10 cố ý KHÔNG làm vì là "surface thứ 5". Hướng: event tool-lifecycle cấu trúc (tái dùng EventBus, ĐỪNG thêm surface thứ 5 lạc) → render thành card riêng (tool · target · status · summary) tách khỏi prose. Lên kế hoạch trước khi code.
-- **(d) Rà ĐÚNG-LOGIC vận hành + tools hiệu quả:** chạy agent trên task thật (cần key — xem caveat), quan sát hành vi sai/tool kém hiệu quả; sửa gốc. Phần verify-without-key: đọc code path, tìm built-but-unwired/logic sai.
+- **(d) 🔥 Rà ĐÚNG-LOGIC vận hành + tools hiệu quả (luồng nóng, không cần key — đọc code path):** soi tool/turn-loop tìm lỗi THẬT như đã làm phiên này (reassembly `cb932d8` · `$`-corruption ×3 `25bd0d4`+`6e7d43b` · dead gate-quick xóa `3a22f11`). Ứng viên chưa rà: `edit_file` match-fail UX (search không khớp whitespace → model churn — message đã có nhưng có thể fuzzy-hint tốt hơn); `execute_command` output truncation (build error ở CUỐI bị `truncateToolResult` cắt-đầu → model không thấy lỗi thật?); `read_file` range defaults; `ast_edit` correctness. **Pattern đã ghi memory cần soi tiếp: mọi `.replace(x, modelContentVar)` PHẢI function-replacement `()=>v` (nếu không, `$$`/`$&`/`` $` ``/`$'` corrupt).** **⚠ Reassembly + nhiều robustness-fix bị FLAG-GATE off-legacy → user chạy legacy KHÔNG hưởng tự động; cân nhắc đề xuất user promote→default (CẦN user OK rõ, đừng tự ý).**
 
 ## 4. ⚠ CONFIG-STATE CỦA USER (không phải bug code — ĐỪNG tự sửa key)
 `~/.agency/config.json` hiện chỉ có `openrouter`/`anthropic`/`local`; **nvidia KHÔNG còn**; tất cả key là placeholder `${...}` với env **CHƯA set** → `resolveApiKey`→`""` → **không provider nào dùng được** cho tới khi user đặt key thật. **TUYỆT ĐỐI không tự ghi key** (§6.1). User thêm key qua `/connect` (overlay liệt kê cả 6 provider, gồm nvidia). Sau /connect → mở `/models` để fetch model live (`listAllModels`→`/v1/models`).
@@ -59,4 +60,4 @@ User chốt rõ: **trước tiên đảm bảo MỌI THỨ trong AgencyCLI vận
 investigate (đọc + grep CẢ `.ts/.tsx/.mts`, tra Canonical Homes) → phân loại (trùng-thật vs distinct-cố-ý; wire vs delete) → thay đổi **tối thiểu, behavior-preserving, tái dùng canonical home** → **cờ trong `runtime/flags.ts` nếu đổi hành vi runtime** (legacy byte-identical; tool/command/UI-copy thuần additive = KHÔNG cần cờ) → thêm/cập nhật test → **`pnpm verify` XANH (REAL_EXIT_CODE=0, 16 pkg)** → commit nhỏ trên `master` (soi `git status` trước `add`, KHÔNG amend/`--no-verify`, trailer `Co-Authored-By: Claude Opus 4.8`) → sync living docs (ROADMAP/SESSION_HANDOFF/PACKAGES) → cập nhật `memory/` + git chain. **Giữ 6 guard xanh.**
 - Không assert "green". Không xóa/sửa khi chưa grep 0 live importer (CẢ `.tsx`). Không gộp cặp "trùng tên cố ý". Không tạo helper/tool/command trùng. **Không tự promote hardened→default. Không tự ghi BYOK key. BYOK là bước CUỐI.**
 
-**Bắt đầu:** đọc §0 → **NHẮC user `pnpm -r build` + restart TUI** → tiếp tục chiến dịch amateur-tell theo §3 (gợi ý: (a) quét wording overlay còn lại trước vì nhanh+an toàn, hoặc lên kế hoạch (c) tool-card nếu user muốn đòn bẩy lớn). Làm theo nhịp §5. **BYOK/eval/promote chỉ khi user xác nhận mọi thứ đã đúng + UX chuyên nghiệp.**
+**Bắt đầu:** đọc §0 → **NHẮC user `pnpm -r build` + restart TUI** (đặc biệt: nhiều fix phiên này ở `src`, và reassembly cần `AGENCY_TOOLCALL_REASSEMBLY=1`) → hỏi user muốn luồng nào: **(d) tiếp tục soi lỗi vận hành thật** (nóng nhất, user vừa ưu tiên) hay **(a)/(c) amateur-tell/tool-card**. Làm theo nhịp §5. **BYOK/eval/promote chỉ khi user xác nhận mọi thứ đã đúng + UX chuyên nghiệp.**
