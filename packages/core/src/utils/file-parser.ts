@@ -16,7 +16,11 @@ export function applySearchReplace(
   const normalizedReplace = replaceContent.replace(/\r\n/g, "\n");
 
   if (normalizedFile.includes(normalizedSearch)) {
-    return normalizedFile.replace(normalizedSearch, normalizedReplace);
+    // Function replacement → literal insertion; a plain-string replacement makes
+    // String.replace expand `$$`/`$&`/`` $` ``/`$'`, corrupting replace blocks
+    // that contain those sequences. (The line-based fallback below concatenates,
+    // so it's already literal.)
+    return normalizedFile.replace(normalizedSearch, () => normalizedReplace);
   }
 
   const fileLines = normalizedFile.split("\n");
