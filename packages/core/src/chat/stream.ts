@@ -31,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat, detectIncompleteCompletion, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { emitThought } from "../events/cognition.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
@@ -244,6 +244,7 @@ export async function runChatTurnWithStream(
     await compactIfEnabled();
 
     loopCount = 0;
+    let autoContinueCount = 0; // bounded auto-continues on a detected-unfinished stop
     resetToolCircuitBreaker(); // fresh breaker per turn (no cross-turn leak)
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
@@ -513,6 +514,25 @@ export async function runChatTurnWithStream(
             role: "user" as const,
             content: "You were cut off because of token limit limits. Continue exactly where you left off without any preamble, greeting, or repetitive sentences. Maintain the exact formatting structure, including active markdown code blocks or SEARCH/REPLACE blocks without duplication.",
           },
+        ];
+        loopCount++;
+      } else if (
+        getRuntimeFlags().autoContinue &&
+        autoContinueCount < MAX_AUTO_CONTINUE &&
+        detectIncompleteCompletion(currentText)
+      ) {
+        // Completion-quality check: a no-tool-call turn normally ENDS the loop,
+        // but the model explicitly signalled the task is unfinished (an
+        // "I'll continue…" promise or a left-in "…rest of the code" placeholder)
+        // while it stopped calling tools. Nudge it to resume from the on-disk
+        // state and run another (bounded) iteration instead of returning a
+        // half-done turn the user must manually continue. Off → byte-identical
+        // break (legacy); capped by MAX_AUTO_CONTINUE within maxLoops.
+        autoContinueCount++;
+        turnHistory = [
+          ...turnHistory,
+          { role: "assistant" as const, content: currentText },
+          { role: "user" as const, content: buildAutoContinueNudge(filesWritten, input.projectRoot) },
         ];
         loopCount++;
       } else {

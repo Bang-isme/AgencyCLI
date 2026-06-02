@@ -98,6 +98,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Resume continuation", value: f.resumeContinuation ? "on (resume notice on loop-limit)" : "off (generic truncation notice)", keys: ["resumeContinuation"] },
     { label: "Compact tool docs", value: f.compactToolDocs ? "on (terse args, fewer prompt tokens)" : "off (verbose per-arg)", keys: ["compactToolDocs"] },
     { label: "File memory", value: f.fileMemory ? "on (curated markdown memory + remember tool)" : "off", keys: ["fileMemory"] },
+    { label: "Auto-continue", value: f.autoContinue ? "on (resume on unfinished stop)" : "off", keys: ["autoContinue"] },
   ];
 }
 

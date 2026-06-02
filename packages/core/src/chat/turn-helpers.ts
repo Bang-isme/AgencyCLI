@@ -157,13 +157,18 @@ export function recordTurnTokenCost(
  * lists every file the turn modified with its current on-disk size as a readable
  * appendix. File stats are best-effort; never throws. Shared by BOTH turn paths.
  */
-export function buildIncompleteTurnNotice(
+/**
+ * Per-file on-disk summary line ("  • path (now N lines, M bytes)"), best-effort
+ * (a missing/binary file degrades gracefully), de-duplicated, never throws.
+ * Shared by the loop-exhaustion resume notice and the auto-continue nudge so the
+ * two don't re-implement the same statSync/readFileSync listing.
+ */
+function describeFilesWritten(
   filesWritten: Iterable<string>,
-  projectRoot: string,
-  maxLoops: number
-): string {
+  projectRoot: string
+): string[] {
   const files = Array.from(new Set(filesWritten));
-  const detail = files.map((rel) => {
+  return files.map((rel) => {
     try {
       const abs = resolve(projectRoot, rel);
       const size = statSync(abs).size;
@@ -178,6 +183,15 @@ export function buildIncompleteTurnNotice(
       return `  • ${rel}`;
     }
   });
+}
+
+export function buildIncompleteTurnNotice(
+  filesWritten: Iterable<string>,
+  projectRoot: string,
+  maxLoops: number
+): string {
+  const detail = describeFilesWritten(filesWritten, projectRoot);
+  const files = detail; // length == de-duplicated file count
 
   const head =
     files.length > 0
@@ -202,6 +216,84 @@ export function buildIncompleteTurnNotice(
  */
 export function buildCircuitBreakerNotice(reason: string): string {
   return `⚠ [SYSTEM: Tool loop halted — ${reason} Stopping here to avoid churning. Review the errors above, change the approach (a different command, or fix the underlying problem) and ask me to continue — repeating the same call will only trip this again.]`;
+}
+
+/**
+ * Max times a single turn may auto-continue after {@link detectIncompleteCompletion}
+ * fires. Bounds a model that keeps falsely promising "I'll continue" so it can't
+ * burn the whole maxLoops budget; the overall maxLoops cap still applies on top.
+ */
+export const MAX_AUTO_CONTINUE = 3;
+
+/** Only the tail of a completion is tested for an end-anchored continuation
+ *  promise, so a mid-message "next we'll need to handle X" (explanatory) cannot
+ *  fire it. */
+const INCOMPLETE_TAIL_CHARS = 280;
+
+/** First-person, present/future "I'll keep going on the task NOW" promises. */
+const CONTINUATION_PROMISE =
+  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|next,?\s+i(?:'|’)?ll|next,?\s+i will)\s+(now\s+)?(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do)\b/;
+
+/** Explicit "to be continued" / "I'll send the rest" markers. */
+const EXPLICIT_INCOMPLETE =
+  /\b(to be continued|continued below|continuing below|more to come|i(?:'|’)?ll send the rest|rest to follow)\b/;
+
+/** Code-truncation placeholders left in fenced output ("// ... rest of the code"). */
+const CODE_PLACEHOLDER =
+  /(?:\/\/|#|--|\/\*)\s*\.\.\.\s*(?:the\s+)?(?:rest|remaining|continue|continued|more|other)\b|\.\.\.\s*(?:the\s+)?rest of (?:the\s+)?(?:code|file|implementation|function|method|class|component)\b/i;
+
+/** Offer/question patterns that look like a promise but are asking the USER —
+ *  these must NOT auto-continue. */
+const USER_OFFER =
+  /\b(let me know|would you like|do you want|if you(?:'|’)?d like|if you want|shall i|should i|want me to)\b/;
+
+/**
+ * Conservative completion-quality check: a NO-tool-call turn normally ENDS the
+ * model loop, but did the model explicitly signal the task is UNFINISHED — an
+ * end-of-message "I'll continue…" promise, a "to be continued" marker, or a
+ * left-in "…rest of the code" placeholder — yet stop emitting tool calls? The
+ * caller uses this to nudge a bounded "continue" instead of returning a half-done
+ * turn the user must manually resume.
+ *
+ * HIGH precision by design: a false negative is safe (the user can still send
+ * "continue"); a false positive only wastes one bounded turn. So the prose
+ * patterns are narrow + anchored to the tail, and offers/questions to the user
+ * ("let me know…", anything ending in "?") are excluded. A code placeholder is an
+ * unambiguous stub and fires regardless of surrounding offer text.
+ */
+export function detectIncompleteCompletion(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trimEnd();
+  if (!trimmed) return false;
+  if (CODE_PLACEHOLDER.test(trimmed)) return true;
+  const tail = trimmed.slice(-INCOMPLETE_TAIL_CHARS).toLowerCase();
+  if (USER_OFFER.test(tail)) return false;
+  if (tail.endsWith("?")) return false;
+  return CONTINUATION_PROMISE.test(tail) || EXPLICIT_INCOMPLETE.test(tail);
+}
+
+/**
+ * In-loop steering message used when {@link detectIncompleteCompletion} fires:
+ * the model stopped calling tools but said it wasn't done. Tells it to resume
+ * from the on-disk state (read first, then append/edit — never rewrite from
+ * scratch) and to stop cleanly when genuinely finished. This is an INTERNAL
+ * turn-history user message (NOT folded into the returned assistant text), like
+ * the existing "you were cut off (length)" continuation nudge. Shared by both
+ * turn paths; reuses {@link describeFilesWritten} for the file listing.
+ */
+export function buildAutoContinueNudge(
+  filesWritten: Iterable<string>,
+  projectRoot: string
+): string {
+  const detail = describeFilesWritten(filesWritten, projectRoot);
+  const base =
+    "Continue the task — your previous message indicated it is not finished, but you stopped without calling a tool. " +
+    "Resume from where you left off: if you are editing a file, first read its current on-disk contents with read_file, " +
+    "then continue with append_file/edit_file — do NOT rewrite a file from scratch (that discards work already saved). " +
+    "When the task is genuinely complete, stop WITHOUT any further \"I will continue\" promises.";
+  return detail.length > 0
+    ? `${base}\nFiles modified so far this turn:\n${detail.join("\n")}`
+    : base;
 }
 
 const SEARCH_NARRATION_TOOLS = new Set(["grep_file", "grep_search", "find_files", "list_dir"]);

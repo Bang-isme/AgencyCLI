@@ -52,6 +52,12 @@ vi.mock("../chat/turn-helpers.js", () => ({
   // §8.10 in-tool progress — also called unconditionally in the tool path; stub it
   // (returns a no-op stop()) so the eager call site doesn't invoke undefined.
   startToolProgressHeartbeat: () => () => {},
+  // Auto-continue completion check (off in this test's legacy profile, so these are
+  // never actually called — but the no-tool-call branch references them, so the
+  // mocked module must export them).
+  MAX_AUTO_CONTINUE: 3,
+  detectIncompleteCompletion: () => false,
+  buildAutoContinueNudge: () => "",
 }));
 
 import * as providers from "@agency/providers";

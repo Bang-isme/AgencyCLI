@@ -152,6 +152,17 @@ export interface RuntimeFlags {
    * advertised → byte-identical prompt), on in hardened.
    */
   fileMemory: boolean;
+  /**
+   * Auto-continue a turn when the model stops emitting tool calls but explicitly
+   * signalled the work is UNFINISHED — an end-of-message "I'll continue…"
+   * promise, a "to be continued" marker, or a left-in "…rest of the code"
+   * placeholder. Instead of returning a half-done turn (the user then has to
+   * notice and type "continue"), feed a bounded resume nudge and run another loop
+   * iteration (capped at MAX_AUTO_CONTINUE, still within maxLoops). Off in legacy
+   * (a no-tool-call turn ends the loop, byte-identical), on in hardened. Roadmap
+   * §2.2 / §8 completion detection.
+   */
+  autoContinue: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -275,5 +286,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // advertises the `remember` tool) → off in legacy (no markdown recall, tool
     // not advertised → byte-identical), on in hardened.
     fileMemory: parseBool(env.AGENCY_FILE_MEMORY, hardened),
+    // Behaviour-changing (a no-tool-call turn that signals "unfinished" runs
+    // another bounded loop iteration instead of ending) → off in legacy (the
+    // turn ends, byte-identical), on in hardened.
+    autoContinue: parseBool(env.AGENCY_AUTO_CONTINUE, hardened),
   };
 }

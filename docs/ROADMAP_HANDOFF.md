@@ -145,10 +145,23 @@ Phần 1 làm nó *bền*. Phần này làm nó *giỏi*. Hiện `dispatchAgent`
   `minimaxai/minimax-m2.7`. Lần đầu verify-loop tự-sửa lỗi model THẬT ngoài integration test mock
   (trước đó luôn avg 1.0 = loop chưa từng kích hoạt). Chi tiết: [EVAL_RESULTS.md](EVAL_RESULTS.md).
 
-### 2.2 — Phát hiện hoàn thành (completion detection)  ← 🟡 một phần (2026-05-30)
+### 2.2 — Phát hiện hoàn thành (completion detection)  ← 🟡 một phần (2026-05-30; +auto-continue 2026-06-02)
 - Engine đã có: đạt tiêu chí → dừng (`passed`); **không tiến triển (lỗi lặp) sau N vòng → dừng**
   (`no-progress`); hết round (`max-rounds`); hết budget (`budget-exhausted`).
-- **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build (gắn với 2.1 còn lại).
+- **AUTO-CONTINUE turn chính ĐÃ XONG (2026-06-02):** vòng lặp turn (`stream.ts`+`orchestrator.ts`) trước
+  đây coi "model phát turn KHÔNG có tool-call" = XONG → `break`. Nhưng model BYOK yếu hay **tự ý dừng giữa
+  việc** — prose "I'll continue creating the rest…" / để placeholder `// ... rest of the code` rồi ngừng gọi
+  tool → turn trả về như đã xong, user phải tự gõ "continue". **Sửa:** detector thuần bảo thủ
+  `detectIncompleteCompletion(text)` (canonical home `turn-helpers.ts`) — chỉ fire trên lời-hứa-tiếp-tục
+  ngôi-thứ-nhất NEO CUỐI message + marker "to be continued" + code-placeholder; LOẠI câu hỏi/lời-mời
+  ("let me know", kết "?"). Khi fire (và `autoContinueCount < MAX_AUTO_CONTINUE`=3, vẫn trong `maxLoops`) →
+  nối nudge `buildAutoContinueNudge` (đọc đĩa→append/edit, đừng-rewrite) vào `turnHistory` + `loopCount++`
+  thay vì `break` (mirror đúng nhánh `finishReason==="length"`). Cờ MỚI `AGENCY_AUTO_CONTINUE`/`autoContinue`
+  (off-legacy **byte-identical** = break như cũ / on-hardened). High-precision: false-negative an toàn,
+  false-positive chỉ tốn 1 turn có chặn trần. Test `auto-continue.test.ts` (10: detector ×6 + wiring ×4).
+  core 410→420, **33 cờ**, row `agency status` "Auto-continue".
+- **Còn lại:** tín hiệu "đạt mục tiêu task" khách quan hơn build (gắn với 2.1 còn lại); auto-continue dựa
+  prose-heuristic (cố ý bảo thủ) — chưa kiểm artifact thực (vd scan stub trong file vừa ghi) = follow-up.
 
 ### 2.3 — Quản lý context window (compaction)  ← ✅ XONG (2026-05-31)
 - Hội thoại/task dài sẽ tràn context window. Cần nén lịch sử (tóm tắt lượt cũ, giữ phần
@@ -412,7 +425,8 @@ Mục 4 và 5 đi đôi: làm eval trước, rồi mỗi cải tiến vòng lặ
 > DockerSandbox timeout+output-cap parity native `71cbe78`; circuit-breaker fire-on-blocked-loop `ca2c954`; **§8.8-A turn-loop
 > HARD-break trên circuit-breaker trip + §8.8-B tolerate malformed `</tool_call>` wrappers `64e945a`** → §8.8 ĐÓNG TRỌN)**.
 > **§9 Curated cross-session MARKDOWN memory ✅ (user-requested): đem cơ chế memory kiểu Claude-Code (index + topic file frontmatter) vào AgencyCLI — `MarkdownMemoryStore` (@agency/memory) + tool `remember`/`forget` + recall vào prompt, cờ `AGENCY_FILE_MEMORY`; phân biệt rõ với SQLite episodic store tự động + `agency memory` bridge (knowledge/genome) sẵn có — KHÔNG gộp.**
-> Baseline giờ: core **410** · memory **48** · tui **148** · providers 852 · security **39** · ~2161 test · **32 cờ** · 20 tool.
+> **§2.2 completion-detection — auto-continue turn chính ✅ (2026-06-02):** model tự-ý-dừng-giữa-việc (prose "I'll continue…"/code-placeholder, ngừng gọi tool) giờ được nudge tiếp tục có chặn trần thay vì trả turn dở; cờ `AGENCY_AUTO_CONTINUE`, canonical `turn-helpers.detectIncompleteCompletion`+`buildAutoContinueNudge`. Xem §2.2.
+> Baseline giờ: core **420** · memory **48** · tui **148** · providers 852 · security **39** · ~2171 test · **33 cờ** · 20 tool.
 > ▶ FRONTIER: §8.4 ảnh/multimodal (năng lực mới; type-widening lan tỏa + CẦN vision key verify e2e) · P2 §8.6 recall@k (cần provider-embedder/key). (Ngỏ: index re-index worker-offload + native-mode warning; promote hardened→default cần BYOK eval + user OK.)**
 
 ### 8.1 — Context overflow: reactive handler KHÔNG cắt hội thoại  ← ✅ XONG (2026-06-01)
