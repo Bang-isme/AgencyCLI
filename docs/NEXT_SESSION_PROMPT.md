@@ -37,7 +37,8 @@ User chốt rõ: **trước tiên đảm bảo MỌI THỨ trong AgencyCLI vận
   - `cd44274` **core approval card** (`approval-policy-engine`, WIRED): `[MODIFY]/[NEW]/…`→lowercase verb; "Semantic Architectural Changes Summary"→"Changes:"; budget banner hù dọa→honest.
   - `3963ece` **`SemanticTranslator`** (nhãn panel subagent, bản dịch song song bị sót `5213685`) → vocab plain Read/Write/Edit/Run/Search/Find/Delegate. CÒN NGỎ: dedup 2 TUI translator (tool-labels ↔ SemanticTranslator).
   - `bd13978` status/error copy: SUCCESS/FAILED/YES/NO→thường, "LOGS"→"Logs", bỏ "!" McpOverlay errors.
-  - **Đừng-điều-tra-lại:** output-engine `formatPatch` `[MODIFY]` = built-but-UNWIRED → CỐ Ý không đụng.
+  - `1403a1b` source-vocab cleanup: gỡ "Premium" puffery (comments), rename `printPremiumUXCard`→`printApprovalCard`, prune flowery dead badges (BREWING/HONING/SCULPTING/CALIBRATING — vestigial parser entries).
+  - **Đừng-điều-tra-lại / CỐ Ý KHÔNG đụng (không phải amateur tell):** output-engine `formatPatch` `[MODIFY]` = built-but-UNWIRED; ALL-CAPS section header (NAVIGATION/COMMANDS) = quy ước Unix; ExecutionPanel PLAN/EXECUTE = deliberate + tested; TrustCard PASSED/FAILED = severity-badge nhất quán; system prompt "powerful" = behavior-sensitive (project hoãn sửa prompt).
 - **Baseline verify:** build 16/16, **REAL_EXIT_CODE=0**, **~2190 test** (core **431** · cli 573 · tui **154** · providers **855** · memory 48 · benchmark 18 · workspace 11 · security 39 · tooling 14 · governance 7 · skills-bridge 14 · context 6 · heuristics 6 · browser 5 · telemetry 9). **33 cờ** · **20 tool**.
 
 ## 3. VIỆC KẾ TIẾP — chiến dịch amateur-tell + đúng-logic (iterative, không cần key)
