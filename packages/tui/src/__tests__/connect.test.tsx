@@ -21,10 +21,10 @@ describe("ConnectOverlay TUI", () => {
       />
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("CONNECTION MANAGER");
+    expect(frame).toContain("Providers");
     expect(frame).toContain("Google Gemini");
     expect(frame).toContain("OpenAI");
-    expect(frame).toContain("[DISCONNECTED]");
-    expect(frame).toContain("[CONNECTED] (5 models)");
+    expect(frame).toContain("not connected");
+    expect(frame).toContain("connected · 5 models");
   });
 });

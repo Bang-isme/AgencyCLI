@@ -368,17 +368,17 @@ export function ConnectOverlay({
             <Text color={theme.text} bold>🔌</Text>
           </Box>
           <Text color={theme.text} bold wrap="truncate">
-            CONNECTION MANAGER
+            Providers
           </Text>
         </Box>
       </Box>
-      
+
       <Box marginTop={0} overflow="hidden">
         <Text color={theme.muted} dimColor wrap="wrap">
-          {phase === "list" && (innerWidth >= 50 ? "Select a provider to configure connection settings" : "Select provider to configure")}
-          {phase === "menu" && `Manage credentials for ${selected?.label}`}
-          {phase === "confirm_disconnect" && `■ DANGER ZONE: Remove Credentials`}
-          {phase === "input" && `Entering API Key for ${selected?.label}`}
+          {phase === "list" && (innerWidth >= 50 ? "Select a provider to connect or manage" : "Select a provider")}
+          {phase === "menu" && `Manage ${selected?.label}`}
+          {phase === "confirm_disconnect" && `Remove the stored key for ${selected?.label}`}
+          {phase === "input" && `Enter API key for ${selected?.label}`}
         </Text>
       </Box>
 
@@ -395,14 +395,14 @@ export function ConnectOverlay({
             let statusText = "";
             if (p.configured) {
               if (innerWidth >= 45) {
-                statusText = `✓ [CONNECTED] ${p.modelCount ? `(${p.modelCount} models)` : ""}`;
+                statusText = `✓ connected${p.modelCount ? ` · ${p.modelCount} models` : ""}`;
               } else if (innerWidth >= 40) {
-                statusText = `✓ [CONN] ${p.modelCount ? `(${p.modelCount})` : ""}`;
+                statusText = `✓ connected${p.modelCount ? ` · ${p.modelCount}` : ""}`;
               } else {
-                statusText = "✓ [CONNECTED]";
+                statusText = "✓ connected";
               }
             } else {
-              statusText = innerWidth >= 40 ? "✗ [DISCONNECTED]" : "✗ [DISC]";
+              statusText = innerWidth >= 40 ? "· not connected" : "·";
             }
 
             const arrowStr = sel ? "▸ " : "  ";
@@ -435,23 +435,23 @@ export function ConnectOverlay({
                 <Text>{selected.icon}</Text>
               </Box>
               <Text color={theme.text} bold wrap="truncate">
-                {selected.label} Status:
+                {selected.label}
               </Text>
               <Box marginLeft={1} overflow="hidden">
                 <Text color={theme.success} bold wrap="truncate">
-                  {selected.id === "local" ? "✓ [ACTIVE CONFIGURATION FOUND]" : "✓ [ACTIVE CREDENTIAL FOUND]"}
+                  {selected.id === "local" ? "✓ configured" : "✓ connected"}
                 </Text>
               </Box>
             </Box>
 
             <Box flexDirection="column" borderStyle="single" borderColor={theme.dimBorder} paddingX={1} width={innerWidth} overflow="hidden">
               <Box marginBottom={1}>
-                <Text color={theme.accent} bold>◈ SELECT ACTION:</Text>
+                <Text color={theme.accent} bold>Actions</Text>
               </Box>
               {[
-                { label: selected.id === "local" ? "Update Local Provider Settings" : "Update API Key / Credentials", idx: 0 },
-                { label: selected.id === "local" ? "Reset Provider Configuration" : "Disconnect Provider (Clear Key)", idx: 1 },
-                { label: "Cancel & Back to Providers List", idx: 2 },
+                { label: selected.id === "local" ? "Update settings" : "Update API key", idx: 0 },
+                { label: selected.id === "local" ? "Reset configuration" : "Disconnect", idx: 1 },
+                { label: "Cancel", idx: 2 },
               ].map((opt) => {
                 const isSel = opt.idx === menuIndex;
                 return (
@@ -478,18 +478,18 @@ export function ConnectOverlay({
                 <Text color={theme.warning}>■</Text>
               </Box>
               <Text color={theme.warning} bold wrap="wrap">
-                CONFIRM DELETION
+                Disconnect provider
               </Text>
             </Box>
 
             <Box flexDirection="column" borderStyle="single" borderColor={theme.danger} paddingX={2} paddingY={1} width={innerWidth} overflow="hidden">
               <Text color={theme.text} bold wrap="truncate">
-                Are you absolutely sure you want to clear stored credentials for {selected.label}?
+                Remove the stored key for {selected.label}?
               </Text>
               <Box marginTop={1} flexDirection="column" overflow="hidden">
                 {[
-                  { label: "Yes, Disconnect Provider", val: 0 },
-                  { label: "No, Keep Stored Credentials", val: 1 },
+                  { label: "Disconnect", val: 0 },
+                  { label: "Keep key", val: 1 },
                 ].map((opt) => {
                   const isSel = opt.val === confirmIndex;
                   return (
@@ -517,7 +517,7 @@ export function ConnectOverlay({
                 <Text>{selected.icon}</Text>
               </Box>
               <Text color={theme.text} bold wrap="truncate">
-                {selected.label} Credentials Integration Setup
+                Connect {selected.label}
               </Text>
             </Box>
 
@@ -603,10 +603,7 @@ export function ConnectOverlay({
 
             <Box marginTop={1} paddingX={1} overflow="hidden">
               <Text color={theme.muted} dimColor wrap="truncate">
-                Your configuration is saved securely in your local home directory:
-              </Text>
-              <Text color={theme.warning} bold wrap="truncate">
-                ~/.agency/config.json
+                Saved to <Text color={theme.warning} bold>~/.agency/config.json</Text>
               </Text>
             </Box>
           </Box>
