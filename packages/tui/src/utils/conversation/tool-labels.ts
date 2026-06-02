@@ -96,42 +96,40 @@ export function getGroundedTargetName(targetPath: string): string {
     return cleanedPath;
   }
 
-  const file = cleanedPath.split(/[\\/]/).pop() || cleanedPath;
-  const lower = cleanedPath.toLowerCase();
-
-  if (file === "Conversation.tsx") return "conversation render layout";
-  if (file === "App.tsx") return "main application runtime container";
-  if (file === "SubagentPanel.tsx") return "subagent progress dashboard";
-  if (file === "stream.ts") return "LLM chat streaming orchestrator";
-  if (file === "planner-engine.ts") return "orchestration DAG task planner";
-  if (file === "tool-harness.ts") return "skill tool execution harness";
-  if (file === "Prompt.md") return "user instruction requirements";
-  if (file === "package.json") return "package configuration manifest";
-  if (file === "tsconfig.json") return "TypeScript compiler settings";
-
-  if (lower.includes("packages/tui")) {
-    return `TUI component: ${file}`;
-  }
-  if (lower.includes("packages/core")) {
-    return `core orchestrator module: ${file}`;
-  }
-  if (lower.includes("packages/providers")) {
-    return `LLM API provider layer: ${file}`;
-  }
-
-  return file;
+  // Just the file name. The previous version hardcoded this repo's own file
+  // names to grandiose descriptions ("App.tsx" → "main application runtime
+  // container", "stream.ts" → "LLM chat streaming orchestrator") and tagged paths
+  // with "TUI component: …" / "core orchestrator module: …" prefixes — wrong and
+  // pretentious on any OTHER project the agent runs against (a user's own App.tsx
+  // is not "the main application runtime container"). Show the real file name.
+  return cleanedPath.split(/[\\/]/).pop() || cleanedPath;
 }
 
+const PAST_TENSE: Record<string, string> = {
+  Run: "Ran",
+  Read: "Read",
+  Write: "Wrote",
+  "Append to": "Appended to",
+  Edit: "Edited",
+  Search: "Searched",
+  Find: "Found",
+  List: "Listed",
+  Inspect: "Inspected",
+  Create: "Created",
+  Delete: "Deleted",
+  Move: "Moved",
+};
+
+/** Present-tense action label → past tense, for a completed step ("Read x" →
+ *  "Read x", "Run x" → "Ran x"). Matches the leading verb word; leaves anything
+ *  unrecognized (e.g. "Delegate to subagent") untouched. */
 export function toPastTense(phrase: string): string {
-  if (phrase.startsWith("Inspecting ")) return phrase.replace("Inspecting ", "Inspected ");
-  if (phrase.startsWith("Reading ")) return phrase.replace("Reading ", "Read ");
-  if (phrase.startsWith("Writing ")) return phrase.replace("Writing ", "Wrote ");
-  if (phrase.startsWith("Synthesizing ")) return phrase.replace("Synthesizing ", "Synthesized ");
-  if (phrase.startsWith("Integrating ")) return phrase.replace("Integrating ", "Integrated ");
-  if (phrase.startsWith("Scanning ")) return phrase.replace("Scanning ", "Scanned ");
-  if (phrase.startsWith("Executing ")) return phrase.replace("Executing ", "Executed ");
-  if (phrase.startsWith("Creating ")) return phrase.replace("Creating ", "Created ");
-  if (phrase.startsWith("Removing ")) return phrase.replace("Removing ", "Removed ");
+  // Try the longest verb keys first so "Append to" beats a bare "Append".
+  for (const verb of Object.keys(PAST_TENSE).sort((a, b) => b.length - a.length)) {
+    if (phrase === verb || phrase.startsWith(verb + " ")) {
+      return PAST_TENSE[verb] + phrase.slice(verb.length);
+    }
+  }
   return phrase;
 }
 
@@ -169,38 +167,56 @@ export function getSemanticToolOperation(toolName: string, argsStr: string, targ
   if (rawPath) {
     displayTarget = getGroundedTargetName(rawPath);
   } else if (command) {
-    const cmdName = command.split(/\s+/)[0] || command;
-    displayTarget = `validation suite via ${cmdName}`;
+    // The real command (truncated), not "validation suite via npm" — not every
+    // shell call is a test run.
+    displayTarget = command.length > 48 ? command.slice(0, 48) + "…" : command;
   }
+
+  // Plain, accurate verbs (mirrors opencode) instead of flowery, often-wrong
+  // phrasing ("Synthesizing X components" for a write, "Acquiring file context"
+  // for a read). A reader should see exactly what happened.
+  const withTarget = (verb: string, fallback: string) =>
+    displayTarget ? `${verb} ${displayTarget}` : fallback;
 
   const cleanTool = toolName.toLowerCase();
   switch (cleanTool) {
     case "execute_command":
     case "run_command":
-      return displayTarget ? `Executing ${displayTarget}` : "Executing shell operation";
+      return withTarget("Run", "Run command");
     case "read_file":
     case "view_file":
-      return displayTarget ? `Inspecting ${displayTarget} structure` : "Acquiring file context";
+      return withTarget("Read", "Read file");
     case "write_file":
     case "write_to_file":
-      return displayTarget ? `Synthesizing ${displayTarget} components` : "Writing workspace files";
+      return withTarget("Write", "Write file");
+    case "append_file":
+      return withTarget("Append to", "Append to file");
     case "edit_file":
+    case "ast_edit":
+    case "batch_edit":
     case "replace_file_content":
     case "multi_replace_file_content":
-      return displayTarget ? `Integrating changes in ${displayTarget}` : "Integrating workspace changes";
+      return withTarget("Edit", "Edit file");
     case "grep_search":
-      return displayTarget ? `Scanning ${displayTarget} references` : "Scanning workspace files";
+    case "grep_file":
+      return withTarget("Search", "Search files");
     case "find_files":
-      return "Scanning project structure";
+      return withTarget("Find", "Find files");
+    case "list_dir":
+      return withTarget("List", "List directory");
+    case "file_info":
+      return withTarget("Inspect", "File info");
     case "create_directory":
-      return displayTarget ? `Creating folder: ${displayTarget}` : "Creating directory";
+      return withTarget("Create", "Create directory");
     case "delete_file":
-      return displayTarget ? `Removing: ${displayTarget}` : "Removing file";
+      return withTarget("Delete", "Delete file");
+    case "move_file":
+      return withTarget("Move", "Move file");
     case "dispatch_subagent":
-      return "Spawning autonomous specialist";
+      return "Delegate to subagent";
     default: {
       const alias = getToolAlias(toolName);
-      return `${alias} ${displayTarget ? `➔ ${displayTarget}` : ""}`.trim();
+      return displayTarget ? `${alias} ${displayTarget}` : alias;
     }
   }
 }
