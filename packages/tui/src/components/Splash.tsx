@@ -163,7 +163,6 @@ export function Splash({
 
   const [ready, setReady] = useState(false);
   const [stage, setStage] = useState(0);
-  const [stageStartTicks, setStageStartTicks] = useState<Record<number, number>>({});
   const [exitTickCount, setExitTickCount] = useState<number | null>(null);
 
   const tick = useTick(true, 50);
@@ -189,10 +188,6 @@ export function Splash({
       clearTimeout(readyTimer);
     };
   }, [durationMs]);
-
-  useEffect(() => {
-    setStageStartTicks((prev) => ({ ...prev, [stage]: tick }));
-  }, [stage]);
 
   useEffect(() => {
     if (exitTickCount !== null) {
@@ -281,50 +276,25 @@ export function Splash({
           </Box>
         ) : !isNarrow ? (
           <Box flexDirection="row" justifyContent="space-between" paddingY={1} height={7} overflow="hidden">
-            {/* Left Column: Diagnostics / Boot Sequence */}
+            {/* Left Column: startup phase sequence. Honest status glyphs only —
+                the splash animates through the startup phases the app actually
+                performs; it does NOT measure per-phase progress, so there's no
+                fabricated percentage/fill bar implying a real measurement. */}
             <Box flexDirection="column" width={colW} overflow="hidden">
-              <Text color={theme.accent} bold wrap="truncate">● Diagnostics</Text>
+              <Text color={theme.accent} bold wrap="truncate">● Startup</Text>
               {CHECKS.map((check, idx) => {
                 const checkStage = idx + 2;
                 const isActiveNow = stage === checkStage && !ready;
                 const isDone = stage > checkStage || ready;
-                
-                let progress = 0;
-                if (isDone) {
-                  progress = 100;
-                } else if (isActiveNow) {
-                  const startTick = stageStartTicks[checkStage];
-                  if (startTick !== undefined) {
-                    const durationTicks = checkStage === 5 ? 8 : 6;
-                    const elapsed = tick - startTick;
-                    progress = Math.min(99, Math.floor((elapsed / durationTicks) * 100));
-                  }
-                }
 
-                const barWidth = Math.max(2, colW - 27);
-                const filledChars = Math.round((progress / 100) * barWidth);
-                const emptyChars = barWidth - filledChars;
-                const barText = "■".repeat(filledChars) + "▪".repeat(emptyChars);
+                const glyph = isDone ? "✓" : isActiveNow ? spinner : "○";
+                const glyphColor = isDone ? theme.success : isActiveNow ? theme.warning : theme.muted;
+                const labelColor = isDone || isActiveNow ? theme.text : theme.muted;
 
-                let statusColor = theme.muted;
-                let statusStr = "";
-
-                if (isDone) {
-                  statusColor = theme.success;
-                  statusStr = `✓ [${barText}]`;
-                } else if (isActiveNow) {
-                  statusColor = theme.warning;
-                  const pctStr = `${progress}%`.padStart(3);
-                  statusStr = `→ [${barText}] ${pctStr}`;
-                } else {
-                  statusColor = theme.muted;
-                  statusStr = `○ [${barText}]`;
-                }
-                
                 return (
                   <Box key={check.id} flexDirection="row" overflow="hidden">
-                    <Text color={theme.text} wrap="truncate">{check.label.padEnd(colW - 16).slice(0, colW - 16)}</Text>
-                    <Text color={statusColor} wrap="truncate">{statusStr.padStart(16).slice(0, 16)}</Text>
+                    <Text color={glyphColor} wrap="truncate">{glyph} </Text>
+                    <Text color={labelColor} wrap="truncate">{check.label}</Text>
                   </Box>
                 );
               })}
