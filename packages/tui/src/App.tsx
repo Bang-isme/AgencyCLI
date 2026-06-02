@@ -2376,6 +2376,20 @@ ${taskDesc}`;
                           setAgencyConfig(loadAgencyConfig());
                           setActiveModelName(`${providerId}/${modelName}`);
 
+                          // Re-fetch the model list now that a key was added, so the
+                          // provider's live models (e.g. NVIDIA NIM's /models) are
+                          // ready the moment the user opens /models — instead of
+                          // waiting for the next manual refresh. Best-effort.
+                          setModelsLoading(true);
+                          import("@agency/providers").then(({ listAllModels }) => {
+                            listAllModels()
+                              .then((models) => {
+                                setAvailableModels(models);
+                                setModelsLoading(false);
+                              })
+                              .catch(() => setModelsLoading(false));
+                          }).catch(() => setModelsLoading(false));
+
                           // Warn (don't block) when a raw secret is stored on disk —
                           // recommend the ${ENV_VAR} placeholder form instead.
                           const storedRawKey =
