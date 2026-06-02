@@ -298,14 +298,14 @@ export function SubagentsOverlay({
         <>
           <Box flexDirection="row" justifyContent="space-between" marginTop={1} overflow="hidden">
             <Text color={theme.accent} bold wrap="wrap">
-              ● LOGS: [{selectedDetail.agentId}]
+              ● Logs: [{selectedDetail.agentId}]
             </Text>
             <Text
               color={selectedDetail.exitCode === 0 ? theme.success : theme.warning}
               bold
               wrap="wrap"
             >
-              {selectedDetail.exitCode === 0 ? "SUCCESS" : `FAILED (${selectedDetail.exitCode})`}
+              {selectedDetail.exitCode === 0 ? "Success" : `Failed (${selectedDetail.exitCode})`}
             </Text>
           </Box>
           <Text color={theme.dimBorder}>{dividerStr}</Text>

@@ -490,7 +490,7 @@ export function McpOverlay({
             const clipText = getClipboardText();
             const parsed = parsePastedConfig(clipText);
             if (!parsed) {
-              showNotification("error", "Clipboard is empty or does not contain a valid config!");
+              showNotification("error", "Clipboard is empty or has no valid config.");
             } else {
               setPendingImportConfig(parsed);
               let defaultName = "imported-server";
@@ -552,7 +552,7 @@ export function McpOverlay({
       handleTextInput(setBufferPasteVal, () => {
         const parsed = parsePastedConfig(bufferPasteVal);
         if (!parsed) {
-          setImportError("Invalid JSON or shell command line!");
+          setImportError("Invalid JSON or shell command.");
           return;
         }
         updateConfig((cfg) => {

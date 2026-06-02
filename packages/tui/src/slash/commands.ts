@@ -248,11 +248,11 @@ export async function executeSlash(
 
           const lines = [
             `◈ Model diagnostics result: \`${targetModel}\` (Provider: ${providerId.toUpperCase()})`,
-            `  • Diagnostic status: ${res.success ? "✓ SUCCESS" : "✗ FAILED"}`,
+            `  • Diagnostic status: ${res.success ? "✓ passed" : "✗ failed"}`,
             `  • Context Window: \`${res.contextWindow.toLocaleString("en-US")} tokens\``,
             `  • Max Output Tokens: \`${res.maxOutputTokens.toLocaleString("en-US")} tokens\``,
             `  • Thinking/Reasoning support: \`${res.thinkingType.toUpperCase()}\``,
-            `  • Tool-calling support: \`${res.supportsTools ? "YES" : "NO"}\``,
+            `  • Tool-calling support: \`${res.supportsTools ? "yes" : "no"}\``,
             saveMessage,
             ``,
             `📝 Detailed diagnostic log (Probe Tracing Logs):`,
