@@ -799,7 +799,14 @@ registry.register({
             if (stat.isDirectory()) {
               await walk(fullPath, depth + 1);
             } else {
-              const simplePattern = patternArg.replace(/\*\*/g, "").replace(/\*/g, "");
+              // Strip glob wildcards AND path separators down to a bare-substring
+              // match on the file name. The old code stripped only `*`, so any
+              // pattern containing `/` — INCLUDING the default `**/*` (→ "/") and
+              // common `**/*.ts` (→ "/.ts") — was tested with item.includes("/"),
+              // which never matches a bare filename → find_files returned nothing
+              // by default. Patterns without `/` are unchanged ("foo"→"foo",
+              // "*.ts"→".ts"); only the previously-broken `/` cases now work.
+              const simplePattern = patternArg.replace(/\*+/g, "").replace(/\//g, "");
               if (simplePattern === "" || item.includes(simplePattern)) {
                 results.push(relPath);
               }
@@ -816,7 +823,16 @@ registry.register({
       if (results.length === 0) {
         return `No files found matching pattern "${patternArg}" in "${basePath}"`;
       }
-      return `Found ${results.length} files:\n${results.slice(0, 200).join("\n")}`;
+      // Don't claim completeness when the 200-file cap was hit — the walk can
+      // overshoot 200 (the cap is checked per-directory), so reporting
+      // results.length while only showing 200 would mislead the model into
+      // thinking it saw every file. Report the shown count + an honest note.
+      const shown = results.slice(0, 200);
+      const findCapNote =
+        results.length > shown.length
+          ? ` (showing the first ${shown.length} — more match; narrow the pattern or search a subdirectory)`
+          : "";
+      return `Found ${shown.length} files${findCapNote}:\n${shown.join("\n")}`;
     } catch (err: any) {
       return `Error finding files: ${err.message || String(err)}`;
     }
@@ -959,7 +975,14 @@ registry.register({
       if (results.length === 0) {
         return `No matches found for pattern "${patternArg}" in "${basePath}"`;
       }
-      return `Found ${results.length} match(es) in "${basePath}":\n${results.join("\n")}`;
+      // The walk stops at the match limit — don't let the model assume these are
+      // ALL the matches (e.g. "found every usage, safe to rename") when more may
+      // exist beyond the cap. Signal it so it can narrow or raise `limit`.
+      const grepCapNote =
+        matchCount >= limit
+          ? ` (stopped at the ${limit}-match limit — there may be more; narrow the pattern or raise \`limit\`)`
+          : "";
+      return `Found ${results.length} match(es) in "${basePath}"${grepCapNote}:\n${results.join("\n")}`;
     } catch (err: any) {
       return `Error running grep_search: ${err.message || String(err)}`;
     }

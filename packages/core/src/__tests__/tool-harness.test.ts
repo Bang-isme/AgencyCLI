@@ -309,6 +309,61 @@ Here is my decision:
       });
     });
 
+    // find_files derived its substring from the pattern by stripping only `*`,
+    // so any pattern with `/` (incl. the default `**/*` → "/") matched nothing.
+    describe("find_files pattern matching", () => {
+      it("the default pattern (and **/*) returns files instead of nothing", async () => {
+        writeFileSync(join(tempDir, "a.ts"), "x", "utf8");
+        writeFileSync(join(tempDir, "b.js"), "x", "utf8");
+        const def = await executeTool("find_files", {}, tempDir);
+        expect(def).toContain("Found 2 files");
+        const star = await executeTool("find_files", { pattern: "**/*" }, tempDir);
+        expect(star).toContain("Found 2 files");
+      });
+
+      it("a **/*.ext glob filters by extension (the previously-broken / case)", async () => {
+        writeFileSync(join(tempDir, "a.ts"), "x", "utf8");
+        writeFileSync(join(tempDir, "b.js"), "x", "utf8");
+        const res = await executeTool("find_files", { pattern: "**/*.ts" }, tempDir);
+        expect(res).toContain("Found 1 files");
+        expect(res).toContain("a.ts");
+        expect(res).not.toContain("b.js");
+      });
+    });
+
+    // Silent caps are a correctness trap: the model assumes the result set is
+    // complete (e.g. "found every usage → safe to rename") when the tool quietly
+    // stopped at a limit. The output now discloses when a cap was hit.
+    describe("search/find result-cap honesty", () => {
+      it("grep_search discloses when it stops at the match limit", async () => {
+        writeFileSync(join(tempDir, "s.txt"), "foo\nfoo\nfoo\nfoo\nfoo", "utf8");
+        const res = await executeTool("grep_search", { pattern: "foo", limit: 2 }, tempDir);
+        expect(res).toContain("Found 2 match(es)");
+        expect(res).toContain("2-match limit");
+      });
+
+      it("grep_search does NOT add the cap note when under the limit", async () => {
+        writeFileSync(join(tempDir, "s.txt"), "foo\nfoo", "utf8");
+        const res = await executeTool("grep_search", { pattern: "foo", limit: 50 }, tempDir);
+        expect(res).toContain("Found 2 match(es)");
+        expect(res).not.toContain("limit");
+      });
+
+      it("find_files discloses when it caps the file list at 200", async () => {
+        for (let i = 0; i < 205; i++) writeFileSync(join(tempDir, `f${i}.txt`), "x", "utf8");
+        const res = await executeTool("find_files", { pattern: "**/*" }, tempDir);
+        expect(res).toContain("Found 200 files");
+        expect(res).toContain("showing the first 200");
+      });
+
+      it("find_files does NOT add the cap note for a small result set", async () => {
+        for (let i = 0; i < 3; i++) writeFileSync(join(tempDir, `f${i}.txt`), "x", "utf8");
+        const res = await executeTool("find_files", { pattern: "**/*" }, tempDir);
+        expect(res).toContain("Found 3 files");
+        expect(res).not.toContain("showing the first");
+      });
+    });
+
     it("should handle error for unknown or invalid tools", async () => {
       const result = await executeTool("super_secret_tool", {}, tempDir);
       expect(result).toContain("Error: Unknown tool");
