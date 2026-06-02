@@ -6,12 +6,12 @@ import type { ThemeTokens } from "../themes/registry.js";
 import { BlinkCursor } from "./AnimatedText.js";
 import type { AgentMode } from "../state/agent-modes.js";
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
-import { extractPathCandidates, wrapText } from "../utils/text.js";
+import { extractPathCandidates, shouldShowAttachmentChip, wrapText, type ResolvedPath } from "../utils/text.js";
 
 // Micro-cache to prevent duplicate disk reads
-const pathCache = new Map<string, { type: "doc" | "img" | "dir" | "err"; detail: string }>();
+const pathCache = new Map<string, ResolvedPath>();
 
-async function resolvePathDetails(candidate: string, projectRoot: string): Promise<{ type: "doc" | "img" | "dir" | "err"; detail: string }> {
+async function resolvePathDetails(candidate: string, projectRoot: string): Promise<ResolvedPath> {
   // Strip '@' if present
   const cleanPath = candidate.startsWith("@") ? candidate.slice(1) : candidate;
   
@@ -95,7 +95,7 @@ export const PromptComposer = memo(function PromptComposer({
   const borderColor = focused && !disabled ? modeColor : theme.border;
   const hintWidth = 18;
 
-  const [resolvedPaths, setResolvedPaths] = useState<Record<string, { type: "doc" | "img" | "dir" | "err"; detail: string }>>({});
+  const [resolvedPaths, setResolvedPaths] = useState<Record<string, ResolvedPath>>({});
 
   // 1. Extract candidate paths
   const candidates = useMemo(() => extractPathCandidates(value), [value]);
@@ -111,7 +111,7 @@ export const PromptComposer = memo(function PromptComposer({
 
     // Debounce the file checks by 100ms
     const timer = setTimeout(async () => {
-      const nextResolved: Record<string, { type: "doc" | "img" | "dir" | "err"; detail: string }> = {};
+      const nextResolved: Record<string, ResolvedPath> = {};
       
       for (const candidate of candidates) {
         const cacheKey = `${projectRoot}:${candidate}`;
@@ -167,10 +167,16 @@ export const PromptComposer = memo(function PromptComposer({
   const renderAttachments = () => {
     if (candidates.length === 0) return null;
 
+    // Only chip a candidate that is an explicit "@"-mention or a bare token that
+    // actually resolves on disk. Pasted prose (stack frames, hostnames, URLs)
+    // never resolves and must not render a fabricated red "NOT FOUND" badge.
+    const visible = candidates.filter((c) => shouldShowAttachmentChip(c, resolvedPaths[c]));
+    if (visible.length === 0) return null;
+
     return (
       <Box flexDirection="row" flexWrap="wrap" marginBottom={1} width="100%">
-        {candidates.map((candidate) => {
-          const resolved = resolvedPaths[candidate] || { type: "doc", detail: "resolving..." };
+        {visible.map((candidate) => {
+          const resolved = resolvedPaths[candidate]!;
           const filename = candidate.split(/[/\\]/).pop() || candidate;
           
           let prefixStr = "DOC";

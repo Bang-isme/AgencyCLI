@@ -144,7 +144,32 @@ describe("styled span wrapping utilities", () => {
   });
 });
 
-import { extractPathCandidates } from "../utils/text.js";
+import { extractPathCandidates, shouldShowAttachmentChip } from "../utils/text.js";
+
+describe("shouldShowAttachmentChip", () => {
+  it("never chips a bare prose token that does not resolve (no fabricated NOT FOUND badge)", () => {
+    // The exact false positives from a pasted Next.js error dump.
+    for (const frame of ["Array.map", "Next.js", "react-dom.development.js", "scheduler.development.js"]) {
+      expect(shouldShowAttachmentChip(frame, { type: "err", detail: "NOT FOUND" })).toBe(false);
+    }
+  });
+
+  it("chips a bare token only when it resolves to a real file/dir", () => {
+    expect(shouldShowAttachmentChip("package.json", { type: "doc", detail: "1.2 KB" })).toBe(true);
+    expect(shouldShowAttachmentChip("src", { type: "dir", detail: "8 files" })).toBe(true);
+    expect(shouldShowAttachmentChip("logo.png", { type: "img", detail: "4.0 KB" })).toBe(true);
+  });
+
+  it("always chips an explicit @-mention, surfacing an honest ERR when it is missing", () => {
+    expect(shouldShowAttachmentChip("@src/App.tsx", { type: "doc", detail: "5 KB" })).toBe(true);
+    expect(shouldShowAttachmentChip("@nope.ts", { type: "err", detail: "NOT FOUND" })).toBe(true);
+  });
+
+  it("renders nothing while a candidate is still resolving (no phantom flash)", () => {
+    expect(shouldShowAttachmentChip("@src/App.tsx", undefined)).toBe(false);
+    expect(shouldShowAttachmentChip("package.json", undefined)).toBe(false);
+  });
+});
 
 describe("extractPathCandidates", () => {
   it("extracts clean and quoted paths correctly", () => {

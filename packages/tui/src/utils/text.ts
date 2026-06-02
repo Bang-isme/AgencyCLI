@@ -431,8 +431,30 @@ export function extractPathCandidates(text: string): string[] {
       }
     }
   }
-  
+
   return candidates;
+}
+
+export type ResolvedPath = { type: "doc" | "img" | "dir" | "err"; detail: string };
+
+/**
+ * Decides whether a detected path candidate should surface as an attachment chip.
+ *
+ * A chip is shown only for an explicit "@"-mention (the deliberate attach
+ * affordance — honest to flag even when the target is missing) or a bare/quoted
+ * token that actually resolves to a real file or directory on disk. A bare token
+ * that does NOT resolve is just prose — pasted error text, a stack frame
+ * (`Array.map`, `react-dom.development.js`), a hostname, a URL — and must never
+ * render a fabricated red "NOT FOUND" badge. A still-resolving candidate renders
+ * nothing so phantom chips don't flash in and out while async stats settle.
+ */
+export function shouldShowAttachmentChip(
+  candidate: string,
+  resolved: ResolvedPath | undefined,
+): boolean {
+  if (!resolved) return false; // pending — render nothing yet
+  if (candidate.startsWith("@")) return true; // explicit mention: honest, may be ERR
+  return resolved.type !== "err"; // bare token: only when it truly exists
 }
 
 

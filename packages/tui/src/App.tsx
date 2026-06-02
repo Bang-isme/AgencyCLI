@@ -168,8 +168,13 @@ export function estimateComposerHeight(buffer: string, contentCols: number, load
   // Cap content lines at 6
   const visualContentLines = Math.min(6, totalContentLines);
 
-  // 2. Estimate attachments row height (caps at 2 rows)
-  const candidates = extractPathCandidates(buffer);
+  // 2. Estimate attachments row height (caps at 2 rows). Only reserve for tokens
+  // that can actually surface a chip: explicit "@"-mentions or separator-bearing
+  // paths. Dotted prose (`Array.map`, `react-dom.development.js`) resolves to
+  // nothing and renders no chip, so reserving rows for it just wastes layout.
+  const candidates = extractPathCandidates(buffer).filter(
+    (c) => c.startsWith("@") || /[/\\]/.test(c),
+  );
   let attachmentsHeight = 0;
   if (candidates.length > 0) {
     let totalBadgeWidth = 0;
