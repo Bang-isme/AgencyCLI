@@ -24,11 +24,23 @@ describe("§8.10-E parseSystemActivityLine (single canonical classification)", (
     expect(p.args).toBe('{"path":"."}');
   });
 
-  it("classifies a tool completion and extracts the result length", () => {
+  it("classifies a tool completion and extracts the human result summary (new format)", () => {
+    const p = parseSystemActivityLine('⚡ [SYSTEM: Tool "read_file" completed: 42 lines]');
+    expect(p.kind).toBe("completed");
+    expect(p.toolName).toBe("read_file");
+    expect(p.summary).toBe("42 lines");
+    expect(p.len).toBeUndefined();
+
+    const exec = parseSystemActivityLine('⚡ [SYSTEM: Tool "execute_command" completed: exit 0]');
+    expect(exec).toMatchObject({ kind: "completed", toolName: "execute_command", summary: "exit 0" });
+  });
+
+  it("still parses the old opaque char-count completion (back-compat for historical sessions)", () => {
     const p = parseSystemActivityLine('⚡ [SYSTEM: Tool "read_file" completed with result length: 1234 characters.]');
     expect(p.kind).toBe("completed");
     expect(p.toolName).toBe("read_file");
     expect(p.len).toBe("1234");
+    expect(p.summary).toBeUndefined();
   });
 
   it("classifies verification run / pass / fail", () => {

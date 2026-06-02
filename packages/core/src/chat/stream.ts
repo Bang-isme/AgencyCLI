@@ -104,6 +104,64 @@ function formatToolCallNotice(name: string, args: Record<string, any>): string {
   return `\n\n⚡ [SYSTEM: Executing tool "${name}" with arguments ${JSON.stringify(cleanArgs)}...]\n`;
 }
 
+/**
+ * A concise, human-meaningful summary of a tool result for the activity line —
+ * "42 lines", "7 matches", "exit 0", "1.2 KB" — instead of the opaque
+ * "result length: N characters" (which means nothing to a reader). Parses the
+ * stable markers the tool harness emits; falls back to a human byte size. Keep
+ * this in lockstep with the result strings in `skill/tool-harness.ts`.
+ */
+export function summarizeToolResult(name: string, result: string): string {
+  const r = result ?? "";
+  const humanSize = (n: number): string =>
+    n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+    : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+    : `${n} B`;
+  const plural = (n: string, one: string, many: string): string => `${n} ${n === "1" ? one : many}`;
+
+  switch (name) {
+    case "read_file":
+    case "view_file": {
+      const m = r.match(/\((\d+) lines total/);
+      return m ? plural(m[1]!, "line", "lines") : plural(String(r.split("\n").length), "line", "lines");
+    }
+    case "grep_file":
+    case "grep_search": {
+      if (/^No matches found/.test(r)) return "no matches";
+      const m = r.match(/Found (\d+) match/);
+      return m ? plural(m[1]!, "match", "matches") : "done";
+    }
+    case "find_files": {
+      if (/^No files found/.test(r)) return "no files";
+      const m = r.match(/Found (\d+) files/);
+      return m ? plural(m[1]!, "file", "files") : "done";
+    }
+    case "list_dir":
+      return plural(String(r.split("\n").filter(Boolean).length), "item", "items");
+    case "execute_command": {
+      const m = r.match(/Exit Code: (-?\d+)/);
+      return m ? `exit ${m[1]}` : "done";
+    }
+    case "write_file":
+    case "append_file": {
+      const m = r.match(/(\d+) bytes/);
+      return m ? humanSize(parseInt(m[1]!, 10)) : "saved";
+    }
+    case "edit_file":
+    case "ast_edit":
+    case "batch_edit":
+      return "edited";
+    case "delete_file":
+      return "deleted";
+    case "move_file":
+      return "moved";
+    case "create_directory":
+      return "created";
+    default:
+      return humanSize(r.length);
+  }
+}
+
 export async function runChatTurnWithStream(
   input: ChatStreamInput,
   handlers: ChatStreamHandlers
@@ -461,7 +519,7 @@ export async function runChatTurnWithStream(
                  step: { label: stepLabel, status: "done" }
                });
              }
-             handlers.onDelta(`⚡ [SYSTEM: Tool "${tc.name}" completed with result length: ${result.length} characters.]\n`);
+             handlers.onDelta(`⚡ [SYSTEM: Tool "${tc.name}" completed: ${summarizeToolResult(tc.name, result)}]\n`);
              return `\n[Tool Result for "${tc.name}":]\n${truncated}\n`;
            })
         );

@@ -92,6 +92,7 @@ export interface ParsedSystemActivity {
   target?: string;
   args?: string;
   len?: string;
+  summary?: string;
   gate?: string;
 }
 
@@ -107,8 +108,12 @@ export function parseSystemActivityLine(line: string): ParsedSystemActivity {
     const m = cleanLine.match(/Executing tool "([a-zA-Z0-9_-]+)"(?:\s+on\s+(.+?))?(?:\s+with\s+arguments\s+(.+?))?\.\.\./);
     if (m) return { kind: "exec", cleanLine, toolName: m[1]!, target: m[2] || "", args: m[3] ?? "" };
   }
-  if (cleanLine.includes("completed with result length")) {
-    const m = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
+  if (cleanLine.includes('" completed')) {
+    // New format: a human summary ("42 lines", "exit 0", "1.2 KB").
+    let m = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed:\s*(.+?)\s*\]?\s*$/);
+    if (m) return { kind: "completed", cleanLine, toolName: m[1]!, summary: m[2]! };
+    // Back-compat: the old opaque "result length: N characters" (historical sessions).
+    m = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
     if (m) return { kind: "completed", cleanLine, toolName: m[1]!, len: m[2]! };
   }
   if (cleanLine.includes("Running auto-verification")) {
@@ -168,15 +173,14 @@ export const SystemActivityLine = memo(function SystemActivityLine({
     // Pattern 3: Tool completed
     case "completed": {
       const toolName = parsed.toolName!;
-      const len = parsed.len;
-      // The completed line is self-contained: the started line above already
-      // showed the target. We no longer thread a started→completed target via a
-      // global name-keyed Map (it collided across parallel / same-name tool calls
-      // and was only ever read on the non-expanded path, which the sole caller —
-      // always expandedTui — never hits).
-      const semanticOp = expandedTui
-        ? `${getToolAlias(toolName)} completed (${len} chars)`
+      // Prefer the meaningful result summary ("42 lines", "exit 0", "1.2 KB");
+      // fall back to the old char count for historical sessions. The started line
+      // above already showed the target, so no started→completed correlation Map.
+      const detail = parsed.summary ?? (parsed.len ? `${parsed.len} chars` : "");
+      const base = expandedTui
+        ? getToolAlias(toolName)
         : toPastTense(getSemanticToolOperation(toolName, "", ""));
+      const semanticOp = detail ? `${base} · ${detail}` : base;
       return (
         <Box flexDirection="row">
           <Text color={theme.success}>✓ </Text>
@@ -270,13 +274,15 @@ export function toConciseTelemetry(line: string, theme: ThemeTokens, isActive = 
       );
     }
 
-    case "completed":
+    case "completed": {
+      const detail = parsed.summary ?? (parsed.len ? `${parsed.len} chars` : "completed");
       return (
         <Box flexDirection="row">
           <Text color={theme.success}>✓ </Text>
-          <Text color={theme.muted}>{`exec · ${getToolAlias(parsed.toolName!)} · completed`}</Text>
+          <Text color={theme.muted}>{`exec · ${getToolAlias(parsed.toolName!)} · ${detail}`}</Text>
         </Box>
       );
+    }
 
     case "verify-run":
       return (
