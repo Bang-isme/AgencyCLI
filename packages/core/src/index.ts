@@ -104,11 +104,8 @@ export {
   getHarnessConfig,
   harnessModeHint,
   inferHarnessMode,
-  runWithVerificationHarness,
   type HarnessOptions,
   type SkillHarnessMode,
-  type VerificationResult,
-  type HarnessRunResult,
 } from "./skill/harness.js";
 export { getInvokeActions } from "./skill/invoke-actions.js";
 export { parseToolCalls, executeTool, truncateToolResult, registry as toolRegistry, toolApprovalEngine, type ToolCall } from "./skill/tool-harness.js";

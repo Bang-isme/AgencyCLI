@@ -1,5 +1,3 @@
-import { LoopDetector } from "@agency/heuristics";
-
 export type SkillHarnessMode = "default" | "long-reasoning" | "long-runner";
 
 export interface HarnessOptions {
@@ -58,65 +56,5 @@ export function harnessModeHint(skillName: string): string {
     parts.push(`hints=${config.hintSkills.join(",")}`);
   }
   return parts.join(" ");
-}
-
-export interface VerificationResult {
-  passed: boolean;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  error?: string;
-}
-
-export interface HarnessRunResult<T> {
-  success: boolean;
-  attempts: number;
-  output: T;
-  verificationLogs: VerificationResult[];
-}
-
-export async function runWithVerificationHarness<T>(
-  execute: (attempt: number, lastError?: string) => Promise<T>,
-  verify: () => Promise<VerificationResult>,
-  options: { maxAttempts?: number } = {}
-): Promise<HarnessRunResult<T>> {
-  const maxAttempts = options.maxAttempts ?? 3;
-  const verificationLogs: VerificationResult[] = [];
-  let lastError: string | undefined;
-  let output: T;
-
-  const loopDetector = new LoopDetector();
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    output = await execute(attempt, lastError);
-    const check = await verify();
-    verificationLogs.push(check);
-
-    if (check.passed) {
-      return {
-        success: true,
-        attempts: attempt,
-        output,
-        verificationLogs,
-      };
-    }
-
-    const errorSignature = `Exit Code: ${check.exitCode}\nStdout: ${check.stdout}\nStderr: ${check.stderr}`;
-    loopDetector.addError(errorSignature);
-
-    const loopCheck = loopDetector.detectLoop();
-    if (loopCheck.loopDetected) {
-      throw new Error(`[Loop Detected] ${loopCheck.reason || "Execution halted due to infinite cyclic loop."}`);
-    }
-
-    lastError = `[Attempt ${attempt} Verification Failed]\n${errorSignature}`;
-  }
-
-  return {
-    success: false,
-    attempts: maxAttempts,
-    output: output!,
-    verificationLogs,
-  };
 }
 
