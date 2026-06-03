@@ -2018,7 +2018,27 @@ ${taskDesc}`;
     cognitionPanelHeight = 3 + cognDisplayCount;
   }
 
-  const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight;
+  // The live PlanPanel (update_plan) renders below the conversation, so its
+  // height MUST be reserved here — otherwise conversationHeight is over-counted,
+  // the panel overflows the viewport, and ink clips it (a "0/6" plan showed only
+  // 3-4 of its rows). Shows only while the plan has unfinished work (PlanPanel
+  // auto-hides once every step is completed), capped so a long plan can't eat
+  // the whole conversation.
+  const planActive = !goalActive && planTodos.some((t) => t.status !== "completed");
+  let planMaxVisible = 0;
+  let planPanelHeight = 0;
+  if (planActive) {
+    const planOverhead = 3; // round border (2) + "Plan N/M" header (1)
+    const allocatedOther =
+      baseFixedHeight + suggestionsHeight + loadingHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight;
+    const planBudget = rows - allocatedOther - 1 - minConversationHeight - planOverhead;
+    planMaxVisible = Math.max(2, Math.min(12, planBudget));
+    const truncated = planTodos.length > planMaxVisible;
+    const visibleRows = truncated ? planMaxVisible : planTodos.length;
+    planPanelHeight = planOverhead + visibleRows + (truncated ? 1 : 0);
+  }
+
+  const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight + planPanelHeight;
   const conversationHeight = Math.max(4, rows - fixedHeight - 1);
 
   useKeyboardHandlers({
@@ -2756,8 +2776,8 @@ ${taskDesc}`;
                 tokenCount={tokenCount}
               />
             ) : null}
-            {!goalActive && planTodos.length > 0 ? (
-              <PlanPanel theme={theme} todos={planTodos} />
+            {planActive ? (
+              <PlanPanel theme={theme} todos={planTodos} maxVisible={planMaxVisible} />
             ) : null}
             {indexing ? (
               <IndexProgressPanel
