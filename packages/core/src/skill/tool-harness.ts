@@ -1302,7 +1302,16 @@ export async function executeTool(
     // command that will always be refused. Previously every non-throwing result
     // was recorded as success, so the consecutive-failure breaker never tripped
     // and a blocked command (taskkill /IM node.exe …) looped until maxLoops.
-    if (/^Error[:\s]/.test(result)) {
+    //
+    // command/dispatch tools report failure as `Exit Code: <nonzero>` (a
+    // non-`Error:` string), so a failing build (`execute_command`) or a failing
+    // subagent (`dispatch_subagent`) used to RESET the failure counter — the
+    // breaker never tripped and the model spun re-running a build that always
+    // fails. When `breakerFailedExits` is on, a non-zero exit counts as a failure.
+    const isError = /^Error[:\s]/.test(result);
+    const isFailedExit =
+      getRuntimeFlags().breakerFailedExits && /^Exit Code:\s*[1-9]/.test(result);
+    if (isError || isFailedExit) {
       recordToolFailure(circuitBreakerState);
     } else {
       recordToolSuccess(circuitBreakerState);

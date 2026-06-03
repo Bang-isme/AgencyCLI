@@ -187,6 +187,19 @@ export interface RuntimeFlags {
    */
   toolResultTailKept: boolean;
   /**
+   * Count a tool result that reports a non-zero exit (`Exit Code: <nonzero>` —
+   * a failed `execute_command` build/test or a failed `dispatch_subagent`) as a
+   * circuit-breaker FAILURE, not a success. The breaker's consecutive-failure
+   * guard only recognised results matching `Error:`, but command/dispatch tools
+   * report failure as `Exit Code: 1` (a non-`Error:` string) → every failing
+   * build or failing subagent reset the failure counter, so the breaker never
+   * tripped and the model could spin for many minutes re-running a build that
+   * always fails (or re-dispatching subagents that always fail). On counts those
+   * toward the breaker so 3 consecutive failures halt the loop. Off in legacy
+   * (byte-identical — only `Error:` counts), on in hardened.
+   */
+  breakerFailedExits: boolean;
+  /**
    * Confine the mutating file tools (write/append/edit/batch_edit/ast_edit/
    * delete/move/create_directory) to the project root: a `path` that resolves
    * outside projectRoot (via `../` traversal or an absolute path) is refused
@@ -382,6 +395,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // model isn't blind to why a build failed. Opt out with AGENCY_TOOLRESULT_TAIL=0
     // to restore the legacy head-only truncation. Other tools stay head-only.
     toolResultTailKept: parseBool(env.AGENCY_TOOLRESULT_TAIL, true),
+    // Behaviour-changing (a failed command/dispatch `Exit Code: <nonzero>` counts
+    // toward the breaker's consecutive-failure guard) → off in legacy (only
+    // `Error:` counts, byte-identical), on in hardened.
+    breakerFailedExits: parseBool(env.AGENCY_BREAKER_FAILED_EXITS, hardened),
     // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
     // → off in legacy (no confinement, byte-identical), on in hardened.
     pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),

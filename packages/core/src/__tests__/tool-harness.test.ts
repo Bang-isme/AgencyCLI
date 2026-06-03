@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
+import { z } from "zod";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -773,6 +774,69 @@ Here is my decision:
       const res = await executeTool("update_plan", { todos }, "/tmp");
       expect(res).toContain("0/1 done");
       expect(res).toContain("[ ] Valid step");
+    });
+  });
+
+  describe("breaker counts failed Exit Code results (breakerFailedExits)", () => {
+    const FAILTOOL = "__test_failexit";
+
+    beforeAll(() => {
+      // A tool that always reports a non-zero exit (like a failing build /
+      // failing subagent). Distinct `n` per call so the identical-call breaker
+      // path is NOT what trips — we are exercising the consecutive-FAILURE path.
+      registry.register({
+        name: FAILTOOL,
+        description: "test tool that reports a non-zero exit",
+        category: "other",
+        schema: z.object({ n: z.string() }),
+        execute: async () => "Exit Code: 1\nbuild failed",
+      } as any);
+    });
+
+    beforeEach(() => resetToolCircuitBreaker());
+    afterEach(() => {
+      delete process.env.AGENCY_BREAKER_FAILED_EXITS;
+      delete process.env.AGENCY_PROFILE;
+      resetToolCircuitBreaker();
+    });
+
+    it("off (legacy): repeated failing exits never trip the breaker", async () => {
+      process.env.AGENCY_BREAKER_FAILED_EXITS = "0";
+      for (let i = 0; i < 5; i++) {
+        const r = await executeTool(FAILTOOL, { n: String(i) }, "/tmp");
+        expect(r).toContain("Exit Code: 1");
+        expect(r).not.toContain("Circuit breaker");
+      }
+    });
+
+    it("on: three consecutive failing exits trip the breaker on the next call", async () => {
+      process.env.AGENCY_BREAKER_FAILED_EXITS = "1";
+      for (let i = 0; i < 3; i++) {
+        const r = await executeTool(FAILTOOL, { n: String(i) }, "/tmp");
+        expect(r).toContain("Exit Code: 1");
+      }
+      const tripped = await executeTool(FAILTOOL, { n: "final" }, "/tmp");
+      expect(tripped).toContain("Circuit breaker");
+    });
+
+    it("on: a successful exit (Exit Code: 0) resets the failure run", async () => {
+      process.env.AGENCY_BREAKER_FAILED_EXITS = "1";
+      registry.register({
+        name: "__test_okexit",
+        description: "test tool that reports a zero exit",
+        category: "other",
+        schema: z.object({ n: z.string() }),
+        execute: async () => "Exit Code: 0\nok",
+      } as any);
+      await executeTool(FAILTOOL, { n: "a" }, "/tmp");
+      await executeTool(FAILTOOL, { n: "b" }, "/tmp");
+      await executeTool("__test_okexit", { n: "ok" }, "/tmp"); // resets the run
+      await executeTool(FAILTOOL, { n: "c" }, "/tmp");
+      await executeTool(FAILTOOL, { n: "d" }, "/tmp");
+      // Only 2 consecutive failures since the reset → still under threshold.
+      const r = await executeTool(FAILTOOL, { n: "e" }, "/tmp");
+      expect(r).toContain("Exit Code: 1");
+      expect(r).not.toContain("Circuit breaker");
     });
   });
 });
