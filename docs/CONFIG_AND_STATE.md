@@ -340,7 +340,7 @@ interface SessionMessage {
                      ▼
 ┌─────────────────────────────────────────────────────────┐
 │  EVENT BUS (pub/sub, in-memory)                          │
-│  • subagent:started/progress/finished → SubagentPanel    │
+│  • subagent:started/progress/finished → Workers panel    │
 │  • dag:task:started/completed/failed                     │
 └────────────────────┬────────────────────────────────────┘
                      │

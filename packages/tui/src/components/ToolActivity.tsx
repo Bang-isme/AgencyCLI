@@ -6,7 +6,7 @@ import { getPhaseLabel, type ActivityPhase } from "../state/context-tracker.js";
 import { pulseDots, SPINNER_BLOCKS } from "../motion/design-system.js";
 import { formatTokenCount } from "../utils/text.js";
 import { normalizeWorkerName, formatElapsed } from "@agency/core";
-import type { SubagentStatus } from "./SubagentPanel.js";
+import type { SubagentStatus } from "../state/subagent-status.js";
 
 export interface ToolActivityProps {
   theme: ThemeTokens;
@@ -77,8 +77,8 @@ export const ToolActivity = memo(function ToolActivity({
       progressText = progressText.slice(0, 47) + "...";
     }
 
-    // The worker's own elapsed is shown by the SubagentPanel ([running | Ns]);
-    // don't repeat it here — the trailing turn-elapsed below is the single timer.
+    // The worker's own elapsed is shown by the conversation Workers panel
+    // ([running | Ns]); don't repeat it — the trailing turn-elapsed is the timer.
     displayLabel = `${name} ➔ ${progressText}`;
   }
 

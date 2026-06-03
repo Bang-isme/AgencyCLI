@@ -27,8 +27,7 @@ export { PatchCard } from "./components/PatchCard.js";
 export type { PatchCardProps, PatchSymbol, PatchAction } from "./components/PatchCard.js";
 export { LogCollapse } from "./components/LogCollapse.js";
 export type { LogCollapseProps, LogEntry, LogSeverity } from "./components/LogCollapse.js";
-export { SubagentPanel } from "./components/SubagentPanel.js";
-export type { SubagentPanelProps, SubagentStatus } from "./components/SubagentPanel.js";
+export type { SubagentStatus } from "./state/subagent-status.js";
 
 export interface RenderOptions {
   project?: string;

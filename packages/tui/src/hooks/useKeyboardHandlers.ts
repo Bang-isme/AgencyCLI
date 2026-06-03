@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { useInput } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
-import type { SubagentStatus } from "../components/SubagentPanel.js";
+import type { SubagentStatus } from "../state/subagent-status.js";
 import { calculateFormattedLines, getMaxScrollOffset } from "../components/Conversation.js";
 import { getDegradationTier } from "../terminal/screen.js";
 import type { SessionMessage } from "../state/messages.js";

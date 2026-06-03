@@ -230,7 +230,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `components/WorkerProgress.tsx` | Worker step tracker |
 | `components/PatchCard.tsx` | Code patch card |
 | `components/LogCollapse.tsx` | Collapsible log view |
-| `components/SubagentPanel.tsx` | Subagent status panel |
+| `state/subagent-status.ts` | `SubagentStatus` type (Workers panel renders inline in `Conversation`) |
 | `components/ErrorBanner.tsx` | Inline error notification banner (`ErrorNotification`) |
 | `components/conversation/TraceTelemetry.tsx` | Inline trace/telemetry readout. `parseSystemActivityLine()` is the SINGLE canonical `[SYSTEM:]`-line classifier (§8.10-E) consumed by both live renderers — `SystemActivityLine` (verbose) + `toConciseTelemetry` (concise); do NOT re-inline the pattern regexes. (The byte-identical dead `formatSystemActivityLine` was removed.) |
 | `components/conversation/SubagentStepRow.tsx` | Per-step subagent row with status highlighting |

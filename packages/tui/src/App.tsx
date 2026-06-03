@@ -25,7 +25,7 @@ import { StatusBar } from "./layout/StatusBar.js";
 import { Approval, type PendingApproval } from "./screens/Approval.js";
 import { Splash } from "./components/Splash.js";
 import { ComposerBlock } from "./components/ComposerBlock.js";
-import { type SubagentStatus } from "./components/SubagentPanel.js";
+import { type SubagentStatus } from "./state/subagent-status.js";
 import { WorkerProgress } from "./components/WorkerProgress.js";
 import { globalWorkerTracker, SemanticTranslator, type WorkerState } from "./state/semantic-orchestration.js";
 

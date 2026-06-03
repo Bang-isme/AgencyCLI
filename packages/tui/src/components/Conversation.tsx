@@ -2,7 +2,7 @@ import React, { useMemo, memo, useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { SessionMessage } from "../state/messages.js";
-import type { SubagentStatus } from "./SubagentPanel.js";
+import type { SubagentStatus } from "../state/subagent-status.js";
 import { EmptyChat } from "./EmptyChat.js";
 import { contentWidth as measureContentWidth } from "../layout/terminal-layout.js";
 
@@ -1569,7 +1569,7 @@ export function calculateFormattedLines(
         (
           <Box marginLeft={4} marginTop={0}>
             <Text color={theme.muted} italic>
-              ▲ +${sortedSubagents.length - maxVisibleWorkers} more background workers active...
+              ▲ +{sortedSubagents.length - maxVisibleWorkers} more background workers active...
             </Text>
           </Box>
         ),

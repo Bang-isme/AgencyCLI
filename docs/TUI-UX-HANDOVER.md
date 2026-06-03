@@ -93,7 +93,7 @@ Current exports — **this is the single source of truth; do not redefine spinne
 
 > Warning is `▲` not `⚠` (the latter renders double-width on many Windows terminals). `text.ts` re-exports `SPINNER_FRAMES` as an alias of `AGENCY_SPINNER` — one spinner array codebase-wide.
 
-Consumers (keep these in sync if you touch the identity): `ToolActivity`, `IndexProgress`, `LogCollapse`, `SubagentPanel`, `SubagentStepRow`, `WorkerProgress`, `GoalRunner`, `Splash`, `TraceTelemetry`.
+Consumers (keep these in sync if you touch the identity): `ToolActivity`, `IndexProgress`, `LogCollapse`, `SubagentStepRow`, `WorkerProgress`, `GoalRunner`, `Splash`, `TraceTelemetry`.
 
 ---
 
