@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import { ShimmerText } from "../components/AnimatedText.js";
@@ -38,12 +38,19 @@ export function Approval({ theme, pending, width }: ApprovalProps) {
 
   const isHighRisk = pending.riskLevel === "HIGH" || pending.budgetExceeded;
   const isMediumRisk = pending.riskLevel === "MEDIUM";
+  const isLowRisk = pending.riskLevel === "LOW";
 
+  // An approval is requested BECAUSE the action mutates/destroys. When the risk
+  // wasn't actually assessed (no riskLevel on this path), default to caution
+  // (warning), NOT success/green — a green "all clear" border on an un-assessed
+  // destructive action is a fabricated safety signal.
   const borderColor = isHighRisk
     ? theme.danger
     : isMediumRisk
     ? theme.warning
-    : theme.success;
+    : isLowRisk
+    ? theme.success
+    : theme.warning;
 
   const boxWidth = width ?? 70;
   const innerWidth = boxWidth - 6;
@@ -65,6 +72,28 @@ export function Approval({ theme, pending, width }: ApprovalProps) {
         { preserveIndent: true }
       ).join("\n")
     : "";
+
+  // Only surface trust metadata that is REAL. Never fabricate "Confidence: HIGH"
+  // / "Validation: PASSED" defaults — this path sets neither, so a hardcoded
+  // default would be a fake assessment shown on a security gate (it lulls the
+  // user into approving). When nothing real is present, the row is omitted.
+  const trustSegments: ReactNode[] = [];
+  if (pending.confidenceLevel) {
+    trustSegments.push(
+      <Text key="conf" color={theme.text}>Confidence: <Text color={theme.success} bold>{pending.confidenceLevel}</Text></Text>
+    );
+  }
+  if (pending.validationStatus) {
+    trustSegments.push(
+      <Text key="val" color={theme.text}>Validation: <Text color={theme.success} bold>{pending.validationStatus}</Text></Text>
+    );
+  }
+  if (pending.pausedCount !== undefined) {
+    trustSegments.push(<Text key="paused" color={theme.warning} bold>◷ {pending.pausedCount} Paused</Text>);
+  }
+  if (pending.queuedSafeCount !== undefined) {
+    trustSegments.push(<Text key="queued" color={theme.success} bold>+ {pending.queuedSafeCount} Queued Safe</Text>);
+  }
 
   return (
     <Box
@@ -95,33 +124,24 @@ export function Approval({ theme, pending, width }: ApprovalProps) {
         </Box>
       ) : null}
 
-      {/* Unified Trust Card horizontal metadata */}
-      <Box
-        flexDirection="row"
-        borderStyle="single"
-        borderColor={theme.border}
-        paddingX={1}
-        marginBottom={1}
-        width={innerWidth}
-      >
-        <Text color={theme.text}>
-          Confidence: <Text color={theme.success} bold>{pending.confidenceLevel || "HIGH"}</Text>
-          {"  "}|{"  "}
-          Validation: <Text color={theme.success} bold>{pending.validationStatus || "PASSED"}</Text>
-          {pending.pausedCount !== undefined ? (
-            <>
-              {"  "}|{"  "}
-              <Text color={theme.warning} bold>◷ {pending.pausedCount} Paused</Text>
-            </>
-          ) : null}
-          {pending.queuedSafeCount !== undefined ? (
-            <>
-              {"  "}|{"  "}
-              <Text color={theme.success} bold>+ {pending.queuedSafeCount} Queued Safe</Text>
-            </>
-          ) : null}
-        </Text>
-      </Box>
+      {/* Trust metadata — rendered only when a REAL assessment is present. */}
+      {trustSegments.length > 0 ? (
+        <Box
+          flexDirection="row"
+          borderStyle="single"
+          borderColor={theme.border}
+          paddingX={1}
+          marginBottom={1}
+          width={innerWidth}
+        >
+          {trustSegments.map((seg, i) => (
+            <Box key={i} flexDirection="row">
+              {i > 0 ? <Text color={theme.dimBorder}>{"  |  "}</Text> : null}
+              {seg}
+            </Box>
+          ))}
+        </Box>
+      ) : null}
 
       {pending.shellCommand ? (
         <Box borderStyle="single" borderColor={theme.border} paddingX={1} marginBottom={1} width={innerWidth}>
