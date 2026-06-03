@@ -1543,7 +1543,7 @@ export function calculateFormattedLines(
 
       const elapsedSec = agent.elapsedMs !== undefined ? `${(agent.elapsedMs / 1000).toFixed(0)}s` : "";
       const timingInfo = elapsedSec ? ` | ${elapsedSec}` : "";
-      const statusLabel = `[${agent.status.toUpperCase()}${timingInfo}]`;
+      const statusLabel = `[${agent.status}${timingInfo}]`;
 
       if (!expandedTui) {
         // Collapsed Workers

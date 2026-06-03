@@ -2319,7 +2319,7 @@ ${taskDesc}`;
               {/* Header */}
               <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
                 <Text color={theme.accent} bold>
-                  worker.{subagent.agentId} — {subagent.status.toUpperCase()}
+                  worker.{subagent.agentId} — {subagent.status}
                 </Text>
                 <Text color={theme.muted}>
                   Explore ({subagentIndex + 1} of {totalSubagents})

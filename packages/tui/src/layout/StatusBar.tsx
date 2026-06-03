@@ -186,11 +186,11 @@ export const StatusBar = memo(function StatusBar({
               <Text color={theme.dimBorder}> · </Text>
               {thinkingLabel === "off" ? (
                 <Text color={theme.muted}>
-                  OFF
+                  thinking: off
                 </Text>
               ) : (
                 <Text color={theme.warning} bold>
-                  THINKING: {thinkingLabel.toUpperCase()}
+                  thinking: {thinkingLabel}
                 </Text>
               )}
             </>
