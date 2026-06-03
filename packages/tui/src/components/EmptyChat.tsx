@@ -11,6 +11,8 @@ export interface EmptyChatProps {
   modelName?: string;
   agentMode?: string;
   indexing?: boolean;
+  /** True only when a fresh index actually exists (not merely "not building"). */
+  indexReady?: boolean;
   themeId?: string;
   noProvider?: boolean;
   height?: number;
@@ -22,6 +24,7 @@ export const EmptyChat = memo(function EmptyChat({
   modelName = "Default",
   agentMode = "agent",
   indexing = false,
+  indexReady = false,
   themeId = "agency",
   noProvider = false,
   height,
@@ -94,20 +97,20 @@ export const EmptyChat = memo(function EmptyChat({
     displayTheme = displayTheme.slice(0, themeSpace - 1) + "…";
   }
 
-  // Code Index status truncation to fit strictly in colW
+  // Code Index status truncation to fit strictly in colW. Three honest states:
+  // building / ready (a fresh index really exists) / not indexed — never a
+  // fabricated "Ready ✓" just because indexing isn't running right now.
   const indexSpace = colW - indexPrefix.length;
-  let displayIndex = indexing ? "Indexing..." : "Ready ✓";
+  const indexFull = indexing ? "Indexing..." : indexReady ? "Ready ✓" : "Not indexed";
+  const indexShort = indexing ? "Indexing" : indexReady ? "Ready" : "No index";
+  const indexTiny = indexing ? "Idx..." : indexReady ? "OK" : "—";
+  const indexMin = indexing ? "…" : indexReady ? "✓" : "×";
+  let displayIndex = indexFull;
   if (displayIndex.length > indexSpace) {
-    const shortStatus = indexing ? "Indexing" : "Ready";
-    if (shortStatus.length > indexSpace) {
-      const tinyStatus = indexing ? "Idx..." : "OK";
-      if (tinyStatus.length > indexSpace) {
-        displayIndex = indexing ? "…" : "✓";
-      } else {
-        displayIndex = tinyStatus;
-      }
+    if (indexShort.length > indexSpace) {
+      displayIndex = indexTiny.length > indexSpace ? indexMin : indexTiny;
     } else {
-      displayIndex = shortStatus;
+      displayIndex = indexShort;
     }
   }
 
@@ -350,7 +353,7 @@ export const EmptyChat = memo(function EmptyChat({
               <Box width={colW} overflow="hidden" flexShrink={0}>
                 <Text>
                   <Text color={theme.muted}>{indexPrefix}</Text>
-                  <Text color={indexing ? theme.accent : theme.success}>{displayIndex}</Text>
+                  <Text color={indexing ? theme.accent : indexReady ? theme.success : theme.muted}>{displayIndex}</Text>
                   <Text>{getPad(indexPrefix, displayIndex, colW)}</Text>
                 </Text>
               </Box>

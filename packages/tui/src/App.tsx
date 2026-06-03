@@ -472,6 +472,11 @@ export function App({
 
   // Indexing state
   const [indexing, setIndexing] = useState(false);
+  // Whether a fresh workspace index actually exists. Distinct from `!indexing`
+  // (which only means "not building right now") so the welcome screen doesn't
+  // claim "Ready ✓" before the index is confirmed, or after a silent build
+  // failure. Set true only when the index is fresh or a build succeeds.
+  const [indexReady, setIndexReady] = useState(false);
   const [indexProgress, setIndexProgress] = useState<import("@agency/core").IndexProgress | null>(null);
   const indexAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -1935,7 +1940,10 @@ ${taskDesc}`;
     (async () => {
       try {
         const { isIndexStale, incrementalUpdateAsync, writeIndex } = await import("@agency/core");
-        if (isIndexStale(project)) {
+        if (!isIndexStale(project)) {
+          // Index already exists and is fresh → genuinely ready.
+          if (active) setIndexReady(true);
+        } else {
           if (!active) return;
           setIndexing(true);
           const index = await incrementalUpdateAsync(project, {
@@ -1947,6 +1955,7 @@ ${taskDesc}`;
           if (!active) return;
           if (controller.signal.aborted) return;
           writeIndex(project, index);
+          if (active) setIndexReady(true);
           addSystemLines([
             `✦ Indexed ${index.files.length} files (${index.stats?.indexDurationMs ?? 0}ms)`,
           ]);
@@ -2744,6 +2753,7 @@ ${taskDesc}`;
                     modelName={displayModelName}
                     agentMode={agentMode}
                     indexing={indexing}
+                    indexReady={indexReady}
                     themeId={themeId}
                     noProvider={!providerStatuses.some((p) => p.configured)}
                     subagents={subagents}

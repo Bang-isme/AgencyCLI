@@ -1752,6 +1752,7 @@ export interface ConversationProps {
   modelName?: string;
   agentMode?: string;
   indexing?: boolean;
+  indexReady?: boolean;
   themeId?: string;
   noProvider?: boolean;
   subagents?: SubagentStatus[];
@@ -1771,6 +1772,7 @@ export const Conversation = memo(
     modelName,
     agentMode,
     indexing,
+    indexReady,
     themeId,
     noProvider = false,
     subagents,
@@ -2059,6 +2061,7 @@ export const Conversation = memo(
           modelName={modelName}
           agentMode={agentMode}
           indexing={indexing}
+          indexReady={indexReady}
           themeId={themeId}
           noProvider={noProvider}
           height={viewportHeight}
@@ -2116,6 +2119,7 @@ export const Conversation = memo(
     if (prevProps.expandedTui !== nextProps.expandedTui) return false;
     if (prevProps.goalActive !== nextProps.goalActive) return false;
     if (prevProps.indexing !== nextProps.indexing) return false;
+    if (prevProps.indexReady !== nextProps.indexReady) return false;
     if (prevProps.themeId !== nextProps.themeId) return false;
     if (prevProps.noProvider !== nextProps.noProvider) return false;
     if (prevProps.project !== nextProps.project) return false;
