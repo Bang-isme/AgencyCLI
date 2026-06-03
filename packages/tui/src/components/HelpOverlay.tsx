@@ -104,7 +104,6 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
     { category: "Actions", items: [
       { keys: "Enter", desc: "Send message / Confirm selection" },
       { keys: "Tab", desc: "Cycle agent modes (agent/plan/debug/ask)" },
-      { keys: "Ctrl+D", desc: "Cycle disclosure levels" },
       { keys: "Ctrl+O", desc: "Toggle expand/collapse long content" },
       { keys: "!", desc: "Execute shell command" },
     ]},

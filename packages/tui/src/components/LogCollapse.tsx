@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
-import { useDisclosure } from "../state/DisclosureProvider.js";
 import { SEVERITY_GLYPHS } from "../motion/design-system.js";
 
 export type LogSeverity = "info" | "warning" | "error" | "debug";
@@ -52,14 +51,8 @@ function severityIcon(severity: LogSeverity): string {
 /**
  * Smart log collapsing component.
  *
- * By default:
- * - Hides noise (debug, repetitive info)
- * - Collapses successful repetitive validations
- * - Shows only warnings and errors
- *
- * In advanced/expert disclosure levels: shows all entries.
- *
- * Expands on user toggle for full diagnostics.
+ * Hides passing noise (debug, repetitive info) and surfaces only warnings and
+ * errors, capped at `maxVisible` with a "+N more" overflow indicator.
  */
 export const LogCollapse = memo(function LogCollapse({
   theme,
@@ -67,21 +60,11 @@ export const LogCollapse = memo(function LogCollapse({
   title = "Logs",
   maxVisible = 5,
 }: LogCollapseProps) {
-  const { level } = useDisclosure();
-  const expanded = level === "expert";
-
-  // In default mode: show only warnings/errors
-  // In advanced: show all up to maxVisible
-  // In expert or expanded: show everything
-  const filteredEntries =
-    level === "default" && !expanded
-      ? entries.filter((e) => e.severity === "warning" || e.severity === "error")
-      : entries;
-
-  const showAll = level === "expert" || expanded;
-  const visibleEntries = showAll
-    ? filteredEntries
-    : filteredEntries.slice(0, maxVisible);
+  // Surface only warnings/errors, capped at maxVisible.
+  const filteredEntries = entries.filter(
+    (e) => e.severity === "warning" || e.severity === "error"
+  );
+  const visibleEntries = filteredEntries.slice(0, maxVisible);
 
   const hiddenCount = filteredEntries.length - visibleEntries.length;
   const suppressedCount = entries.length - filteredEntries.length;
@@ -93,12 +76,12 @@ export const LogCollapse = memo(function LogCollapse({
   // Don't render if nothing to show
   if (entries.length === 0) return null;
 
-  // If all entries are suppressed in default mode and no errors/warnings, show just a summary
-  if (visibleEntries.length === 0 && level === "default") {
+  // No warnings/errors — collapse to a one-line passing summary.
+  if (visibleEntries.length === 0) {
     return (
       <Box flexDirection="row">
         <Text color={theme.muted} dimColor>
-          {title}: {entries.length} entries (all passing) · ctrl+d to expand
+          {title}: {entries.length} entries (all passing)
         </Text>
       </Box>
     );
@@ -149,10 +132,10 @@ export const LogCollapse = memo(function LogCollapse({
       {/* Collapsed indicator */}
       {hiddenCount > 0 ? (
         <Text color={theme.muted} dimColor>
-          +{hiddenCount} more · ctrl+d expand
+          +{hiddenCount} more
         </Text>
       ) : null}
-      {suppressedCount > 0 && level === "default" ? (
+      {suppressedCount > 0 ? (
         <Text color={theme.muted} dimColor>
           {suppressedCount} passing entries hidden
         </Text>

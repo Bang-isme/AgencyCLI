@@ -2,7 +2,6 @@ import { memo } from "react";
 import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
-import { useDisclosure } from "../state/DisclosureProvider.js";
 
 export type PatchAction = "modify" | "add" | "remove" | "rename";
 
@@ -23,8 +22,6 @@ export interface PatchCardProps {
   changes: PatchSymbol[];
   /** Number of formatting-only/trivial changes hidden */
   hiddenCount?: number;
-  /** Raw unified diff (shown only on expand) */
-  rawDiff?: string;
   /** Whether the patch group passed validation */
   validated?: boolean;
   /** Whether rollback is available for this patch group */
@@ -54,10 +51,8 @@ function actionColor(theme: ThemeTokens, action: PatchAction): string {
 /**
  * Semantic patch card.
  *
- * DEFAULT: symbol-grouped summary with affected systems.
- * EXPAND (advanced/expert): raw unified diff visible.
- *
- * Hides formatting-only edits and import reorder noise by default.
+ * Symbol-grouped summary with the affected file per change. Hides
+ * formatting-only edits and import-reorder noise behind a trivial-change count.
  * Example:
  *   modify AuthService.login()
  *   add JWT refresh middleware
@@ -68,15 +63,10 @@ export const PatchCard = memo(function PatchCard({
   title,
   changes,
   hiddenCount = 0,
-  rawDiff,
   validated,
   rollbackReady,
 }: PatchCardProps) {
   const { composerWidth } = useTerminalLayout();
-  const { level } = useDisclosure();
-  const diffExpanded = level === "expert";
-
-  const showRawDiff = diffExpanded && rawDiff;
   const displayTitle = title ?? `Applying ${changes.length} change${changes.length !== 1 ? "s" : ""}`;
 
   return (
@@ -117,7 +107,7 @@ export const PatchCard = memo(function PatchCard({
               {ACTION_PREFIX[change.action]}
             </Text>
             <Text color={theme.text}> {change.symbol}</Text>
-            {change.file && level !== "default" ? (
+            {change.file ? (
               <Text color={theme.muted} dimColor>
                 {"  "}{change.file}
               </Text>
@@ -131,22 +121,6 @@ export const PatchCard = memo(function PatchCard({
         <Box marginTop={0}>
           <Text color={theme.muted} dimColor>
             [+{hiddenCount} formatting-only change{hiddenCount > 1 ? "s" : ""} hidden]
-          </Text>
-        </Box>
-      ) : null}
-
-      {/* Raw diff (expert mode or toggled) */}
-      {showRawDiff ? (
-        <Box flexDirection="column" marginTop={0}>
-          <Text color={theme.dimBorder}>{"─".repeat(Math.min(40, composerWidth - 6))}</Text>
-          <Text color={theme.muted} dimColor wrap="truncate">
-            {rawDiff}
-          </Text>
-        </Box>
-      ) : rawDiff && level !== "default" && !diffExpanded ? (
-        <Box marginTop={0}>
-          <Text color={theme.muted} dimColor>
-            ctrl+d to show raw diff
           </Text>
         </Box>
       ) : null}

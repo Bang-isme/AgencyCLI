@@ -87,7 +87,6 @@ export interface UseKeyboardHandlersOptions {
 
   // Text interaction handlers
   setAgentMode: React.Dispatch<React.SetStateAction<any>>;
-  disclosureCycle: () => void;
   handleSubmit: () => Promise<void>;
 
   // Goal runner configuration
@@ -149,7 +148,6 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
         theme,
         latestAssistantId,
         setAgentMode,
-        disclosureCycle,
         handleSubmit,
         goalRunnerViewMode,
         setGoalRunnerViewMode,
@@ -401,12 +399,6 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
     // Tab to cycle agent mode (when buffer is empty and no autocomplete active)
     if ((key.tab || input === "\t") && buffer.length === 0 && !slashActive && !atActive) {
       setAgentMode((m: any) => nextMode(m));
-      return;
-    }
-
-    // Ctrl+D to cycle progressive disclosure level (Default → Advanced → Expert)
-    if (key.ctrl && input === "d" && buffer.length === 0) {
-      disclosureCycle();
       return;
     }
 

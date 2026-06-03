@@ -3,7 +3,6 @@ import { render as inkRender } from "ink";
 import { App } from "./App.js";
 import { AppErrorBoundary } from "./components/AppErrorBoundary.js";
 import { TerminalLayoutProvider } from "./layout/TerminalLayoutProvider.js";
-import { DisclosureProvider } from "./state/DisclosureProvider.js";
 import { HeartbeatProvider } from "./state/HeartbeatProvider.js";
 import {
   enterAlternateScreen,
@@ -35,13 +34,9 @@ export { LogCollapse } from "./components/LogCollapse.js";
 export type { LogCollapseProps, LogEntry, LogSeverity } from "./components/LogCollapse.js";
 export { SubagentPanel } from "./components/SubagentPanel.js";
 export type { SubagentPanelProps, SubagentStatus } from "./components/SubagentPanel.js";
-export { CognitionPanel } from "./components/CognitionPanel.js";
-export type { CognitionPanelProps } from "./components/CognitionPanel.js";
 
 
 // State providers
-export { DisclosureProvider, useDisclosure } from "./state/DisclosureProvider.js";
-export type { DisclosureLevel } from "./state/DisclosureProvider.js";
 export { HeartbeatProvider, useHeartbeat } from "./state/HeartbeatProvider.js";
 export type { HeartbeatEntry } from "./state/HeartbeatProvider.js";
 
@@ -74,13 +69,11 @@ export function render(opts?: RenderOptions): void {
   const instance = inkRender(
     createElement(AppErrorBoundary, null,
       createElement(TerminalLayoutProvider, null,
-        createElement(DisclosureProvider, null,
-          createElement(HeartbeatProvider, null,
-            createElement(App, {
-              project: opts?.project,
-              skipSplash,
-            })
-          )
+        createElement(HeartbeatProvider, null,
+          createElement(App, {
+            project: opts?.project,
+            skipSplash,
+          })
         )
       )
     ),

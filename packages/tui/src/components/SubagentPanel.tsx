@@ -3,7 +3,6 @@ import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import { SpinnerText } from "./AnimatedText.js";
 import { WorkerProgress, type WorkerStep } from "./WorkerProgress.js";
-import { useDisclosure } from "../state/DisclosureProvider.js";
 import { normalizeWorkerName as workerName, formatElapsed } from "@agency/core";
 import { useTick } from "../motion/useTick.js";
 import { SPINNER_DOTS, LIFECYCLE_GLYPHS } from "../motion/design-system.js";
@@ -196,18 +195,13 @@ export const SubagentPanel = memo(function SubagentPanel({
   agents,
   active,
 }: SubagentPanelProps) {
-  const { level } = useDisclosure();
-
   const doneCount = agents.filter((a) => a.status === "done").length;
   const errCount = agents.filter((a) => a.status === "error").length;
   const runCount = agents.filter((a) => a.status === "running").length;
   const queuedCount = agents.filter((a) => a.status === "queued").length;
 
-  // In default mode: collapse to summary + active workers only
-  const showDetails = level !== "default";
-  const visibleAgents = showDetails
-    ? agents
-    : agents.filter((a) => a.status === "running" || a.status === "error");
+  // Show every worker and expand its step detail — no hidden toggle.
+  const visibleAgents = agents;
 
   return (
     <Box
@@ -230,11 +224,6 @@ export const SubagentPanel = memo(function SubagentPanel({
             {errCount > 0 ? ` · ${errCount} failed` : ""}
           </Text>
         </Box>
-        {!showDetails && agents.length > visibleAgents.length ? (
-          <Text color={theme.muted} dimColor>
-            ctrl+d expand
-          </Text>
-        ) : null}
       </Box>
 
       {/* Worker rows */}
@@ -247,7 +236,7 @@ export const SubagentPanel = memo(function SubagentPanel({
             key={agent.agentId}
             agent={agent}
             theme={theme}
-            showDetails={showDetails}
+            showDetails
             isLast={isLast}
             treeConnector={treeConnector}
           />

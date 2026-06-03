@@ -3,7 +3,6 @@ import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import { useTerminalLayout } from "./TerminalLayoutProvider.js";
 import type { AgentMode } from "../state/agent-modes.js";
-import type { DisclosureLevel } from "../state/DisclosureProvider.js";
 
 export interface WorkerHeartbeat {
   name: string;
@@ -33,8 +32,6 @@ export interface StatusBarProps {
   modeDescription?: string;
   /** Active interaction mode */
   agentMode?: AgentMode;
-  /** Progressive-disclosure level (Ctrl+D). Shown only when above "default". */
-  disclosureLevel?: DisclosureLevel;
 }
 
 export function getModeColor(mode: AgentMode | undefined, theme: ThemeTokens): string {
@@ -99,7 +96,6 @@ export const StatusBar = memo(function StatusBar({
   contextTokens,
   modeDescription,
   agentMode,
-  disclosureLevel = "default",
 }: StatusBarProps) {
   const { composerWidth } = useTerminalLayout();
 
@@ -197,12 +193,6 @@ export const StatusBar = memo(function StatusBar({
                   thinking: {thinkingLabel}
                 </Text>
               )}
-            </>
-          ) : null}
-          {disclosureLevel !== "default" && showRightExtended ? (
-            <>
-              <Text color={theme.dimBorder}> · </Text>
-              <Text color={theme.accent}>detail: {disclosureLevel}</Text>
             </>
           ) : null}
           <Text color={theme.muted}>{"  "}</Text>

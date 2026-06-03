@@ -11,7 +11,6 @@ import {
   loadMcpConfigs,
   type McpServerStatus,
   EventBus,
-  type RuntimeThoughtEvent,
   RuntimePressureController,
   parseFileEditSuggestions,
   type FileEditSuggestion,
@@ -26,8 +25,6 @@ import { StatusBar } from "./layout/StatusBar.js";
 import { Approval, type PendingApproval } from "./screens/Approval.js";
 import { Splash } from "./components/Splash.js";
 import { ComposerBlock } from "./components/ComposerBlock.js";
-import { ExecutionPanel } from "./components/ExecutionPanel.js";
-import { CognitionPanel } from "./components/CognitionPanel.js";
 import { type SubagentStatus } from "./components/SubagentPanel.js";
 import { WorkerProgress } from "./components/WorkerProgress.js";
 import { globalWorkerTracker, SemanticTranslator, type WorkerState } from "./state/semantic-orchestration.js";
@@ -52,7 +49,6 @@ import { useKeyboardHandlers, type OverlayStates } from "./hooks/useKeyboardHand
 
 
 import { SubagentsOverlay } from "./components/SubagentsOverlay.js";
-import { useHeartbeat } from "./state/HeartbeatProvider.js";
 import { modeBudget, modeLabel, modeDescription, type AgentMode } from "./state/agent-modes.js";
 import { getAtQuery } from "./at/utils.js";
 import {
@@ -89,13 +85,11 @@ import {
 import {
   estimateContextUsage,
   getPhaseLabel,
-  activityPhaseFromThought,
   type ActivityPhase,
 } from "./state/context-tracker.js";
 import { useTerminalLayout } from "./layout/TerminalLayoutProvider.js";
 import { setTuiPhase, getDegradationTier } from "./terminal/screen.js";
 import { TerminalViewport } from "./layout/TerminalViewport.js";
-import { useDisclosure } from "./state/DisclosureProvider.js";
 
 
 export type { ScreenId } from "./types.js";
@@ -214,10 +208,8 @@ export function App({
 }: AppProps) {
   const project = resolvePath(projectProp ?? process.cwd());
   const { exit } = useApp();
-  const { emit: emitHeartbeat } = useHeartbeat();
   const layout = useTerminalLayout();
   const { cols, rows, contentWidth: contentCols, composerWidth } = layout;
-  const { level: disclosureLevel, cycle: disclosureCycle } = useDisclosure();
   const config = useMemo(() => loadTuiConfig(project), [project]);
   const envPending = useMemo(() => pendingFromEnv(), []);
 
@@ -578,30 +570,6 @@ export function App({
       });
     }
   }, [project]);
-
-  // Runtime Cognition events state
-  const [thoughts, setThoughts] = useState<RuntimeThoughtEvent[]>([]);
-
-  useEffect(() => {
-    const handleThought = (event: any) => {
-      const parsed = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
-      setThoughts((prev) => [...prev, parsed]);
-      if (parsed?.message) {
-        emitHeartbeat(parsed.message);
-      }
-      // §8.10-B — drive the coarse activity phase from the (structured) thought
-      // so the status line + execution panel reflect the current tool in realtime
-      // instead of reverting to a stale "Writing" once the heartbeat ages out.
-      // Only tool/narration thoughts carry an activity signal; others return null
-      // and leave the phase unchanged. No-op in legacy (no thoughts are emitted).
-      const ph = activityPhaseFromThought(parsed?.source, parsed?.phase);
-      if (ph) setActivityPhase(ph);
-    };
-    EventBus.getInstance().subscribe("thought:emitted", handleThought);
-    return () => {
-      EventBus.getInstance().unsubscribe("thought:emitted", handleThought);
-    };
-  }, [emitHeartbeat]);
 
   // Subagents live tracking state
   useEffect(() => {
@@ -1833,7 +1801,6 @@ ${taskDesc}`;
     const prompt = buffer.trim();
     if (!prompt) return;
     setBuffer("");
-    setThoughts([]);
     setSubagents([]);
     setActiveSubagentId(null);
     // A new turn starts fresh: drop the previous turn's plan so a stale/
@@ -2013,27 +1980,6 @@ ${taskDesc}`;
   }
   const goalRunnerHeight = goalActive ? (goalRunnerViewMode === "flat" ? 2 : 6) + computedMaxVisibleSteps : 0;
 
-  const showExecutionPanels = disclosureLevel !== "default" && activityPhase !== "idle";
-  let executionPanelHeight = 0;
-  if (showExecutionPanels) {
-    const execDisplayCount = disclosureLevel === "expert"
-      ? thoughts.length
-      : disclosureLevel === "advanced"
-        ? Math.min(3, thoughts.length)
-        : 0;
-    executionPanelHeight = 8 + (execDisplayCount > 0 ? 1 + execDisplayCount : 0);
-  }
-
-  let cognitionPanelHeight = 0;
-  if (showExecutionPanels && thoughts.length > 0) {
-    const cognDisplayCount = disclosureLevel === "expert"
-      ? thoughts.length
-      : disclosureLevel === "advanced"
-        ? Math.min(5, thoughts.length)
-        : 1;
-    cognitionPanelHeight = 3 + cognDisplayCount;
-  }
-
   // The live PlanPanel (update_plan) renders below the conversation, so its
   // height MUST be reserved here — otherwise conversationHeight is over-counted,
   // the panel overflows the viewport, and ink clips it (a "0/6" plan showed only
@@ -2046,7 +1992,7 @@ ${taskDesc}`;
   if (planActive) {
     const planOverhead = 3; // round border (2) + "Plan N/M" header (1)
     const allocatedOther =
-      baseFixedHeight + suggestionsHeight + loadingHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight;
+      baseFixedHeight + suggestionsHeight + loadingHeight + indexingHeight;
     const planBudget = rows - allocatedOther - 1 - minConversationHeight - planOverhead;
     planMaxVisible = Math.max(2, Math.min(12, planBudget));
     const truncated = planTodos.length > planMaxVisible;
@@ -2054,7 +2000,7 @@ ${taskDesc}`;
     planPanelHeight = planOverhead + visibleRows + (truncated ? 1 : 0);
   }
 
-  const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight + planPanelHeight + errorBannerHeight;
+  const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + planPanelHeight + errorBannerHeight;
   const conversationHeight = Math.max(4, rows - fixedHeight - 1);
 
   useKeyboardHandlers({
@@ -2099,7 +2045,6 @@ ${taskDesc}`;
     theme,
     latestAssistantId,
     setAgentMode,
-    disclosureCycle,
     handleSubmit,
     goalRunnerViewMode,
     setGoalRunnerViewMode,
@@ -2308,7 +2253,6 @@ ${taskDesc}`;
             phaseLabel={activityPhase !== "idle" ? getPhaseLabel(activityPhase) : undefined}
             agentMode={agentMode}
             workers={statusBarWorkers}
-            disclosureLevel={disclosureLevel}
           />
         }
       >
@@ -2730,12 +2674,6 @@ ${taskDesc}`;
           </Box>
         ) : (
           <>
-            {disclosureLevel !== "default" && activityPhase !== "idle" && (
-              <>
-                <ExecutionPanel theme={theme} thoughts={thoughts} phase={activityPhase} providerLabel={hasRoutingWeights ? `via ${displayModelName ?? "auto"}` : undefined} width={composerWidth} />
-                <CognitionPanel theme={theme} thoughts={thoughts} width={composerWidth} />
-              </>
-            )}
             {(() => {
               const activeScrollOffset = userHasScrolledUpRef.current
                 ? scrollOffset

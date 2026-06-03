@@ -48,8 +48,6 @@ render()
                   ├─ [ErrorBanner]   ← inline error notifications
                   ├─ [Approval]      ← y/n file-write & shell command approval
                   ├─ MemoConversation ← virtual-line scrolling message list
-                  ├─ [CognitionPanel] ← collapsible runtime thought log (3 disclosure levels)
-                  ├─ [ExecutionPanel] ← phase/severity execution panel (lifecycle + severity glyphs)
                   ├─ [ToolActivity]  ← spinner + phase + elapsed + token count
                   ├─ [GoalRunner]    ← multi-step goal progress with energy bar
                   ├─ [IndexProgress] ← workspace index scan indicator
@@ -362,12 +360,6 @@ All overlays follow a shared pattern:
 ---
 
 ### Progressive Display Components
-
-#### `CognitionPanel.tsx`
-- Runtime thought log from EventBus
-- 3 disclosure levels: default (1-2 thoughts), advanced (5), expert (all)
-- Color-coded by severity: info/adaptation/warning/critical
-- Timestamp + source + message format
 
 #### `StatusBar.tsx`
 Bottom bar in Shell chrome:
