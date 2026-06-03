@@ -60,7 +60,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} marginY={0} width="100%">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={theme.accent} bold>⏲️ RECURRING TASK SCHEDULED</Text>
+          <Text color={theme.accent} bold>Recurring task scheduled</Text>
           <Text color={theme.muted} dimColor>[{id}]</Text>
         </Box>
         <Text color={theme.dimBorder}>──────────────────────────────────────────────────</Text>
@@ -130,9 +130,6 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
             <Text color={theme.accent}>{languages}</Text>
           </Box>
         ) : null}
-        <Box flexDirection="row" marginTop={1}>
-          <Text color={theme.success}>✓ Generated and synchronized new knowledge graph!</Text>
-        </Box>
       </Box>
     );
   }
@@ -148,7 +145,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} marginY={0} width="100%">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={theme.accent} bold>🌐 MEMORY DASHBOARD LAUNCHED</Text>
+          <Text color={theme.accent} bold>Memory dashboard opened</Text>
         </Box>
         <Text color={theme.dimBorder}>──────────────────────────────────────────────────</Text>
         <Box flexDirection="row">
@@ -162,9 +159,6 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
             <Text color={theme.muted}>• Path: </Text>
           </Box>
           <Text color={theme.muted} wrap="truncate-middle">{path}</Text>
-        </Box>
-        <Box flexDirection="row" marginTop={1}>
-          <Text color={theme.success}>✓ Opened interactive dashboard in default browser!</Text>
         </Box>
       </Box>
     );
@@ -181,7 +175,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.success} paddingX={1} marginY={0} width="100%">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={theme.success} bold>🎯 ROUTING FEEDBACK RECORDED</Text>
+          <Text color={theme.success} bold>Routing feedback recorded</Text>
         </Box>
         <Text color={theme.dimBorder}>──────────────────────────────────────────────────</Text>
         <Box flexDirection="row">
@@ -202,9 +196,6 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
           </Box>
           <Text color={theme.muted}>.agency/routing-weights.json</Text>
         </Box>
-        <Box flexDirection="row" marginTop={1}>
-          <Text color={theme.success}>✓ Successfully saved routing weights for self-learning dispatch!</Text>
-        </Box>
       </Box>
     );
   }
@@ -224,7 +215,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} marginY={0} width="100%">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={theme.accent} bold>📊 SELF-LEARNING ROUTING WEIGHTS</Text>
+          <Text color={theme.accent} bold>Routing weights</Text>
         </Box>
         <Text color={theme.dimBorder}>──────────────────────────────────────────────────</Text>
         <Box flexDirection="row">
@@ -259,7 +250,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.warning} paddingX={1} marginY={0} width="100%">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={theme.warning} bold>▲ ROUTING FEEDBACK PREREQUISITE</Text>
+          <Text color={theme.warning} bold>▲ Routing feedback needs a prompt first</Text>
         </Box>
         <Text color={theme.dimBorder}>──────────────────────────────────────────────────</Text>
         <Text color={theme.text} bold>To record routing feedback, you must first enter a natural-language question or prompt in this session.</Text>
@@ -269,7 +260,7 @@ function renderTuxCard(content: string, theme: ThemeTokens): JSX.Element | null 
           <Text color={theme.accent}>  2. Then type: "/route feedback debug"</Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.muted}>This allows the self-learning router to link your prompt's keywords to the correct intent.</Text>
+          <Text color={theme.muted}>This lets the router link your prompt's keywords to the correct intent.</Text>
         </Box>
       </Box>
     );

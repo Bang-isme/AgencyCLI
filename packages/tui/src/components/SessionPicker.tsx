@@ -161,7 +161,7 @@ export function SessionPicker({
           const selected = realIdx === safe;
           const isDeleting = s.id === deletingId;
           const preview = isDeleting
-            ? (innerWidth >= 55 ? "[■ PRESS CTRL+D AGAIN TO CONFIRM DELETE]" : "[■ Ctrl+d confirm delete]")
+            ? (innerWidth >= 55 ? "[■ Press Ctrl+D again to confirm delete]" : "[■ Ctrl+d confirm delete]")
             : s.firstUserMessage
               ? s.firstUserMessage
               : "empty session";
