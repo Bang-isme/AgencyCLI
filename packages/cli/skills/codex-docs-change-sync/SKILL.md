@@ -47,9 +47,12 @@ Report which scope was selected.
 
 ## Fallback
 
-If script cannot run, inspect diffs manually and report likely docs:
-`docs/`, `README.md`, `CHANGELOG.md`, and module-specific docs.
+If script cannot run, inspect diffs manually and report likely docs using the
+conventions in `references/mapping-rules.md` (path→doc mapping, reference-search
+patterns, always-include rules): start from `docs/`, `README.md`, `CHANGELOG.md`,
+and module-specific docs.
 
 ## Reference Files
 
 - `references/docs-sync-spec.md`: script behavior, output format, and fallback protocol.
+- `references/mapping-rules.md`: default code→docs mapping conventions, reference-search patterns, always-include rules, and confidence levels (the human-readable spec behind the script and the manual fallback).
