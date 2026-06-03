@@ -163,7 +163,7 @@ export const ExecutionPanel = memo(function ExecutionPanel({
       <Box flexDirection="row" justifyContent="space-between" width={innerWidth}>
         <Box flexDirection="row">
           <Text color={theme.text} bold>
-            {phase !== "idle" ? `● ACTIVE: ${phase.toUpperCase()}` : "● STANDBY"}
+            {phase !== "idle" ? `● Active · ${phase}` : "● Standby"}
           </Text>
           {providerLabel ? (
             <Text color={theme.muted}>
@@ -188,11 +188,11 @@ export const ExecutionPanel = memo(function ExecutionPanel({
 
       {/* Execution Orchestration Tree */}
       <Box flexDirection="column" marginTop={1} marginBottom={1} width={innerWidth}>
-        {renderPhaseNode("PLAN", planStatus, currentActivity)}
-        {renderPhaseNode("EXECUTE", executeStatus, currentActivity)}
-        {renderPhaseNode("VERIFY", verifyStatus, currentActivity)}
-        {recoverStatus !== "hidden" ? renderPhaseNode("RECOVER", recoverStatus, currentActivity) : null}
-        {renderPhaseNode("COMPLETE", completeStatus, [])}
+        {renderPhaseNode("Plan", planStatus, currentActivity)}
+        {renderPhaseNode("Execute", executeStatus, currentActivity)}
+        {renderPhaseNode("Verify", verifyStatus, currentActivity)}
+        {recoverStatus !== "hidden" ? renderPhaseNode("Recover", recoverStatus, currentActivity) : null}
+        {renderPhaseNode("Complete", completeStatus, [])}
       </Box>
 
       {/* Operational events (advanced/expert) */}

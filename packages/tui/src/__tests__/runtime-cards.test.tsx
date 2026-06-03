@@ -113,10 +113,10 @@ describe("ExecutionPanel", () => {
       </DisclosureProvider>
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("PLAN");
-    expect(frame).toContain("EXECUTE");
+    expect(frame).toContain("Plan");
+    expect(frame).toContain("Execute");
     // Phase nodes are drawn from the lifecycle family, not raw ○/✓/→ glyphs.
-    expect(frame).toContain(LIFECYCLE_GLYPHS.done); // PLAN done
-    expect(frame).toContain(LIFECYCLE_GLYPHS.active); // EXECUTE active
+    expect(frame).toContain(LIFECYCLE_GLYPHS.done); // Plan done
+    expect(frame).toContain(LIFECYCLE_GLYPHS.active); // Execute active
   });
 });
