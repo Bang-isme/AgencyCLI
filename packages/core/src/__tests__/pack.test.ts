@@ -90,6 +90,54 @@ describe("pack", () => {
     }
   });
 
+  it("surfaces an absolute hint to the active workflow's .workflows/<name>.md (flag-gated)", () => {
+    const skillsRoot = mkdtempSync(join(tmpdir(), "agency-skills-wf-"));
+    dirs.push(skillsRoot);
+    mkdirSync(join(skillsRoot, ".system"), { recursive: true });
+    writeFileSync(
+      join(skillsRoot, ".system", "manifest.json"),
+      JSON.stringify({ skills: [] }),
+      "utf8"
+    );
+    mkdirSync(join(skillsRoot, ".workflows"), { recursive: true });
+    writeFileSync(
+      join(skillsRoot, ".workflows", "plan.md"),
+      "---\nname: plan\nloads: [codex-plan-writer]\n---\n1. Step one.\n",
+      "utf8"
+    );
+
+    const prev = process.env.AGENCY_SKILLS_ROOT;
+    process.env.AGENCY_SKILLS_ROOT = skillsRoot;
+    try {
+      const root = mkdtempSync(join(tmpdir(), "agency-pack-wf-"));
+      dirs.push(root);
+      writeFileSync(join(root, "package.json"), "{}", "utf8");
+      writeIndex(root, buildIndex(root));
+
+      const plan: TokenBudgetPlan = {
+        mode: "normal", maxContextFiles: 5, maxContextChars: 20000, maxLlmOutputTokens: 1024,
+        allowPreflight: false, includeFullRouteJson: false, useRouteCache: false,
+      };
+      const route: RouteResult = { intent: "other", workflow: "plan", provider: "openai", skills: [], warnings: [] };
+      const wfPath = join(skillsRoot, ".workflows", "plan.md");
+
+      // Flag on → the absolute workflow-definition path is reachable in the pack.
+      process.env.AGENCY_WORKFLOW_SKILL_LOADS = "1";
+      const withHint = buildContextPack(root, route, plan);
+      expect(withHint).toContain("# ACTIVE WORKFLOW");
+      expect(withHint).toContain(wfPath);
+
+      // Flag off (legacy) → byte-identical, no workflow hint.
+      process.env.AGENCY_WORKFLOW_SKILL_LOADS = "0";
+      const noHint = buildContextPack(root, route, plan);
+      expect(noHint).not.toContain("# ACTIVE WORKFLOW");
+    } finally {
+      delete process.env.AGENCY_WORKFLOW_SKILL_LOADS;
+      if (prev === undefined) delete process.env.AGENCY_SKILLS_ROOT;
+      else process.env.AGENCY_SKILLS_ROOT = prev;
+    }
+  });
+
   it("buildContextPack includes the file tree and file contents", () => {
     const root = mkdtempSync(join(tmpdir(), "agency-pack-context-"));
     dirs.push(root);

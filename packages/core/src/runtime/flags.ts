@@ -242,9 +242,14 @@ export interface RuntimeFlags {
    * workflow never ran its full declared pipeline (built-but-unwired). When on,
    * `routeUserPrompt` merges the workflow's `loads:` into the route's skills
    * (deduped, after the explicit/router skills so those keep priority) so the
-   * workflow's SKILL.md chain is injected into the context pack. Off in legacy
-   * (only the router's skills load → byte-identical prompt), on in hardened. The
-   * context pack is still char-budgeted, so the extra skills can't overflow.
+   * workflow's SKILL.md chain is injected into the context pack. It ALSO surfaces
+   * the workflow's process: the context pack gets an absolute-path hint to the
+   * `.workflows/<name>.md` (step outline + exit criteria) that lives outside the
+   * workspace, so codex-workflow-autopilot's "load the corresponding workflow
+   * file" instruction is actually reachable (read_file resolves against the
+   * project root, so the relative path would otherwise miss). Off in legacy (only
+   * the router's skills load, no workflow hint → byte-identical prompt), on in
+   * hardened. The context pack is char-budgeted, so the extra content can't overflow.
    */
   workflowSkillLoads: boolean;
 }

@@ -7,8 +7,9 @@ import type { TokenBudgetPlan } from "./token-policy.js";
 import { loadIndex } from "../index/workspace-indexer.js";
 import { degradeWorkspaceContext } from "@agency/context";
 import { resolveSkillsRoot } from "../skills-root.js";
-import { parseSkillMd, resolveSkillMdPath } from "@agency/skills-bridge";
+import { parseSkillMd, resolveSkillMdPath, workflowMdPath } from "@agency/skills-bridge";
 import { loadSymbolGraph, extractSymbolsAndImports } from "../index/incremental-indexer.js";
+import { getRuntimeFlags } from "../runtime/flags.js";
 
 function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
@@ -174,6 +175,29 @@ export function buildContextPack(
 
   if (activeSkillsGuidelines.length > 0) {
     sections.push("", "# ACTIVE SKILLS GUIDELINES", "", ...activeSkillsGuidelines);
+  }
+
+  // Workflow process reachability (gated with the skill-chain activation above):
+  // the selected workflow's definition — `.workflows/<name>.md`, its ordered step
+  // outline + exit criteria — lives at the skills root, OUTSIDE the workspace.
+  // codex-workflow-autopilot's SKILL.md tells the model to "load the corresponding
+  // .workflows/<name>.md before executing the flow", but read_file resolves against
+  // the project root so a relative path misses. Give the absolute path so the
+  // standard process is actually reachable (mirrors the references/ hint above).
+  // Only when the file exists, so the hint is never a lie.
+  if (getRuntimeFlags().workflowSkillLoads && route.workflow) {
+    try {
+      const wfPath = workflowMdPath(resolveSkillsRoot(), route.workflow);
+      if (existsSync(wfPath)) {
+        sections.push(
+          "",
+          "# ACTIVE WORKFLOW",
+          `The \`${route.workflow}\` workflow's step outline and exit criteria are at the absolute path \`${wfPath}\`; read it with read_file to follow the standard process.`
+        );
+      }
+    } catch {
+      // Skills root unresolved — skip the hint (never block the pack).
+    }
   }
 
   const files = selectContextFiles(projectRoot, route, plan);
