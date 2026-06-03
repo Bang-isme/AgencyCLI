@@ -1018,7 +1018,7 @@ export function App({
               `✓ Optimized and saved specifications for ${model}:`,
               `  • Context: ${res.contextWindow.toLocaleString("en-US")} tokens`,
               `  • Max Output: ${res.maxOutputTokens.toLocaleString("en-US")} tokens`,
-              `  • Thinking: ${res.thinkingType.toUpperCase()}`
+              `  • Thinking: ${res.thinkingType}`
             ]);
           } else {
             addSystemLines([

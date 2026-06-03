@@ -78,7 +78,7 @@ export const EmptyChat = memo(function EmptyChat({
 
   // Agent Mode truncation to fit strictly in colW
   const modeSpace = colW - modePrefix.length;
-  let displayMode = agentMode.toUpperCase();
+  let displayMode = agentMode.charAt(0).toUpperCase() + agentMode.slice(1);
   if (modeSpace < 4) {
     displayMode = displayMode.length > modeSpace ? displayMode.slice(0, Math.max(1, modeSpace)) : displayMode;
   } else if (displayMode.length > modeSpace) {
@@ -112,8 +112,8 @@ export const EmptyChat = memo(function EmptyChat({
   }
 
   // Responsive headers based on colW
-  const leftHeader = colW >= 28 ? "QUICK START & SLASH COMMANDS" : colW >= 18 ? "QUICK COMMANDS" : "COMMANDS";
-  const rightHeader = colW >= 28 ? "WORKSPACE SYSTEM CONTEXT" : colW >= 18 ? "SYSTEM CONTEXT" : "CONTEXT";
+  const leftHeader = colW >= 28 ? "Quick start & slash commands" : colW >= 18 ? "Quick commands" : "Commands";
+  const rightHeader = colW >= 28 ? "Workspace system context" : colW >= 18 ? "System context" : "Context";
 
   // Helper to pad space to guarantee fixed line width and clear trailing garbage characters
   const getPad = (label: string, value: string, targetWidth: number) => {

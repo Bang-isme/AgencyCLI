@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { ModelInfo } from "@agency/providers";
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
+import { getProviderInfo } from "./ConnectOverlay.js";
 import { panelWidth } from "../layout/terminal-layout.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -337,7 +338,7 @@ export function ModelsOverlay({
           {providers.map((p, i) => {
             const sel = i === safeProviderIndex;
             const count = uniqueModels.filter((m) => m.provider === p).length;
-            const providerLabel = p.toUpperCase();
+            const providerLabel = getProviderInfo(p).label;
 
             return (
               <Box key={p} flexDirection="row" alignItems="center" height={1} overflow="hidden">
@@ -381,7 +382,7 @@ export function ModelsOverlay({
     );
   }
   const visibleItems = selectableItems.slice(start, start + maxVisible);
-  const providerTitle = (selectedProvider || uniqueProviders[0] || "").toUpperCase();
+  const providerTitle = getProviderInfo(selectedProvider || uniqueProviders[0] || "").label;
 
   const scrollUpHint = start > 0 ? (innerWidth >= 50 ? ` (▲ ${start} above)` : " ▲") : "";
   const scrollDownHint = start + maxVisible < selectableItems.length ? (innerWidth >= 50 ? ` (▼ ${selectableItems.length - start - maxVisible} below)` : " ▼") : "";

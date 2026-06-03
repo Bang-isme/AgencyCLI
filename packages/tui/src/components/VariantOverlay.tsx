@@ -111,7 +111,7 @@ export function VariantOverlay({
   }
 
   const specSource = modelSpec.specSource || "default";
-  const specSourceLabel = specSource.toUpperCase();
+  const specSourceLabel = specSource;
   const sourceColor = getSpecSourceColor(specSource, theme);
 
   return (

@@ -3,6 +3,7 @@ import {
   exportSessionToFile,
   type AgencySession,
 } from "../sessions/store.js";
+import { getProviderInfo } from "../components/ConnectOverlay.js";
 
 export interface SlashContext {
   projectRoot: string;
@@ -179,12 +180,12 @@ export async function executeSlash(
           systemLines: [
             `Model Specs Diagnostics:`,
             `  • Model ID: \`${currentModel}\``,
-            `  • Provider: \`${providerId.toUpperCase()}\``,
+            `  • Provider: \`${getProviderInfo(providerId).label}\``,
             `  • Context Window: \`${modelSpec.contextWindow.toLocaleString("en-US")} tokens\``,
             `  • Max Output Limit: \`${modelSpec.maxOutputTokens.toLocaleString("en-US")} tokens\``,
-            `  • Thinking Capability: \`${modelSpec.thinkingType.toUpperCase()}\``,
+            `  • Thinking Capability: \`${modelSpec.thinkingType}\``,
             modelSpec.freeRateLimit ? `  • Rate Limits: \`${modelSpec.freeRateLimit.rpm} RPM / ${modelSpec.freeRateLimit.tpm.toLocaleString("en-US")} TPM\`` : `  • Rate Limits: \`unlimited / custom\``,
-            `  • Spec Source: \`${(modelSpec as any).specSource?.toUpperCase() ?? "DYNAMIC/HEURISTICS"}\``,
+            `  • Spec Source: \`${(modelSpec as any).specSource ?? "dynamic/heuristics"}\``,
             `  ◆ You can override these specifications at any time by configuring "modelOverrides" in ~/.agency/config.json`,
           ],
         };
@@ -247,11 +248,11 @@ export async function executeSlash(
               : `  ✓ Result matches baseline. Default preserved (no override written).`);
 
           const lines = [
-            `◈ Model diagnostics result: \`${targetModel}\` (Provider: ${providerId.toUpperCase()})`,
+            `◈ Model diagnostics result: \`${targetModel}\` (Provider: ${getProviderInfo(providerId).label})`,
             `  • Diagnostic status: ${res.success ? "✓ passed" : "✗ failed"}`,
             `  • Context Window: \`${res.contextWindow.toLocaleString("en-US")} tokens\``,
             `  • Max Output Tokens: \`${res.maxOutputTokens.toLocaleString("en-US")} tokens\``,
-            `  • Thinking/Reasoning support: \`${res.thinkingType.toUpperCase()}\``,
+            `  • Thinking/Reasoning support: \`${res.thinkingType}\``,
             `  • Tool-calling support: \`${res.supportsTools ? "yes" : "no"}\``,
             saveMessage,
             ``,

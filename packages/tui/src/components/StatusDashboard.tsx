@@ -167,7 +167,7 @@ export function StatusDashboard({
           {currentModel && (() => {
             const spec = getModelSpec(currentModel.split("/").slice(1).join("/") || currentModel);
             const specSource = spec.specSource || "default";
-            const specSourceLabel = specSource.toUpperCase();
+            const specSourceLabel = specSource;
             const specSourceColor = getSpecSourceColor(specSource, theme);
             return (
               <Text color={theme.muted} wrap="wrap">

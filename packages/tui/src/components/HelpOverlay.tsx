@@ -95,26 +95,26 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
   };
 
   const shortcuts = [
-    { category: "NAVIGATION", items: [
+    { category: "Navigation", items: [
       { keys: "↑ / ↓", desc: "Scroll conversation (when input empty)" },
       { keys: "PageUp / PageDown", desc: "Scroll by page" },
       { keys: "Ctrl+↑ / Ctrl+↓", desc: "Scroll by single line" },
       { keys: "Esc", desc: "Cancel / Close overlay / Abort" },
     ]},
-    { category: "ACTIONS", items: [
+    { category: "Actions", items: [
       { keys: "Enter", desc: "Send message / Confirm selection" },
       { keys: "Tab", desc: "Cycle agent modes (agent/plan/debug/ask)" },
       { keys: "Ctrl+D", desc: "Cycle disclosure levels" },
       { keys: "Ctrl+O", desc: "Toggle expand/collapse long content" },
       { keys: "!", desc: "Execute shell command" },
     ]},
-    { category: "OVERLAYS & MENUS", items: [
+    { category: "Overlays & menus", items: [
       { keys: "? / Ctrl+H", desc: "Toggle this help overlay" },
       { keys: "/", desc: "Open slash command menu" },
       { keys: "@", desc: "Open file picker" },
       { keys: "Ctrl+X", desc: "Focus subagent detail view" },
     ]},
-    { category: "SESSION", items: [
+    { category: "Session", items: [
       { keys: "Ctrl+Q", desc: "Quit application" },
       { keys: "Ctrl+C", desc: "Force exit" },
     ]},
