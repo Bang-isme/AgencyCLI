@@ -504,7 +504,7 @@ export const GoalRunner = memo(function GoalRunner({
       <Box flexDirection="column" marginBottom={0} marginLeft={2} marginTop={1}>
         {/* Sleek Flat List Header */}
         <Box marginBottom={1} flexDirection="row">
-          <Text color={theme.accent} bold>⎔ ORCHESTRATION GRAPH </Text>
+          <Text color={theme.accent} bold>⎔ Orchestration graph </Text>
           <Text color={theme.muted}>[</Text>
           <Text color={theme.text} bold>{totalSteps} Phases</Text>
           <Text color={theme.muted}>]</Text>
@@ -557,7 +557,7 @@ export const GoalRunner = memo(function GoalRunner({
       {/* Header */}
       <Box>
         <Text color={theme.accent} dimColor>│ </Text>
-        <Text color={theme.accent} bold>⎔ ORCHESTRATION GRAPH</Text>
+        <Text color={theme.accent} bold>⎔ Orchestration graph</Text>
         <Text color={theme.muted}> — </Text>
         <Text color={theme.text} bold wrap="wrap">
           {task}
