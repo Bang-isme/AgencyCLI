@@ -101,6 +101,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Tool-call reassembly", value: f.toolCallReassembly ? "on (rejoin a write split by the output limit)" : "off", keys: ["toolCallReassembly"] },
     { label: "Tool-result tail", value: f.toolResultTailKept ? "on (keep head+tail of command output)" : "off (head only)", keys: ["toolResultTailKept"] },
     { label: "Breaker failed exits", value: f.breakerFailedExits ? "on (non-zero Exit Code counts as a breaker failure)" : "off (only Error: counts)", keys: ["breakerFailedExits"] },
+    { label: "Scoped circuit breaker", value: f.scopedCircuitBreaker ? "on (per-turn/agent breaker)" : "off (shared module singleton)", keys: ["scopedCircuitBreaker"] },
     { label: "Path confinement", value: f.pathConfinement ? "on (refuse writes/deletes outside project root)" : "off", keys: ["pathConfinement"] },
     { label: "Subagent concurrency cap", value: f.subagentConcurrencyCap ? "on (≤ maxParallelAgents concurrent dispatch)" : "off (uncapped fan-out)", keys: ["subagentConcurrencyCap"] },
     { label: "Composer cursor editing", value: f.composerCursorEdit ? "on (caret nav + insert/delete + undo)" : "off (append-only)", keys: ["composerCursorEdit"] },

@@ -32,7 +32,8 @@ import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation
 import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { consumeBreakerTrip, type CircuitBreakerState } from "./circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
 
@@ -243,7 +244,13 @@ export async function runChatTurn(
     // write_file split by the output limit reassembles into one executable call.
     let carryOverText = "";
     const MAX_TOOLCALL_CARRYOVER = 1_000_000; // give up reassembly past ~1MB
-    resetToolCircuitBreaker(); // fresh breaker per turn (no cross-turn leak)
+    // A per-turn breaker (scoped path) isolates this turn from its subagents;
+    // the legacy path resets one shared module breaker (a dispatched subagent
+    // would wipe this turn's breaker mid-flight). See the scopedCircuitBreaker flag.
+    const turnBreaker: CircuitBreakerState | null = getRuntimeFlags().scopedCircuitBreaker
+      ? createTurnCircuitBreaker()
+      : null;
+    if (!turnBreaker) resetToolCircuitBreaker();
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
     while (loopCount < maxLoops) {
@@ -406,7 +413,7 @@ export async function runChatTurn(
                 step: { label: stepLabel, status: "active" }
               });
             }
-            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot);
+            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, undefined, turnBreaker ?? undefined);
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
             traceRecorder?.recordTool(tc.name, tc.arguments, truncated);
@@ -440,7 +447,7 @@ export async function runChatTurn(
         // §8.8-A — hard-break on a circuit-breaker trip (see stream.ts). The
         // non-stream path has no onDelta, so the notice reaches the user + the
         // next turn only via llmText → assistantText → history.
-        const breakerReason = consumeCircuitBreakerTrip();
+        const breakerReason = turnBreaker ? consumeBreakerTrip(turnBreaker) : consumeCircuitBreakerTrip();
         if (breakerReason) {
           llmText += `\n${buildCircuitBreakerNotice(breakerReason)}`;
           void EventBus.getInstance().publish("system:warning", {

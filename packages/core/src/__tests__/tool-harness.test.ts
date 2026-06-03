@@ -3,7 +3,8 @@ import { z } from "zod";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker, createTurnCircuitBreaker, consumeCircuitBreakerTrip } from "../skill/tool-harness.js";
+import { consumeBreakerTrip } from "../chat/circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 
 describe("Tool Harness Subsystem", () => {
@@ -837,6 +838,40 @@ Here is my decision:
       const r = await executeTool(FAILTOOL, { n: "e" }, "/tmp");
       expect(r).toContain("Exit Code: 1");
       expect(r).not.toContain("Circuit breaker");
+    });
+  });
+
+  describe("circuit breaker scoping (per-turn isolation)", () => {
+    const TOOL = "__test_scopetool";
+
+    beforeAll(() => {
+      registry.register({
+        name: TOOL,
+        description: "test tool",
+        category: "other",
+        schema: z.object({ n: z.string() }),
+        execute: async () => "ok",
+      } as any);
+    });
+
+    beforeEach(() => resetToolCircuitBreaker());
+    afterEach(() => resetToolCircuitBreaker());
+
+    it("a per-turn breaker latches its own trip and never touches the module breaker", async () => {
+      const a = createTurnCircuitBreaker();
+      const call = () => executeTool(TOOL, { n: "same" }, "/tmp", undefined, undefined, a);
+      await call();
+      await call();
+      await call();
+      const tripped = await call(); // 4th identical call on A → A trips
+      expect(tripped).toContain("Circuit breaker");
+      // The reason is latched on A, read-and-cleared via consumeBreakerTrip.
+      expect(consumeBreakerTrip(a)).toContain("identical");
+      // The process-wide breaker never saw these calls (no cross-contamination).
+      expect(consumeCircuitBreakerTrip()).toBeNull();
+      // A separate per-turn breaker is independent → not pre-tripped by A.
+      const b = createTurnCircuitBreaker();
+      expect(await executeTool(TOOL, { n: "same" }, "/tmp", undefined, undefined, b)).toBe("ok");
     });
   });
 });

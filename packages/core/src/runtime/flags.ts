@@ -200,6 +200,17 @@ export interface RuntimeFlags {
    */
   breakerFailedExits: boolean;
   /**
+   * Give each turn (the main turn AND every subagent dispatch, incl. parallel) its
+   * own circuit-breaker state instead of one process-wide module singleton. The
+   * breaker is reset at the start of every turn, so when a turn dispatches a
+   * subagent the subagent's turn-start reset WIPES the main turn's breaker, and
+   * parallel subagents share one failure counter + one read-and-clear trip reason
+   * → races, false trips, missed trips. Scoping it isolates each execution context.
+   * Off in legacy (one shared breaker — byte-identical for a single turn with no
+   * nested/parallel dispatch), on in hardened.
+   */
+  scopedCircuitBreaker: boolean;
+  /**
    * Confine the mutating file tools (write/append/edit/batch_edit/ast_edit/
    * delete/move/create_directory) to the project root: a `path` that resolves
    * outside projectRoot (via `../` traversal or an absolute path) is refused
@@ -399,6 +410,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // toward the breaker's consecutive-failure guard) → off in legacy (only
     // `Error:` counts, byte-identical), on in hardened.
     breakerFailedExits: parseBool(env.AGENCY_BREAKER_FAILED_EXITS, hardened),
+    // Behaviour-changing (per-turn/per-agent circuit breaker vs one shared module
+    // singleton) → off in legacy (shared breaker, byte-identical for a single
+    // turn), on in hardened.
+    scopedCircuitBreaker: parseBool(env.AGENCY_SCOPED_BREAKER, hardened),
     // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
     // → off in legacy (no confinement, byte-identical), on in hardened.
     pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),

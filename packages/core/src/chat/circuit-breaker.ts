@@ -5,6 +5,13 @@
 export interface CircuitBreakerState {
   toolCallHistory: string[];
   consecutiveFailures: number;
+  /**
+   * Set when this breaker trips so the owning turn loop can hard-break and
+   * surface the reason. Read-and-cleared via {@link consumeBreakerTrip}. Lives
+   * on the state (not a module global) so a per-turn/per-agent breaker carries
+   * its own trip reason and concurrent turns can't clobber each other's.
+   */
+  trippedReason: string | null;
 }
 
 export interface CircuitBreakerResult {
@@ -21,6 +28,7 @@ export function createCircuitBreaker(): CircuitBreakerState {
   return {
     toolCallHistory: [],
     consecutiveFailures: 0,
+    trippedReason: null,
   };
 }
 
@@ -29,6 +37,15 @@ export function createCircuitBreaker(): CircuitBreakerState {
 export function resetCircuitBreaker(state: CircuitBreakerState): void {
   state.toolCallHistory = [];
   state.consecutiveFailures = 0;
+  state.trippedReason = null;
+}
+
+/** Read-and-clear this breaker's latched trip reason (null if it hasn't tripped
+ *  since the last read/reset). The turn loop calls this once per tool batch. */
+export function consumeBreakerTrip(state: CircuitBreakerState): string | null {
+  const reason = state.trippedReason;
+  state.trippedReason = null;
+  return reason;
 }
 
 function getToolSignature(tc: { name: string; arguments: Record<string, any> }): string {

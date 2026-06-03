@@ -39,7 +39,8 @@ import {
   globalProviderSupervisor,
 } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { consumeBreakerTrip, type CircuitBreakerState } from "./circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
 
@@ -313,7 +314,13 @@ export async function runChatTurnWithStream(
     // write_file split by the output limit reassembles into one executable call.
     let carryOverText = "";
     const MAX_TOOLCALL_CARRYOVER = 1_000_000; // give up reassembly past ~1MB
-    resetToolCircuitBreaker(); // fresh breaker per turn (no cross-turn leak)
+    // A per-turn breaker (scoped path) isolates this turn from its subagents and
+    // parallel subagents from each other; the legacy path resets one shared
+    // module breaker, which a dispatched subagent would wipe mid-turn.
+    const turnBreaker: CircuitBreakerState | null = getRuntimeFlags().scopedCircuitBreaker
+      ? createTurnCircuitBreaker()
+      : null;
+    if (!turnBreaker) resetToolCircuitBreaker();
     const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
 
     while (loopCount < maxLoops) {
@@ -497,7 +504,7 @@ export async function runChatTurnWithStream(
                 step: { label: stepLabel, status: "active" }
               });
             }
-            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
+            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal, turnBreaker ?? undefined);
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
             traceRecorder?.recordTool(tc.name, tc.arguments, truncated);
@@ -534,7 +541,7 @@ export async function runChatTurnWithStream(
         // model kept ignoring, churning to maxLoops. Hard-break the loop and fold
         // a final notice into the turn text so the user/next turn see why it
         // stopped. The tool results are already in turnHistory above.
-        const breakerReason = consumeCircuitBreakerTrip();
+        const breakerReason = turnBreaker ? consumeBreakerTrip(turnBreaker) : consumeCircuitBreakerTrip();
         if (breakerReason) {
           const notice = buildCircuitBreakerNotice(breakerReason);
           handlers.onDelta(`\n${notice}\n`);

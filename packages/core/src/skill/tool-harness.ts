@@ -12,7 +12,7 @@ import { runShellCommand } from "../terminal/sandbox.js";
 import { dispatchAgent } from "../agents/orchestrator.js";
 import { resolveSkillsRoot } from "../skills-root.js";
 import { loadIgnoreFilter } from "../index/gitignore-parser.js";
-import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure, resetCircuitBreaker } from "../chat/circuit-breaker.js";
+import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure, resetCircuitBreaker, consumeBreakerTrip, type CircuitBreakerState } from "../chat/circuit-breaker.js";
 import { z } from "zod";
 import { getModelSpec } from "@agency/providers";
 import { MarkdownMemoryStore, type MemoryType } from "@agency/memory";
@@ -157,19 +157,15 @@ async function executeWithRetry(
 }
 
 /**
- * Circuit breaker state to prevent infinite loops and cascading failures
+ * Process-wide fallback circuit breaker used when a caller doesn't pass its own
+ * (the legacy path — see the `scopedCircuitBreaker` flag). A per-turn breaker
+ * threaded through {@link executeTool} isolates the main turn from its subagents
+ * and parallel subagents from each other; without it this single state is shared
+ * and reset by every turn, so a dispatched subagent wipes the main turn's breaker.
+ * The trip reason now lives on the state (`trippedReason`), read via
+ * {@link consumeBreakerTrip}, so concurrent breakers can't clobber each other.
  */
 const circuitBreakerState = createCircuitBreaker();
-
-/**
- * Set when {@link executeTool} short-circuits a call because the breaker tripped
- * (repeated identical calls OR consecutive failures). The turn loop reads this
- * via {@link consumeCircuitBreakerTrip} after each tool batch so it can HARD-break
- * instead of merely handing the model an `Error: Circuit breaker triggered …`
- * string it can (and did, per the user's churn screenshot) ignore. Reading it
- * clears it; the turn-start reset clears it too.
- */
-let lastCircuitBreakerTripReason: string | null = null;
 
 export const registry = new ToolRegistry();
 
@@ -1251,13 +1247,17 @@ export async function executeTool(
   args: Record<string, string>,
   projectRoot: string,
   skillsRoot?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  breaker?: CircuitBreakerState
 ): Promise<string> {
+  // Use the caller's per-turn breaker when provided (scoped path), else the
+  // process-wide fallback (legacy). Either way the trip reason is latched on the
+  // state so the owning turn loop can hard-break (see consumeBreakerTrip).
+  const state = breaker ?? circuitBreakerState;
   // Check circuit breaker before execution
-  const circuitCheck = checkCircuitBreaker(circuitBreakerState, [{ name, arguments: args }]);
+  const circuitCheck = checkCircuitBreaker(state, [{ name, arguments: args }]);
   if (circuitCheck.shouldBreak) {
-    // Latch the reason so the turn loop can hard-break (see consumeCircuitBreakerTrip).
-    lastCircuitBreakerTripReason = circuitCheck.reason ?? "Possible infinite loop detected.";
+    state.trippedReason = circuitCheck.reason ?? "Possible infinite loop detected.";
     return `Error: Circuit breaker triggered - ${circuitCheck.reason}`;
   }
 
@@ -1312,37 +1312,42 @@ export async function executeTool(
     const isFailedExit =
       getRuntimeFlags().breakerFailedExits && /^Exit Code:\s*[1-9]/.test(result);
     if (isError || isFailedExit) {
-      recordToolFailure(circuitBreakerState);
+      recordToolFailure(state);
     } else {
-      recordToolSuccess(circuitBreakerState);
+      recordToolSuccess(state);
     }
     return result;
   } catch (error) {
     // Record failure for circuit breaker
-    recordToolFailure(circuitBreakerState);
+    recordToolFailure(state);
     throw error;
   }
 }
 
-/** Reset the tool-loop circuit breaker. Called at the start of each chat turn so
- *  a fresh turn isn't pre-tripped by failures/repeats from a previous turn. */
+/** Reset the process-wide fallback circuit breaker (the legacy path). Called at
+ *  the start of each chat turn so a fresh turn isn't pre-tripped by a previous
+ *  turn's failures/repeats. The scoped path uses a fresh per-turn breaker
+ *  instead, so it never needs this. */
 export function resetToolCircuitBreaker(): void {
   resetCircuitBreaker(circuitBreakerState);
-  lastCircuitBreakerTripReason = null;
+}
+
+/** Create a fresh per-turn circuit breaker for the scoped path so the main turn
+ *  and each subagent (incl. parallel) get isolated breaker state. */
+export function createTurnCircuitBreaker(): CircuitBreakerState {
+  return createCircuitBreaker();
 }
 
 /**
- * Read-and-clear the most recent circuit-breaker trip reason, or `null` if the
- * breaker hasn't tripped since the last read/reset. The turn loop calls this once
- * after each tool batch: a non-null result means a tool was short-circuited by
- * the breaker (the model is churning on identical or always-failing calls), so
- * the loop should stop and surface a final message rather than continue feeding
- * the model an error it keeps ignoring until maxLoops.
+ * Read-and-clear the process-wide fallback breaker's trip reason (legacy path),
+ * or `null` if it hasn't tripped since the last read/reset. A non-null result
+ * means a tool was short-circuited by the breaker (the model is churning on
+ * identical or always-failing calls), so the loop should stop and surface a
+ * final message rather than feed the model an error it keeps ignoring until
+ * maxLoops. The scoped path reads its own breaker via `consumeBreakerTrip`.
  */
 export function consumeCircuitBreakerTrip(): string | null {
-  const reason = lastCircuitBreakerTripReason;
-  lastCircuitBreakerTripReason = null;
-  return reason;
+  return consumeBreakerTrip(circuitBreakerState);
 }
 
 const MAX_TOOL_RESULT_CHARS = 30_000; // ~7,500 tokens
