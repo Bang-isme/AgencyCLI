@@ -24,6 +24,27 @@ interface Check {
 
 const GLYPH: Record<CheckStatus, string> = { ok: "✓", warn: "▲", fail: "✗" };
 
+/**
+ * Whether a provider is genuinely usable right now — the honest signal behind
+ * the "N ready" line. A provider is ready when:
+ *   - it is `local` (a self-hosted endpoint needs no credential), OR
+ *   - its API key resolves to a non-empty value, OR
+ *   - it declares NO `apiKey` at all and is reachable via a `baseUrl`
+ *     (a genuinely keyless OpenAI-compatible endpoint, e.g. ollama/LM Studio).
+ *
+ * The last clause is deliberately gated on `!apiKey`: a provider that DECLARES
+ * an `apiKey` (even an unset `${ENV}` placeholder that resolves to "") is NOT
+ * ready just because it also has a `baseUrl` — it asked for a credential it
+ * doesn't have and would 401 on the first request. Reporting it as "ready"
+ * would be a fabricated status (the same class as the de-faked Splash
+ * "providers ready").
+ */
+export function providerIsReady(id: string, profile: ProviderProfile): boolean {
+  if (id === "local") return true;
+  if (resolveApiKey(profile)?.trim()) return true;
+  return !profile.apiKey && Boolean(profile.baseUrl);
+}
+
 export function registerDoctor(program: Command) {
   program
     .command("doctor")
@@ -123,11 +144,9 @@ export function registerDoctor(program: Command) {
           // 3. Provider config + resolvable keys
           const cfg = loadAgencyConfig();
           const providers = cfg.providers ?? {};
-          const ready = Object.entries(providers).filter(([id, profile]) => {
-            const p = profile as ProviderProfile;
-            const key = resolveApiKey(p);
-            return Boolean(key?.trim()) || Boolean(p?.baseUrl) || id === "local";
-          });
+          const ready = Object.entries(providers).filter(([id, profile]) =>
+            providerIsReady(id, profile as ProviderProfile)
+          );
           const configPath = join(homedir(), ".agency", "config.json");
           if (ready.length > 0) {
             checks.push({
