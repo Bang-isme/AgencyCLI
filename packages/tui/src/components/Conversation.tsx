@@ -45,7 +45,7 @@ import { getBadgeStyles } from "../utils/conversation/tool-labels.js";
 import { isSystemActivityLine, isSubagentNotice, isThinkingOrExploreNotice } from "../utils/conversation/activity-parser.js";
 import { formatTechnicalSubLine, SubagentStepRow } from "./conversation/SubagentStepRow.js";
 import { SystemActivityLine, toConciseTelemetry } from "./conversation/TraceTelemetry.js";
-import { getLoopLag, getDegradationTier, forceLevel3SurvivalMode, writeRawStdout } from "../terminal/screen.js";
+import { getLoopLag, getDegradationTier, writeRawStdout } from "../terminal/screen.js";
 import fs from "fs";
 import path from "path";
 import v8 from "v8";
@@ -1639,7 +1639,6 @@ export function calculateFormattedLines(
 // TOOL_ALIASES and tool operations extracted to utils/conversation/tool-labels
 
 let violationCount = 0;
-let highLatencyFramesCounter = 0;
 let isLevel3Announced = false;
 
 function rotateTelemetryLogIfNeeded(logFile: string) {
@@ -1988,36 +1987,28 @@ export const Conversation = memo(
       if (hasDuplicateKeys) {
         const uniqueVisibleLines: FormattedLine[] = [];
         const seen = new Set<string>();
-        for (const line of visibleLines) {
+        visibleLines.forEach((line, i) => {
           if (!seen.has(line.key)) {
             seen.add(line.key);
             uniqueVisibleLines.push(line);
           } else {
-            const dedupLine = { ...line, key: `${line.key}-dedup-${Math.random().toString(36).slice(2, 6)}` };
-            uniqueVisibleLines.push(dedupLine);
+            // Deterministic position-based suffix so a deduped row keeps a
+            // STABLE key across renders. Math.random() changed the key every
+            // frame, forcing React to remount (and flicker) the row.
+            uniqueVisibleLines.push({ ...line, key: `${line.key}-dup${i}` });
           }
-        }
-        logInvariantViolation("NO_DUPLICATE_VISIBLE_ROWS", "Appended unique suffixes to duplicate keys.");
+        });
+        logInvariantViolation("NO_DUPLICATE_VISIBLE_ROWS", "Appended deterministic suffixes to duplicate keys.");
         visibleVisibleLinesWorkaround(visibleLines, uniqueVisibleLines);
-      }
-
-      if (violationCount > 10) {
-        forceLevel3SurvivalMode();
       }
 
       const endTime = typeof performance !== "undefined" ? performance.now() : Date.now();
       const latency = endTime - startTime;
-
-      // Active Frame-Latency Self-Correction
-      if (latency > 250) {
-        highLatencyFramesCounter++;
-        if (highLatencyFramesCounter >= 3) {
-          logInvariantViolation("HIGH_FRAME_LATENCY", `Frame render latency was ${latency.toFixed(1)}ms for 3 consecutive frames.`);
-          forceLevel3SurvivalMode();
-        }
-      } else {
-        highLatencyFramesCounter = 0;
-      }
+      // Render latency / violations are recorded for diagnostics but are NEVER
+      // used to drop into survival mode. Collapsing the conversation to the
+      // last 15 messages because a single FRAME was slow destroyed scrollback
+      // reactively — a prime cause of the vanishing history + jitter. Survival
+      // mode is now reserved for the deterministic huge-session bound only.
 
       let violationType = "NONE";
       if (hasDuplicateKeys) violationType = "NO_DUPLICATE_VISIBLE_ROWS";
