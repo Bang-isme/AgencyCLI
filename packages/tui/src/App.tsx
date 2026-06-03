@@ -904,7 +904,28 @@ export function App({
           msgText.startsWith("⚙") ||
           msgText.startsWith("⚠");
         const prefix = hasCustomIcon ? "" : "⚠ ";
-        addSystemLines([`${prefix}${msgText}`]);
+        const line = formatSystemNotice(`${prefix}${msgText}`);
+        // Collapse an immediately-repeated identical warning into one "× N" line
+        // instead of stacking duplicate blocks (e.g. a circuit breaker that trips
+        // across several consecutive retries). Honest — the count shows it recurred.
+        updateSession((s) => {
+          const lastIdx = s.messages.length - 1;
+          const last = s.messages[lastIdx];
+          if (last && last.role === "system") {
+            const prevBase = last.content.replace(/ ×\d+$/, "");
+            if (prevBase === line) {
+              const m = last.content.match(/ ×(\d+)$/);
+              const count = m ? parseInt(m[1]!, 10) + 1 : 2;
+              return {
+                ...s,
+                messages: s.messages.map((msg, i) =>
+                  i === lastIdx ? { ...msg, content: `${line} ×${count}` } : msg
+                ),
+              };
+            }
+          }
+          return appendMessages(s, [{ role: "system" as const, content: line }]);
+        });
       }
     };
 
