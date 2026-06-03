@@ -469,10 +469,6 @@ async function dispatchAgentImpl(
   // or spawning processes. Throws DelegationLimitError when guards trip.
   enforceDelegationLimits(req);
 
-  // Health/utilization: mark this agent busy now that the dispatch is committed.
-  // recordOutcome + markDone run once the exit code is known (below).
-  capabilityRegistry.markInFlight(req.agentId, req.task);
-
   await eventBus.publish("subagent:started", {
     agentId: req.agentId,
     task: req.task,
@@ -523,6 +519,15 @@ async function dispatchAgentImpl(
   let subagentCostUsd: number | undefined;
 
   let hasError = false;
+
+  // Health/utilization: mark this agent busy for the duration of the actual task
+  // run. Placed AFTER the throwing setup above (resolveSkillsRoot, routeUserPrompt,
+  // runSubagentRouter, coerceAgentId) so a pre-flight failure can't leak an
+  // in-flight slot — every path from here to markDone below is throw-safe (the
+  // task body has its own try/catch, then only local bookkeeping runs).
+  // recordOutcome + markDone run once the exit code is known (below).
+  capabilityRegistry.markInFlight(req.agentId, req.task);
+
   // Real LLM task completion
   try {
     const contextRefs = req.contextFiles?.length

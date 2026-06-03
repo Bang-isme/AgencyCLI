@@ -40,6 +40,7 @@ import {
   isAgentId,
   MANIFEST_AGENTS,
 } from "../agents/orchestrator.js";
+import { capabilityRegistry } from "../agents/agent-registry.js";
 
 const mockedExeca = vi.mocked(execa);
 const mockedRoute = vi.mocked(routeUserPrompt);
@@ -121,6 +122,27 @@ describe("dispatchAgent", () => {
 
   afterEach(() => {
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true });
+  });
+
+  it("a pre-flight router failure does not leak an in-flight slot", async () => {
+    // routeUserPrompt rejects — a throw in the dispatch setup that fires before the
+    // task body's own try/catch. markInFlight must NOT have run yet (it now sits
+    // after the throwing setup), so the agent's in-flight count is unchanged. Before
+    // the fix markInFlight ran first and was never paired with markDone → a leak.
+    mockedRoute.mockRejectedValue(new Error("router boom"));
+
+    const inFlightOf = () =>
+      capabilityRegistry.snapshot().find((d) => d.id === "planner")?.utilization.inFlight ?? 0;
+    const before = inFlightOf();
+
+    await expect(
+      dispatchAgent(
+        { agentId: "planner", task: "Draft plan", projectRoot: "/fake/project" },
+        { skillsRoot: FIXTURE_SKILLS }
+      )
+    ).rejects.toThrow("router boom");
+
+    expect(inFlightOf()).toBe(before);
   });
 
   it("runs prompt_router in isolated subprocess and logs dispatch JSON", async () => {
