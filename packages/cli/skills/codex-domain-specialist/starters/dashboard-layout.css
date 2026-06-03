@@ -1,4 +1,4 @@
-﻿/* Enterprise Dashboard Layout */
+﻿/* Dashboard layout */
 .app-layout {
   display: grid;
   grid-template-columns: 240px 1fr;

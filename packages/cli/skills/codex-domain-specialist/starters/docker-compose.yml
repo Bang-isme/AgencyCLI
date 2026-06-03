@@ -1,4 +1,4 @@
-﻿# Enterprise Development Stack
+﻿# Development stack
 version: '3.8'
 
 services:
