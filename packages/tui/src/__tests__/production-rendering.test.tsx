@@ -26,6 +26,7 @@ describe("Production-Grade TUI Chaos & Torture Tests", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    delete process.env.AGENCY_TUI_DIAGNOSTICS;
   });
 
   it("survives long session loops with 100k+ rows using cached and recycled pools", () => {
@@ -97,6 +98,8 @@ describe("Production-Grade TUI Chaos & Torture Tests", () => {
   });
 
   it("triggers layout invariant checks, writes to tui-diagnostics.log and drops to survival mode", () => {
+    // Diagnostics disk logging is opt-in (it does sync IO in the render path).
+    process.env.AGENCY_TUI_DIAGNOSTICS = "1";
     // Render Conversation with duplicate keys to trigger invariant violation
     const messages = [
       { id: "duplicate-id", role: "user" as const, content: "Msg 1", timestamp: Date.now() },
@@ -122,6 +125,8 @@ describe("Production-Grade TUI Chaos & Torture Tests", () => {
   });
 
   it("scales down animated useTick pacing and records pacing telemetry under loop lag pressure", () => {
+    // Diagnostics disk logging is opt-in (it does sync IO in the render path).
+    process.env.AGENCY_TUI_DIAGNOSTICS = "1";
     // Under no lag, interval remains 90ms
     vi.spyOn(ScreenModule, "getLoopLag").mockReturnValue(0);
     // Render countdown tick

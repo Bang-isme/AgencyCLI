@@ -1641,6 +1641,17 @@ export function calculateFormattedLines(
 let violationCount = 0;
 let isLevel3Announced = false;
 
+/**
+ * Frame/violation telemetry to `.agency/tui-diagnostics.log` is OFF by default.
+ * It was written from the render path via synchronous appendFileSync (~1Hz) — a
+ * blocking disk hitch that contributed to the very jitter it was measuring, and
+ * a side effect inside a useMemo (impure). Enable with AGENCY_TUI_DIAGNOSTICS=1
+ * only when debugging a rendering issue.
+ */
+function diagnosticsEnabled(): boolean {
+  return process.env.AGENCY_TUI_DIAGNOSTICS === "1" || process.env.AGENCY_TUI_DIAGNOSTICS === "true";
+}
+
 function rotateTelemetryLogIfNeeded(logFile: string) {
   try {
     if (!fs.existsSync(logFile)) return;
@@ -1657,6 +1668,7 @@ function rotateTelemetryLogIfNeeded(logFile: string) {
 }
 
 function logInvariantViolation(invariant: string, correction: string) {
+  if (!diagnosticsEnabled()) return;
   violationCount++;
   const logDir = path.join(process.cwd(), ".agency");
   const logFile = path.join(logDir, "tui-diagnostics.log");
@@ -1686,6 +1698,7 @@ function traceFrameTimeline(
   reconciliationDuration = 0,
   dirtyRowsComputed = 0
 ) {
+  if (!diagnosticsEnabled()) return;
   const now = Date.now();
   const lag = getLoopLag();
   
