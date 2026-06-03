@@ -313,7 +313,7 @@ const ThoughtHeader = memo(function ThoughtHeader({ showSpinner, shouldExpandTho
   const spinFrame = showSpinner ? frameAt(SPINNER_FRAMES, tick) + " " : "";
   return (
     <Text color={theme.accent}>
-      {spinFrame}→ Cognition{shouldExpandThought ? "" : " [ctrl+o to view]"}
+      {spinFrame}→ Thinking{shouldExpandThought ? "" : " [ctrl+o to view]"}
     </Text>
   );
 });
@@ -747,7 +747,7 @@ export function calculateFormattedLines(
         (
           <Box marginLeft={2}>
             <Text color={theme.accent} bold>
-              ● USER
+              ● User
             </Text>
           </Box>
         ),
@@ -781,14 +781,14 @@ export function calculateFormattedLines(
       }
     } else { // assistant or system
       const badgeText = isSubagent
-        ? "● SUBAGENT"
+        ? "● Subagent"
         : isThinkingOrExplore
-          ? "● AGENT COGNITION"
+          ? "● Thinking"
           : isSystem
-            ? "● SYSTEM"
+            ? "● System"
             : m.streaming
-              ? "● AGENT (writing)"
-              : "● AGENT";
+              ? "● Agent (writing)"
+              : "● Agent";
 
       // 1. Header
       messageLines.push(linePool.acquire(
@@ -1005,7 +1005,7 @@ export function calculateFormattedLines(
               const lastLine = traceLines[traceLines.length - 1] || "";
               let traceLabel = "Planner analysis";
               if (lastLine.toLowerCase().includes("thought") || lastLine.toLowerCase().includes("cognition") || lastLine.toLowerCase().includes("reasoning")) {
-                traceLabel = "Cognition trace";
+                traceLabel = "Thinking";
               } else if (lastLine.toLowerCase().includes("tool") || lastLine.toLowerCase().includes("executing") || lastLine.toLowerCase().includes("spawning")) {
                 traceLabel = "Tool execution";
               } else {
@@ -1030,7 +1030,7 @@ export function calculateFormattedLines(
                 (
                   <Box flexDirection="row" width={innerWidth}>
                     <Text color={prefixColor}>│ </Text>
-                    <Text color={theme.accent}>  ▼ Cognition & execution traces</Text>
+                    <Text color={theme.accent}>  ▼ Activity</Text>
                   </Box>
                 ),
                 "HIGH"
@@ -1097,7 +1097,7 @@ export function calculateFormattedLines(
               if (!cleanP) return;
 
               if (isTraceText(cleanP)) {
-                let label = "Cognition trace";
+                let label = "Thinking";
                 const lowerText = cleanP.toLowerCase();
                 if (lowerText.includes("recovery") || lowerText.includes("revert") || lowerText.includes("healing") || lowerText.includes("rollback")) {
                   label = "Recovery reasoning";
@@ -1250,7 +1250,7 @@ export function calculateFormattedLines(
           if (!expandedTui) {
             let traceLabel = "Planner analysis";
             if (traceItems.some(item => item.type === "thought")) {
-              traceLabel = "Cognition trace";
+              traceLabel = "Thinking";
             } else if (traceItems.some(item => item.type === "action")) {
               traceLabel = "Tool execution";
             } else {
@@ -1277,7 +1277,7 @@ export function calculateFormattedLines(
               (
                 <Box flexDirection="row" width={innerWidth}>
                   <Text color={prefixColor}>│ </Text>
-                  <Text color={theme.accent}>  ▼ Cognition & execution traces</Text>
+                  <Text color={theme.accent}>  ▼ Activity</Text>
                 </Box>
               ),
               `${m.id}-traces-header`,
