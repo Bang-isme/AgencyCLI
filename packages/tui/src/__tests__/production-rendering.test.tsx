@@ -4,7 +4,7 @@ import { render } from "ink-testing-library";
 import { Box, Text } from "ink";
 import { Conversation, calculateFormattedLines, getRenderPressure } from "../components/Conversation.js";
 import { getTheme, DEFAULT_THEME_ID } from "../themes/registry.js";
-import { getDegradationTier, getAdaptiveFlushInterval, forceLevel3SurvivalMode } from "../terminal/screen.js";
+import { getDegradationTier, getAdaptiveFlushInterval } from "../terminal/screen.js";
 import * as ScreenModule from "../terminal/screen.js";
 import fs from "fs";
 import path from "path";

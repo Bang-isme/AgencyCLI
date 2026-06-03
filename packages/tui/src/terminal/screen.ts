@@ -15,55 +15,18 @@ let stdoutScheduled = false;
 let stderrQueue: WriteJob[] = [];
 let stderrScheduled = false;
 
-// 1. Precise Loop Lag Monitor & Survival Hysteresis Governance
+// Precise loop-lag monitor (drives cache-sizing tiers + diagnostics only).
 let lastTickTime = typeof performance !== "undefined" ? performance.now() : Date.now();
 let loopLag = 0;
 export type DegradationTier = 0 | 1 | 2 | 3;
-let activeTier: DegradationTier = 0;
-let lastTransitionTime = typeof performance !== "undefined" ? performance.now() : Date.now();
-let highLagCounter = 0;
-let lowLagCounter = 0;
 
+// Tracks event-loop lag for cache-sizing / diagnostics only. Lag is NEVER used
+// to drop into survival mode (collapse scrollback) — that reactive coupling is
+// what made history vanish during scroll/stream.
 const lagInterval = setInterval(() => {
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
   loopLag = Math.max(0, now - lastTickTime - 50);
   lastTickTime = now;
-
-  if (typeof process !== "undefined" && process.env.VITEST) {
-    activeTier = 0;
-    return;
-  }
-
-  // Hysteresis counters
-  if (loopLag > 200) {
-    highLagCounter++;
-  } else {
-    highLagCounter = 0;
-  }
-
-  if (loopLag < 80) {
-    lowLagCounter++;
-  } else {
-    lowLagCounter = 0;
-  }
-
-  const elapsedSinceTransition = now - lastTransitionTime;
-
-  if (activeTier === 3) {
-    // EXIT survival: lag < 80ms sustained for 5s (100 ticks at 50ms) AND cooldown of 3000ms is met
-    if (loopLag < 80 && lowLagCounter >= 100 && elapsedSinceTransition > 3000) {
-      activeTier = 0;
-      lastTransitionTime = now;
-      lowLagCounter = 0;
-    }
-  } else {
-    // ENTER survival: lag > 200ms sustained for 2s (40 ticks at 50ms) AND cooldown of 3000ms is met
-    if (loopLag > 200 && highLagCounter >= 40 && elapsedSinceTransition > 3000) {
-      activeTier = 3;
-      lastTransitionTime = now;
-      highLagCounter = 0;
-    }
-  }
 }, 50);
 
 if (lagInterval && typeof lagInterval.unref === "function") {
@@ -88,6 +51,11 @@ export function getDegradationTier(messagesLength: number = 0): DegradationTier 
     return 0;
   }
 
+  // Tier 3 (survival = render only the last 15 messages) is reserved for a
+  // genuinely huge transcript, where building lines for every message is the
+  // real cost. It is DETERMINISTIC — never driven by transient loop lag or
+  // queue depth, which spike exactly during scroll/stream and used to collapse
+  // the user's scrollback reactively (history vanishing mid-interaction).
   if (messagesLength > 10000) {
     return 3;
   }
@@ -96,22 +64,9 @@ export function getDegradationTier(messagesLength: number = 0): DegradationTier 
     return 0;
   }
 
-  // Tier 3 is strictly governed by the hysteresis activeTier
-  if (activeTier === 3) {
-    return 3;
-  }
-
+  // Tiers 1/2 only size cache eviction — they never drop content — so reacting
+  // to lag/queue depth here is safe.
   const queueDepth = stdoutQueue.length + stderrQueue.length;
-  // Overwhelming buffer boundaries also trigger transition locks safely
-  if (queueDepth > 1000 || messagesLength > 10000) {
-    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (now - lastTransitionTime > 3000) {
-      activeTier = 3;
-      lastTransitionTime = now;
-      return 3;
-    }
-  }
-
   const lag = getLoopLag();
   let targetTier: DegradationTier = 0;
   if (lag > 100 || queueDepth > 500 || messagesLength > 1000) {
@@ -132,11 +87,6 @@ export function getDegradationTier(messagesLength: number = 0): DegradationTier 
   }
 
   return currentTier;
-}
-
-export function forceLevel3SurvivalMode(): void {
-  activeTier = 3;
-  lastTransitionTime = typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
 export function writeRawStdout(chunk: string): void {
