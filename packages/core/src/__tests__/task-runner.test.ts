@@ -37,12 +37,31 @@ function makeTempProject(): string {
 }
 
 describe("parsePlanTasks", () => {
-  it("parses ### Task N: headers from plan markdown", () => {
+  it("parses ### Task N: headers and captures each task's body (todo items) as details", () => {
     expect(parsePlanTasks(SAMPLE_PLAN)).toEqual([
-      { id: 1, title: "Monorepo root" },
-      { id: 2, title: "Skills root detection" },
-      { id: 3, title: "Plugin tools registry" },
+      { id: 1, title: "Monorepo root", details: "- [ ] **Scaffold workspace**" },
+      { id: 2, title: "Skills root detection", details: "- [ ] **Detect SKILLS_ROOT**" },
+      { id: 3, title: "Plugin tools registry", details: "- [ ] **Load plugin-tools.json**" },
     ]);
+  });
+
+  it("captures a multi-item checklist + prose as the task's details (the work the executor dispatches)", () => {
+    const plan = `### Task 1: Build the parser
+
+Some context prose.
+- [ ] Write the tokenizer
+- [ ] Write the AST builder
+
+### Task 2: Test it
+- [ ] Add unit tests
+`;
+    const tasks = parsePlanTasks(plan);
+    expect(tasks[0]!.details).toContain("Some context prose.");
+    expect(tasks[0]!.details).toContain("- [ ] Write the tokenizer");
+    expect(tasks[0]!.details).toContain("- [ ] Write the AST builder");
+    // The body stops at the next task heading — it must not bleed into task 2.
+    expect(tasks[0]!.details).not.toContain("Add unit tests");
+    expect(tasks[1]!.details).toBe("- [ ] Add unit tests");
   });
 });
 

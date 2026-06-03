@@ -21,10 +21,20 @@ import { ConvergenceEngine, RecoveryLevel } from "./convergence-engine.js";
 
 const TASK_HEADER_RE = /^### Task (\d+):\s*(.+)$/gm;
 
+/** Cap on a task's captured body so a verbose plan can't bloat the dispatched prompt. */
+const MAX_TASK_DETAILS_CHARS = 1500;
+
 export interface PlanTask {
   id: number;
   title: string;
   dependencies?: number[];
+  /**
+   * The body under the `### Task N:` heading — the `- [ ]` checklist + any prose,
+   * i.e. the actual work items. Captured so the executor dispatches the real task,
+   * not just the phase title (the title alone left the subagent with no actionable
+   * detail — the goal never really ran).
+   */
+  details?: string;
 }
 
 /** Thrown by {@link runPlan} when the task DAG contains a dependency cycle. */
@@ -341,7 +351,9 @@ function saveCheckpointRobust(projectRoot: string, cp: TaskCheckpoint, nodes: Re
 export function parsePlanTasks(markdown: string): PlanTask[] {
   const tasks: PlanTask[] = [];
   TASK_HEADER_RE.lastIndex = 0;
-  for (const match of markdown.matchAll(TASK_HEADER_RE)) {
+  const matches = [...markdown.matchAll(TASK_HEADER_RE)];
+  for (let mi = 0; mi < matches.length; mi++) {
+    const match = matches[mi]!;
     const id = Number(match[1]);
     const title = match[2]?.trim() ?? "";
     if (!Number.isFinite(id) || !title) continue;
@@ -357,9 +369,19 @@ export function parsePlanTasks(markdown: string): PlanTask[] {
       cleanTitle = title.replace(/\[depends:\s*[\d\s,]+\]/i, "").trim();
     }
 
+    // Capture the body under this heading (the todo checklist + any prose) up to
+    // the next task heading or end-of-doc — the actual work items, so the executor
+    // dispatches the real task instead of a bare phase title. Bounded.
+    const bodyStart = (match.index ?? 0) + match[0].length;
+    const bodyEnd = mi + 1 < matches.length ? (matches[mi + 1]!.index ?? markdown.length) : markdown.length;
+    const details = markdown.slice(bodyStart, bodyEnd).trim().slice(0, MAX_TASK_DETAILS_CHARS).trim();
+
     const task: PlanTask = { id, title: cleanTitle };
     if (dependencies.length > 0) {
       task.dependencies = dependencies;
+    }
+    if (details) {
+      task.details = details;
     }
     tasks.push(task);
   }
@@ -497,7 +519,11 @@ export async function runPlan(
     nodes[nodeId] = {
       id: nodeId,
       dependencies: deps,
-      action: t.title,
+      // Fold the captured work items into the action so the dispatched task prompt
+      // (`Task N: <action>`) and the route both see WHAT to do, not just the phase
+      // title. Without the body the subagent got a bare title and the goal never
+      // really ran.
+      action: t.details ? `${t.title}\n${t.details}` : t.title,
       params: {},
       state: (t.id < cp.currentTask) ? "SKIPPED" : "PENDING",
       timeoutMs: 300000,
