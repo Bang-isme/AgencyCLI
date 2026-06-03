@@ -50,8 +50,7 @@ const STATUS_ICON: Record<SubagentStatus["status"], string> = {
  * Subagents feel like runtime workers / execution units — NOT AI personalities.
  * Each worker exposes: state, phase, progress, runtime health.
  *
- * Collapsed by default in "default" disclosure level — shows only summary.
- * Expanded in "advanced"/"expert" to show per-worker steps.
+ * Shows every worker with its per-worker steps expanded.
  */
 /**
  * Self-ticking elapsed readout. Anchors to the worker's spawn timestamp and

@@ -3,7 +3,6 @@ import { render as inkRender } from "ink";
 import { App } from "./App.js";
 import { AppErrorBoundary } from "./components/AppErrorBoundary.js";
 import { TerminalLayoutProvider } from "./layout/TerminalLayoutProvider.js";
-import { HeartbeatProvider } from "./state/HeartbeatProvider.js";
 import {
   enterAlternateScreen,
   leaveAlternateScreen,
@@ -35,11 +34,6 @@ export type { LogCollapseProps, LogEntry, LogSeverity } from "./components/LogCo
 export { SubagentPanel } from "./components/SubagentPanel.js";
 export type { SubagentPanelProps, SubagentStatus } from "./components/SubagentPanel.js";
 
-
-// State providers
-export { HeartbeatProvider, useHeartbeat } from "./state/HeartbeatProvider.js";
-export type { HeartbeatEntry } from "./state/HeartbeatProvider.js";
-
 export interface RenderOptions {
   project?: string;
   skipSplash?: boolean;
@@ -69,12 +63,10 @@ export function render(opts?: RenderOptions): void {
   const instance = inkRender(
     createElement(AppErrorBoundary, null,
       createElement(TerminalLayoutProvider, null,
-        createElement(HeartbeatProvider, null,
-          createElement(App, {
-            project: opts?.project,
-            skipSplash,
-          })
-        )
+        createElement(App, {
+          project: opts?.project,
+          skipSplash,
+        })
       )
     ),
     { patchConsole: false }

@@ -7,7 +7,6 @@ import { pulseDots, SPINNER_BLOCKS } from "../motion/design-system.js";
 import { formatTokenCount } from "../utils/text.js";
 import { normalizeWorkerName, formatElapsed } from "@agency/core";
 import type { SubagentStatus } from "./SubagentPanel.js";
-import { useHeartbeat } from "../state/HeartbeatProvider.js";
 
 export interface ToolActivityProps {
   theme: ThemeTokens;
@@ -62,8 +61,7 @@ export const ToolActivity = memo(function ToolActivity({
 }: ToolActivityProps) {
   const tick = useTick(active, 100);
   const wave = SPINNER_BLOCKS[tick % SPINNER_BLOCKS.length]!;
-  const { current: heartbeat } = useHeartbeat();
-  
+
   let displayLabel = getPhaseLabel(phase);
 
   const runningSubagent = subagents?.find(a => a.status === "running");
@@ -87,11 +85,6 @@ export const ToolActivity = memo(function ToolActivity({
       : runningSubagent.elapsedMs;
     const subagentElapsed = subElapsedMs !== undefined ? ` · ${formatElapsed(subElapsedMs)}` : "";
     displayLabel = `${name} ➔ ${progressText}${subagentElapsed}`;
-  } else {
-    // Show actual latest heartbeat from main agent if fresh (last 10s)
-    if (heartbeat && heartbeat.message && (Date.now() - heartbeat.timestamp < 10000)) {
-      displayLabel = heartbeat.message;
-    }
   }
 
   const dots = pulseDots(tick);

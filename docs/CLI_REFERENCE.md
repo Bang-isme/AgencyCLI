@@ -504,7 +504,6 @@ Full §2.5 follow-up: re-executing the live agent against a baseline (needs reco
 | `Ctrl+O` | Global | Toggle expanded/compact conversation view |
 | `Ctrl+X` | Subagents active | Focus first subagent |
 | `Tab` | Buffer empty | Cycle agent mode (agent → plan → debug → ask) |
-| `Ctrl+D` | Buffer empty | Cycle disclosure level (default → advanced → expert) |
 | `Enter` | Buffer non-empty | Submit prompt |
 | `↑/↓` | Buffer empty | Scroll conversation (also fed by mouse wheel via alternate-scroll) |
 | `PageUp` / `Ctrl+↑` | Global | Scroll up a page |

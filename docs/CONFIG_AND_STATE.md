@@ -307,16 +307,6 @@ interface SessionMessage {
 - **Activity phases:** idle → routing → exploring → reading → analyzing → thinking → writing → editing
 - **Context window lookup:** via provider registry model specs
 
-#### Disclosure Provider (`DisclosureProvider.tsx`)
-3 progressive disclosure levels:
-1. `default` — Minimal UI information
-2. `advanced` — Moderate detail
-3. `expert` — Full debug information
-
-#### Heartbeat Provider (`HeartbeatProvider.tsx`)
-- Tracks silence budget (3s threshold)
-- `isSilent` flag for momentum-preserving indicators
-
 ---
 
 ## 6. Caching Layers

@@ -36,23 +36,21 @@ SPLASH ──(animation done)──→ WELCOME ──(select)──→ MAIN
 ```
 render()
 └─ TerminalLayoutProvider       ← measures stdout cols/rows, resize debounce (120ms)
-   └─ DisclosureProvider        ← progressive disclosure: default → advanced → expert (Ctrl+D)
-      └─ HeartbeatProvider      ← silence budget (3s idle detection)
-         └─ App                 ← THE MONOLITH: ~2.6k lines, all state + orchestration
-            └─ TerminalViewport ← full-viewport Box with overflow:hidden
-               ├─ [Splash]      ← phase="splash" → cyberpunk boot animation
-               ├─ [WelcomeMenu] ← phase="welcome" → 3-option menu
-               ├─ [SessionPicker] ← resumeOpen overlay at welcome
-               └─ Shell         ← phase="main" → permanent chrome
-                  ├─ Header          ← "acg v0.1.0" + project path + divider
-                  ├─ [ErrorBanner]   ← inline error notifications
-                  ├─ [Approval]      ← y/n file-write & shell command approval
-                  ├─ MemoConversation ← virtual-line scrolling message list
-                  ├─ [ToolActivity]  ← spinner + phase + elapsed + token count
-                  ├─ [GoalRunner]    ← multi-step goal progress with energy bar
-                  ├─ [IndexProgress] ← workspace index scan indicator
-                  ├─ ComposerBlock   ← input stack (SlashMenu + AtPicker + PromptComposer)
-                  └─ StatusBar       ← left: mode/phase, center: workers, right: model/context%
+   └─ App                       ← THE MONOLITH: ~2.6k lines, all state + orchestration
+      └─ TerminalViewport       ← full-viewport Box with overflow:hidden
+         ├─ [Splash]         ← phase="splash" → cyberpunk boot animation
+         ├─ [WelcomeMenu]    ← phase="welcome" → 3-option menu
+         ├─ [SessionPicker]  ← resumeOpen overlay at welcome
+         └─ Shell            ← phase="main" → permanent chrome
+            ├─ Header          ← "acg v0.1.0" + project path + divider
+            ├─ [ErrorBanner]   ← inline error notifications
+            ├─ [Approval]      ← y/n file-write & shell command approval
+            ├─ MemoConversation ← virtual-line scrolling message list
+            ├─ [ToolActivity]  ← spinner + phase + elapsed + token count
+            ├─ [GoalRunner]    ← multi-step goal progress with energy bar
+            ├─ [IndexProgress] ← workspace index scan indicator
+            ├─ ComposerBlock   ← input stack (SlashMenu + AtPicker + PromptComposer)
+            └─ StatusBar       ← left: mode/phase, center: workers, right: model/context%
 ```
 
 ---
@@ -145,10 +143,9 @@ Switched via `/theme <id>` slash command. Persisted in `~/.agency/tui.json`.
 9. Overlay guard        — block all input if any overlay open
 10. Loading guard        — escape aborts stream
 11. Tab                  — cycle agent mode (agent → plan → debug → ask)
-12. Ctrl+D               — cycle disclosure level (default → advanced → expert)
-13. Enter                — submit prompt
-14. Physical backspace   — deleteLastGrapheme()
-15. Control shortcuts    — filtered (Ctrl+A, Ctrl+Z excluded)
+12. Enter                — submit prompt
+13. Physical backspace   — deleteLastGrapheme()
+14. Control shortcuts    — filtered (Ctrl+A, Ctrl+Z excluded)
 16. Text input           — grapheme-aware character insertion + IME
 ```
 
@@ -170,7 +167,6 @@ Switched via `/theme <id>` slash command. Persisted in `~/.agency/tui.json`.
 | `Ctrl+O` | Global | Toggle expanded/compact conversation view |
 | `Ctrl+X` | Subagents active | Focus first subagent |
 | `Tab` | Buffer empty | Cycle agent mode |
-| `Ctrl+D` | Buffer empty | Cycle disclosure level |
 | `Enter` | Buffer non-empty | Submit prompt |
 | `↑/↓` | Buffer empty | Scroll conversation (1 line) |
 | Mouse wheel | Buffer empty | Scroll conversation (via alternate-scroll → ↑/↓) |
@@ -562,8 +558,6 @@ Context:
 | Provider | Purpose |
 |----------|---------|
 | `TerminalLayoutProvider` | Terminal width/height measurement |
-| `DisclosureProvider` | Progressive disclosure levels (3 tiers) |
-| `HeartbeatProvider` | Idle detection (3s silence budget) |
 
 ---
 
@@ -706,11 +700,3 @@ Approval Prompt (y/n in TUI)
 - **Lifecycle icons** (`LIFECYCLE_GLYPHS`): pending `◇`, active `◈`, done `◆`, error `✕`
 - **Severity icons** (`SEVERITY_GLYPHS`): info `·`, debug `◦`, adaptation `→`, warning `▲`, error `✗`, critical `✕`
 - Box-drawing chars: `┌─┐│└─┘├─┤` for borders (Ink's `borderStyle="round"`)
-
-### Progressive Disclosure
-3 tiers via `DisclosureProvider`:
-1. **Default**: Minimal — 1-2 thought events, basic info
-2. **Advanced**: Moderate — 5 thoughts, file details
-3. **Expert**: Full — all thoughts, verbose logs, debug info
-
-Cycled via `Ctrl+D` or `/disclosure` slash command.

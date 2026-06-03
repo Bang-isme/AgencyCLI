@@ -243,8 +243,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 |------|---------|
 | `state/agent-modes.ts` | 4 modes: agent/plan/debug/ask |
 | `state/context-tracker.ts` | Token estimate, activity phases |
-| `state/DisclosureProvider.tsx` | 3-tier progressive disclosure |
-| `state/HeartbeatProvider.tsx` | Silence budget detection |
 | `state/messages.ts` | `SessionMessage` type, `newMessageId()` |
 | `state/semantic-orchestration.ts` | `SemanticTranslator`, worker-lifecycle state for semantic events |
 | `presentation/turn.ts` | Re-exports core presentation helpers for the TUI surface |
