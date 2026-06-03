@@ -2,7 +2,8 @@ import { loadAgencyConfig, type ProviderId } from "@agency/providers";
 import { routePrompt } from "./prompt-bridge.js";
 import { heuristicRoute } from "./fallback-router.js";
 import { applyWeightsToRoute, loadWeights } from "./weights.js";
-import { SKILL_ALIASES } from "@agency/skills-bridge";
+import { SKILL_ALIASES, workflowSkillLoads } from "@agency/skills-bridge";
+import { getRuntimeFlags } from "../runtime/flags.js";
 
 /**
  * Skills the user explicitly invoked with a `$alias` in the prompt — e.g. by
@@ -85,6 +86,26 @@ export async function routeUserPrompt(
       }
     }
     result = { ...result, skills: merged };
+  }
+  // The selected workflow activates its full declared skill chain. Each
+  // `.workflows/<name>.md` lists `loads: [skill, …]` — the pipeline the skill-pack
+  // author intended that workflow to run — but the router only emits its own
+  // (often narrower) skills, so the workflow's chain never loaded. Merge the
+  // workflow's loads AFTER the explicit/router skills (those keep priority) so the
+  // whole pipeline reaches the context pack. Flag-gated; off → byte-identical.
+  if (getRuntimeFlags().workflowSkillLoads && result.workflow) {
+    const loads = workflowSkillLoads(skillsRoot, result.workflow);
+    if (loads.length > 0) {
+      const merged: string[] = [];
+      const seen = new Set<string>();
+      for (const s of [...result.skills, ...loads]) {
+        if (!seen.has(s)) {
+          seen.add(s);
+          merged.push(s);
+        }
+      }
+      result = { ...result, skills: merged };
+    }
   }
   return result;
 }

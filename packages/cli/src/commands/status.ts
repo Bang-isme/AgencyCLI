@@ -104,6 +104,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Path confinement", value: f.pathConfinement ? "on (refuse writes/deletes outside project root)" : "off", keys: ["pathConfinement"] },
     { label: "Subagent concurrency cap", value: f.subagentConcurrencyCap ? "on (≤ maxParallelAgents concurrent dispatch)" : "off (uncapped fan-out)", keys: ["subagentConcurrencyCap"] },
     { label: "Composer cursor editing", value: f.composerCursorEdit ? "on (caret nav + insert/delete + undo)" : "off (append-only)", keys: ["composerCursorEdit"] },
+    { label: "Workflow skill loads", value: f.workflowSkillLoads ? "on (selected workflow activates its declared skill chain)" : "off (router skills only)", keys: ["workflowSkillLoads"] },
   ];
 }
 

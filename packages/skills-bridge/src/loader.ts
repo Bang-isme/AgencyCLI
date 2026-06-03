@@ -29,3 +29,41 @@ export function resolveSkillMdPath(skillsRoot: string, input: string): string {
   }
   return path;
 }
+
+/** Absolute path to a workflow definition file (`.workflows/<name>.md`). */
+export function workflowMdPath(skillsRoot: string, workflowName: string): string {
+  return join(skillsRoot, ".workflows", `${workflowName}.md`);
+}
+
+/**
+ * The skill chain a workflow declares it loads — the `loads: [a, b, c]`
+ * frontmatter line in `.workflows/<name>.md`. This is the workflow's intended
+ * skill pipeline (e.g. `plan` → intent-analyzer + plan-writer + workflow-autopilot
+ * + reasoning-rigor), the single source of truth the runtime activates when that
+ * workflow is selected. Returns [] for an unknown workflow or a file with no
+ * `loads:` line. Never throws — a malformed pack must not break routing.
+ */
+export function workflowSkillLoads(skillsRoot: string, workflowName: string): string[] {
+  try {
+    const path = workflowMdPath(skillsRoot, workflowName);
+    if (!existsSync(path)) return [];
+    const raw = readFileSync(path, "utf8");
+    // `loads:` lives in the leading YAML-ish frontmatter as an inline array.
+    const m = raw.match(/^loads:\s*\[([^\]]*)\]/m);
+    if (!m) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const part of m[1]!.split(",")) {
+      const name = part.trim();
+      // Only accept well-formed skill slugs so a stray token can't become a
+      // phantom skill load.
+      if (/^[a-z0-9][a-z0-9-]*$/.test(name) && !seen.has(name)) {
+        seen.add(name);
+        out.push(name);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}

@@ -2,8 +2,13 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { WORKFLOWS } from "@agency/core";
-import { BUILTIN_SCRIPTS, loadPluginTools } from "@agency/skills-bridge";
+import { listWorkflowNames, WORKFLOWS } from "@agency/core";
+import {
+  BUILTIN_SCRIPTS,
+  loadPluginTools,
+  skillMdPath,
+  workflowSkillLoads,
+} from "@agency/skills-bridge";
 
 /**
  * Tight-coupling guard for the workflow composer ↔ bundled skills pack.
@@ -54,5 +59,30 @@ describe("workflow composer ↔ pack script integrity", () => {
     );
     // Surface the label + path of any drift, not just a bare boolean.
     expect(missing.map(([label, rel]) => `${label}: ${rel}`)).toEqual([]);
+  });
+
+  // The skill-chain side of the same coupling: each `.workflows/<name>.md` declares
+  // `loads: [skill, …]`, which routeUserPrompt activates when that workflow is
+  // selected (flag workflowSkillLoads). A workflow that names a skill the pack
+  // doesn't ship would silently load nothing — the same "wired to a path that no
+  // longer exists" defect, one layer up. Guard every declared load resolves to a
+  // real SKILL.md so a renamed/removed skill fails here, not as a quiet no-op.
+  it("every workflow's declared loads: skills resolve to a bundled SKILL.md", () => {
+    const missing: string[] = [];
+    for (const workflow of listWorkflowNames()) {
+      const loads = workflowSkillLoads(SKILLS_ROOT, workflow);
+      // Every code-defined workflow ships a `.workflows/<name>.md` declaring a
+      // non-empty pipeline; an empty result means the file or its loads: drifted.
+      if (loads.length === 0) {
+        missing.push(`workflow ${workflow}: no loads: declared in .workflows/${workflow}.md`);
+        continue;
+      }
+      for (const skill of loads) {
+        if (!existsSync(skillMdPath(SKILLS_ROOT, skill))) {
+          missing.push(`workflow ${workflow} loads ${skill}: no SKILL.md`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });

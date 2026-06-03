@@ -232,6 +232,21 @@ export interface RuntimeFlags {
    * so existing flows are unchanged; only mid-buffer editing is new.
    */
   composerCursorEdit: boolean;
+  /**
+   * Activate a workflow's declared skill chain when that workflow is selected.
+   * Each `.workflows/<name>.md` declares `loads: [skill, …]` — the pipeline the
+   * skill-pack author intended that workflow to run (e.g. `plan` →
+   * intent-context-analyzer + plan-writer + workflow-autopilot + reasoning-rigor).
+   * Nothing read that field: the router only activated its own hardcoded `skills`
+   * (often a strict subset, e.g. `plan` → just `codex-plan-writer`), so a selected
+   * workflow never ran its full declared pipeline (built-but-unwired). When on,
+   * `routeUserPrompt` merges the workflow's `loads:` into the route's skills
+   * (deduped, after the explicit/router skills so those keep priority) so the
+   * workflow's SKILL.md chain is injected into the context pack. Off in legacy
+   * (only the router's skills load → byte-identical prompt), on in hardened. The
+   * context pack is still char-budgeted, so the extra skills can't overflow.
+   */
+  workflowSkillLoads: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -382,5 +397,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // TUI composer) → off in legacy (append-only, end-pinned caret, byte-identical),
     // on in hardened. Opt in with AGENCY_COMPOSER_CURSOR=1.
     composerCursorEdit: parseBool(env.AGENCY_COMPOSER_CURSOR, hardened),
+    // Behaviour-changing (a selected workflow activates its full declared skill
+    // chain → more SKILL.md in the context pack, more tokens) → off in legacy (only
+    // the router's own skills load, byte-identical), on in hardened.
+    workflowSkillLoads: parseBool(env.AGENCY_WORKFLOW_SKILL_LOADS, hardened),
   };
 }

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -181,6 +181,61 @@ describe("routeUserPrompt explicit-alias activation", () => {
     const result = await routeUserPrompt(SKILLS_ROOT, "build a dashboard");
 
     expect(result.skills).toEqual(["codex-test-driven-development"]);
+  });
+});
+
+describe("routeUserPrompt workflow skill-chain activation", () => {
+  function makeSkillsRootWithPlanWorkflow(): string {
+    const skillsRoot = mkdtempSync(join(tmpdir(), "agency-wf-loads-"));
+    mkdirSync(join(skillsRoot, ".workflows"), { recursive: true });
+    writeFileSync(
+      join(skillsRoot, ".workflows", "plan.md"),
+      "---\nname: plan\ntrigger: $plan\nloads: [codex-intent-context-analyzer, codex-plan-writer, codex-reasoning-rigor]\n---\n# Workflow\n",
+      "utf8"
+    );
+    return skillsRoot;
+  }
+
+  it("merges the selected workflow's declared loads: skills when the flag is on", async () => {
+    const skillsRoot = makeSkillsRootWithPlanWorkflow();
+    mockedRoutePrompt.mockResolvedValue({
+      intent: "other",
+      workflow: "plan",
+      skills: ["codex-plan-writer"],
+      warnings: [],
+    });
+    process.env.AGENCY_WORKFLOW_SKILL_LOADS = "1";
+    try {
+      const result = await routeUserPrompt(skillsRoot, "plan the feature");
+      // The router's own skill keeps priority; the workflow's loads fill out the
+      // rest of the declared pipeline, deduped (codex-plan-writer not repeated).
+      expect(result.skills).toEqual([
+        "codex-plan-writer",
+        "codex-intent-context-analyzer",
+        "codex-reasoning-rigor",
+      ]);
+    } finally {
+      delete process.env.AGENCY_WORKFLOW_SKILL_LOADS;
+      rmSync(skillsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT merge workflow loads when the flag is off (legacy byte-identical)", async () => {
+    const skillsRoot = makeSkillsRootWithPlanWorkflow();
+    mockedRoutePrompt.mockResolvedValue({
+      intent: "other",
+      workflow: "plan",
+      skills: ["codex-plan-writer"],
+      warnings: [],
+    });
+    process.env.AGENCY_WORKFLOW_SKILL_LOADS = "0";
+    try {
+      const result = await routeUserPrompt(skillsRoot, "plan the feature");
+      expect(result.skills).toEqual(["codex-plan-writer"]);
+    } finally {
+      delete process.env.AGENCY_WORKFLOW_SKILL_LOADS;
+      rmSync(skillsRoot, { recursive: true, force: true });
+    }
   });
 });
 

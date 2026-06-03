@@ -13,6 +13,8 @@ export {
   resolveSkillMdPath,
   resolveSkillName,
   skillMdPath,
+  workflowMdPath,
+  workflowSkillLoads,
   type SkillsManifest,
 } from "./loader.js";
 export { extractTldr, parseSkillMd, type ParsedSkillMd } from "./skill-md.js";
