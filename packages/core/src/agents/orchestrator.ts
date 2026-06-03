@@ -1031,6 +1031,23 @@ export async function dispatchAgentsParallel(
             originalProjectRoot: projectRoot,
           }
         );
+      } catch (err) {
+        // A pre-flight throw — a delegation-limit violation
+        // (`enforceDelegationLimits`), or a prompt-router / subagent-router spawn
+        // failure — happens BEFORE dispatchAgentImpl's own try/catch and would
+        // otherwise reject this promise. Under `Promise.all` a single rejection
+        // discards the WHOLE batch: every sibling agent's completed work is lost
+        // and the partial-success merge below never runs. Convert it to an
+        // exitCode-1 result so this agent is reported failed exactly like a normal
+        // non-zero exit, while successful siblings still merge.
+        const failed: AgentDispatchResult = {
+          agentId: req.agentId,
+          exitCode: 1,
+          stdout: "",
+          stderr: err instanceof Error ? err.message : String(err),
+          isolatedEnv: {},
+        };
+        return failed;
       } finally {
         release();
       }

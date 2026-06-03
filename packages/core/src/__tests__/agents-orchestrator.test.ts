@@ -517,4 +517,58 @@ describe("dispatchAgentsParallel", () => {
     expect(res.results[0]?.exitCode).toBe(0);
     expect(res.results[1]?.exitCode).toBe(0);
   });
+
+  it("a pre-flight throw in one agent does not discard the whole batch", async () => {
+    const root = "/fake/project";
+    mockedRoute.mockResolvedValue(baseRoute);
+
+    mockedExeca.mockResolvedValue({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        intent: "plan",
+        suggested_agent: "planner",
+        workflow: "plan",
+        skills: [],
+      }),
+      stderr: "",
+    } as Awaited<ReturnType<typeof execa>>);
+
+    vi.spyOn(chatStream, "runChatTurnWithStream").mockResolvedValue({
+      route: baseRoute,
+      routeSummary: "intent: plan · workflow: plan",
+      assistantText: "Success response",
+      suggestedCommands: [],
+      routeOnly: false,
+      budget: "balanced" as any,
+      contextFiles: [],
+      routeFromCache: false,
+    });
+
+    // Seed the delegation chain so the "planner" dispatch trips the cycle guard —
+    // a pre-flight throw (`DelegationLimitError`) that fires BEFORE dispatchAgentImpl's
+    // own try/catch. "debugger" is clean. Before the resilience fix this rejected the
+    // whole Promise.all batch (results: [], the clean agent's work discarded).
+    process.env.AGENCY_DELEGATION_CHAIN = "planner";
+    try {
+      const res = await dispatchAgentsParallel(
+        root,
+        [
+          { agentId: "planner", task: "Task A" },
+          { agentId: "debugger", task: "Task B" },
+        ],
+        { skillsRoot: FIXTURE_SKILLS }
+      );
+
+      expect(res.results.length).toBe(2);
+      const planner = res.results.find((r) => r.agentId === "planner");
+      const dbg = res.results.find((r) => r.agentId === "debugger");
+      expect(planner?.exitCode).toBe(1);
+      expect(planner?.stderr).toContain("Circular delegation");
+      expect(dbg?.exitCode).toBe(0);
+      // Reported as a partial failure — not an all-or-nothing batch crash.
+      expect(res.success).toBe(false);
+    } finally {
+      delete process.env.AGENCY_DELEGATION_CHAIN;
+    }
+  });
 });
