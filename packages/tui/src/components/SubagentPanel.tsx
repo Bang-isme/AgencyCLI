@@ -23,8 +23,6 @@ export interface SubagentStatus {
   result?: string;
   /** Worker-style progress steps (if available) */
   steps?: WorkerStep[];
-  /** Findings emitted by this worker */
-  findings?: string[];
   /** Current execution phase label */
   phase?: string;
   thought?: string;
@@ -51,10 +49,10 @@ const STATUS_ICON: Record<SubagentStatus["status"], string> = {
  * Worker-style subagent panel.
  *
  * Subagents feel like runtime workers / execution units — NOT AI personalities.
- * Each worker exposes: state, phase, progress, findings, runtime health.
+ * Each worker exposes: state, phase, progress, runtime health.
  *
  * Collapsed by default in "default" disclosure level — shows only summary.
- * Expanded in "advanced"/"expert" to show per-worker steps and findings.
+ * Expanded in "advanced"/"expert" to show per-worker steps.
  */
 /**
  * Self-ticking elapsed readout. Anchors to the worker's spawn timestamp and
@@ -111,7 +109,7 @@ const WorkerRow = memo(function WorkerRow({
 }: WorkerRowProps) {
   const name = workerName(agent.agentId);
   const isActive = agent.status === "running";
-  const hasDetails = (showDetails || isActive) && (agent.steps || agent.findings);
+  const hasDetails = (showDetails || isActive) && !!agent.steps;
   
   const tick = useTick(isActive, 100);
   const spinner = SPINNER_DOTS[tick % SPINNER_DOTS.length]!;
@@ -189,21 +187,6 @@ const WorkerRow = memo(function WorkerRow({
         </Box>
       ) : null}
 
-      {/* Expanded: findings */}
-      {hasDetails && agent.findings && agent.findings.length > 0 ? (
-        <Box marginLeft={1}>
-          <Box flexDirection="row">
-            <Text color={theme.muted}>{isLast ? "   " : "│  "}</Text>
-            <Box flexDirection="column" flexGrow={1}>
-              {agent.findings.map((f, i) => (
-                <Text key={i} color={theme.text} dimColor wrap="wrap">
-                  • {f}
-                </Text>
-              ))}
-            </Box>
-          </Box>
-        </Box>
-      ) : null}
     </Box>
   );
 });

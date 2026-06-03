@@ -626,7 +626,6 @@ export function App({
           // components instead of needing a per-second whole-App re-flush.
           spawnTs: typeof spawnTs === "number" ? spawnTs : undefined,
           steps: w.steps,
-          findings: []
         };
       }));
       lastSubagentsUpdateMs = Date.now();
