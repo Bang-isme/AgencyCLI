@@ -35,7 +35,8 @@ describe("PlanPanel", () => {
     expect((lastFrame() ?? "").trim()).toBe("");
   });
 
-  it("shows full progress when every step is completed", () => {
+  it("auto-dismisses (renders nothing) once every step is completed", () => {
+    // A finished checklist should not linger above the composer after the turn.
     const { lastFrame } = render(
       <PlanPanel
         theme={theme}
@@ -45,6 +46,6 @@ describe("PlanPanel", () => {
         ]}
       />
     );
-    expect(lastFrame() ?? "").toContain("2/2");
+    expect((lastFrame() ?? "").trim()).toBe("");
   });
 });

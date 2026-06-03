@@ -1832,6 +1832,9 @@ ${taskDesc}`;
     setThoughts([]);
     setSubagents([]);
     setActiveSubagentId(null);
+    // A new turn starts fresh: drop the previous turn's plan so a stale/
+    // completed checklist doesn't linger above the composer.
+    setPlanTodos([]);
 
     autoApproveRef.current = false;
     userHasScrolledUpRef.current = false;
@@ -2269,6 +2272,7 @@ ${taskDesc}`;
             phaseLabel={activityPhase !== "idle" ? getPhaseLabel(activityPhase) : undefined}
             agentMode={agentMode}
             workers={statusBarWorkers}
+            disclosureLevel={disclosureLevel}
           />
         }
       >

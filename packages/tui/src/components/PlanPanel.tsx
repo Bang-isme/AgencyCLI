@@ -24,7 +24,9 @@ function statusColor(status: string, theme: ThemeTokens): string {
  * The live plan / todo list for the current turn, driven by the `plan:updated`
  * event the `update_plan` tool publishes. Each item's status is exactly what the
  * model set on its last `update_plan` call — real per-step progress, not a
- * decorative flip. Renders nothing when there is no active plan.
+ * decorative flip. Renders nothing when there is no active plan — including once
+ * every step is completed, so a finished checklist auto-dismisses instead of
+ * lingering above the composer after the turn is done.
  */
 export const PlanPanel = memo(function PlanPanel({
   todos,
@@ -33,7 +35,7 @@ export const PlanPanel = memo(function PlanPanel({
   todos: PlanTodo[];
   theme: ThemeTokens;
 }) {
-  if (todos.length === 0) return null;
+  if (todos.length === 0 || todos.every((t) => t.status === "completed")) return null;
   const done = todos.filter((t) => t.status === "completed").length;
 
   return (
