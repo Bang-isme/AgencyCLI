@@ -507,6 +507,48 @@ registry.register({
   }
 });
 
+// 2e. update_plan — maintain the visible plan / todo list for a multi-step task.
+registry.register({
+  name: "update_plan",
+  description:
+    "Maintain the live plan / todo list the user sees for a multi-step task. Call it when you start such a task and AGAIN whenever progress changes — pass the FULL current list each time (it replaces the previous one). `todos` is a JSON array of objects: { \"step\": string, \"status\": \"pending\" | \"in_progress\" | \"completed\" }. Keep exactly one step `in_progress`; mark a step `completed` only when its work is actually done. This is how you show what you're doing and what's next — use it instead of narrating a checklist in prose. Skip it for trivial single-step requests.",
+  category: "read",
+  schema: z.object({
+    todos: z.string(),
+  }),
+  execute: async (args: any) => {
+    const raw = (args.todos || "").trim();
+    if (!raw) return "Error: 'todos' is required (a JSON array of { step, status }).";
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err: any) {
+      return `Error parsing todos JSON: ${err.message || String(err)}`;
+    }
+    if (!Array.isArray(parsed)) {
+      return "Error: 'todos' must be a JSON array of { step, status } objects.";
+    }
+    const STATUSES = new Set(["pending", "in_progress", "completed"]);
+    const todos: Array<{ step: string; status: string }> = [];
+    for (const item of parsed as any[]) {
+      const step = String(item?.step ?? item?.title ?? item?.text ?? "").trim();
+      if (!step) continue;
+      const rawStatus = String(item?.status ?? "pending").trim();
+      todos.push({ step, status: STATUSES.has(rawStatus) ? rawStatus : "pending" });
+    }
+    if (todos.length === 0) {
+      return "Error: no valid todos provided (each needs a non-empty 'step').";
+    }
+    // Surface the plan to the TUI (and any subscriber). The status is exactly what
+    // the model set per item — real per-step progress, not a decorative flip.
+    void EventBus.getInstance().publish("plan:updated", { todos, timestamp: Date.now() });
+    const done = todos.filter((t) => t.status === "completed").length;
+    const glyph = (s: string) => (s === "completed" ? "[x]" : s === "in_progress" ? "[~]" : "[ ]");
+    const lines = todos.map((t) => `${glyph(t.status)} ${t.step}`);
+    return `Plan updated (${done}/${todos.length} done):\n${lines.join("\n")}`;
+  },
+});
+
 /**
  * When an exact search/replace match fails, explain WHY so the model can fix it
  * in one shot instead of churning on the same near-miss (the generic "match

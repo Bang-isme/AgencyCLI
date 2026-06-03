@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker } from "../skill/tool-harness.js";
+import { EventBus } from "../events/event-bus.js";
 
 describe("Tool Harness Subsystem", () => {
   describe("parseToolCalls", () => {
@@ -712,6 +713,66 @@ Here is my decision:
       const d = desc("grep_search");
       expect(d.toLowerCase()).toContain("workspace");
       expect(d).toContain("grep_file");
+    });
+  });
+
+  describe("update_plan tool", () => {
+    beforeEach(() => resetToolCircuitBreaker());
+
+    it("parses todos, publishes plan:updated with the model's per-item status, and renders progress", async () => {
+      const events: any[] = [];
+      const handler = (e: any) => { if (e.action === "plan:updated") events.push(e); };
+      EventBus.getInstance().subscribe("plan:updated", handler);
+      try {
+        const todos = JSON.stringify([
+          { step: "Research the parser", status: "completed" },
+          { step: "Write the fix", status: "in_progress" },
+          { step: "Add a test", status: "pending" },
+        ]);
+        const res = await executeTool("update_plan", { todos }, "/tmp");
+        expect(res).toContain("1/3 done");
+        expect(res).toContain("[x] Research the parser");
+        expect(res).toContain("[~] Write the fix");
+        expect(res).toContain("[ ] Add a test");
+
+        // publish() queues the event and drains it on a later setImmediate tick.
+        const start = Date.now();
+        while (events.length === 0 && Date.now() - start < 1000) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        expect(events.length).toBeGreaterThanOrEqual(1);
+        const payload = JSON.parse(events[events.length - 1].payload);
+        // The published status is exactly what the model set per item — real
+        // per-step progress, not a decorative en-masse flip.
+        expect(payload.todos).toEqual([
+          { step: "Research the parser", status: "completed" },
+          { step: "Write the fix", status: "in_progress" },
+          { step: "Add a test", status: "pending" },
+        ]);
+      } finally {
+        EventBus.getInstance().unsubscribe("plan:updated", handler);
+      }
+    });
+
+    it("rejects malformed input without throwing", async () => {
+      const run = async (todos: string) => {
+        resetToolCircuitBreaker();
+        return executeTool("update_plan", { todos }, "/tmp");
+      };
+      expect(await run("")).toContain("required");
+      expect(await run("not json")).toContain("Error parsing");
+      expect(await run("{}")).toContain("must be a JSON array");
+      expect(await run("[]")).toContain("no valid todos");
+    });
+
+    it("normalizes an unknown status to pending and skips empty steps", async () => {
+      const todos = JSON.stringify([
+        { step: "Valid step", status: "weird" },
+        { step: "", status: "pending" },
+      ]);
+      const res = await executeTool("update_plan", { todos }, "/tmp");
+      expect(res).toContain("0/1 done");
+      expect(res).toContain("[ ] Valid step");
     });
   });
 });
