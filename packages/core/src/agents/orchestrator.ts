@@ -475,19 +475,38 @@ async function dispatchAgentImpl(
     elapsedMs: Date.now() - startTime,
   });
 
-  const coordinatorRoute = await routeUserPrompt(
-    skillsRoot,
-    prompt,
-    req.projectRoot
-  );
+  let coordinatorRoute: Awaited<ReturnType<typeof routeUserPrompt>>;
+  let sub: Awaited<ReturnType<typeof runSubagentRouter>>;
+  let effectiveAgent: AgentId;
+  try {
+    coordinatorRoute = await routeUserPrompt(
+      skillsRoot,
+      prompt,
+      req.projectRoot
+    );
 
-  const sub = await runSubagentRouter(skillsRoot, req);
-  const effectiveAgent = coerceAgentId(
-    (sub.route?.suggested_agent as string | null) ??
-      coordinatorRoute.suggested_agent,
-    req.agentId,
-    req.projectRoot
-  );
+    sub = await runSubagentRouter(skillsRoot, req);
+    effectiveAgent = coerceAgentId(
+      (sub.route?.suggested_agent as string | null) ??
+        coordinatorRoute.suggested_agent,
+      req.agentId,
+      req.projectRoot
+    );
+  } catch (setupErr: any) {
+    // Pre-flight failure (routing / subagent router) — this runs BEFORE the work
+    // body's own try/catch, and subagent:started already fired, so pair it with a
+    // terminal subagent:error. Otherwise the worker panel shows a stuck 'running'
+    // worker forever. (The dispatch_subagent tool still returns the error string.)
+    await eventBus.publish("subagent:error", {
+      agentId: req.agentId,
+      status: "error",
+      result: setupErr?.message || "Subagent routing failed",
+      exitCode: 1,
+      elapsedMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    }, { agentId: req.agentId as string });
+    throw setupErr;
+  }
 
   const suggestedCommands = buildSuggestedCommands(
     {

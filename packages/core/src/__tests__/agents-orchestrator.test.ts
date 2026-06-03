@@ -496,6 +496,43 @@ describe("dispatchAgent", () => {
       bus.unsubscribe("subagent:finished", onFinished);
     }
   });
+
+  it("emits a terminal subagent:error when pre-flight routing throws (no stuck 'running' worker)", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "dispatch-preflight-"));
+    // The coordinator route (the first await after subagent:started) blows up.
+    mockedRoute.mockRejectedValueOnce(new Error("router exploded"));
+
+    const bus = EventBus.getInstance();
+    const started: ReplayEvent[] = [];
+    const errored: ReplayEvent[] = [];
+    const onStarted = (e: ReplayEvent) => started.push(e);
+    const onError = (e: ReplayEvent) => errored.push(e);
+    bus.subscribe("subagent:started", onStarted);
+    bus.subscribe("subagent:error", onError);
+
+    try {
+      await expect(
+        dispatchAgent(
+          { agentId: "planner", task: "task whose routing fails", projectRoot },
+          { skillsRoot: FIXTURE_SKILLS }
+        )
+      ).rejects.toThrow("router exploded");
+
+      for (let i = 0; i < 50 && (started.length === 0 || errored.length === 0); i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      // started fired (the worker is shown) → a terminal event MUST pair it, or
+      // the worker panel shows a stuck 'running' worker forever.
+      expect(started.length).toBeGreaterThan(0);
+      expect(errored.length).toBeGreaterThan(0);
+      expect(errored[0]!.agentId).toBe("planner");
+    } finally {
+      bus.unsubscribe("subagent:started", onStarted);
+      bus.unsubscribe("subagent:error", onError);
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("dispatchAgentsParallel", () => {

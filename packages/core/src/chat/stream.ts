@@ -608,6 +608,9 @@ export async function runChatTurnWithStream(
 
     // Warn user if the loop was exhausted rather than completing naturally
     if (loopCount >= maxLoops) {
+      // A subagent run can't be user-continued ("send continue" resumes the MAIN
+      // turn, not this worker), so the surfaced notice must not tell the user to.
+      const subagentId = input.agentId || process.env.AGENCY_AGENT_ID;
       if (getRuntimeFlags().resumeContinuation) {
         // §8.10 — fold an informative, resume-oriented notice into the turn text
         // (not just a transient onDelta) so the NEXT turn's history records what
@@ -617,7 +620,9 @@ export async function runChatTurnWithStream(
         handlers.onDelta(`\n${notice}\n`);
         llmText += `\n${notice}`;
         EventBus.getInstance().publish("system:warning", {
-          message: `Chat stream hit max loop limit (${maxLoops}). ${filesWritten.size > 0 ? `Modified ${filesWritten.size} file(s); send "continue" to resume.` : "Response may be incomplete."}`,
+          message: subagentId
+            ? `Subagent ${subagentId} hit its max loop limit (${maxLoops})${filesWritten.size > 0 ? ` after modifying ${filesWritten.size} file(s)` : ""}.`
+            : `Chat stream hit max loop limit (${maxLoops}). ${filesWritten.size > 0 ? `Modified ${filesWritten.size} file(s); send "continue" to resume.` : "Response may be incomplete."}`,
         });
       } else {
         const truncMsg = `⚠ [SYSTEM: Response truncated — reached maximum ${maxLoops} continuation/tool iterations. Some output may be incomplete.]`;
