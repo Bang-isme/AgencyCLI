@@ -141,7 +141,7 @@ export function buildSystemPrompt(
   const protocol = [
     "### WORKING PROGRESSION & SOLUTION ARCHITECTURE PROTOCOL",
     "To ensure every workflow stays on track to the right goal and leverages its past working timeline without losing context:",
-    "1. TIMELINE ALIGNMENT: Utilize the `### SYSTEM HISTORICAL MEMORIES` to reconstruct the exact chronological timeline of past steps. Never repeat actions or edits that have already succeeded or been ruled out.",
+    "1. TIMELINE ALIGNMENT: When a `### SYSTEM HISTORICAL MEMORIES` section is present below, use it to reconstruct the chronological timeline of past steps; never repeat actions or edits that have already succeeded or been ruled out.",
     ...approachesRule,
     ...(flags.fileMemory
       ? [
