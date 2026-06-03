@@ -135,8 +135,16 @@ export function summarizeToolResult(name: string, result: string): string {
       const m = r.match(/Found (\d+) files/);
       return m ? plural(m[1]!, "file", "files") : "done";
     }
-    case "list_dir":
-      return plural(String(r.split("\n").filter(Boolean).length), "item", "items");
+    case "list_dir": {
+      // The result is a "Directory: … (N entries)" header line followed by one
+      // line per entry, so counting non-empty lines over-counts by the header
+      // (and reports "1 item" for an empty directory). Read the count the tool
+      // already states; fall back to a line count only if the marker is absent.
+      const m = r.match(/\((\d+) entries\)/);
+      return m
+        ? plural(m[1]!, "item", "items")
+        : plural(String(r.split("\n").filter(Boolean).length), "item", "items");
+    }
     case "execute_command": {
       const m = r.match(/Exit Code: (-?\d+)/);
       return m ? `exit ${m[1]}` : "done";

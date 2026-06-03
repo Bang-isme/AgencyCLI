@@ -36,6 +36,14 @@ describe("summarizeToolResult", () => {
     expect(summarizeToolResult("write_file", "Successfully wrote file")).toBe("saved");
   });
 
+  it("list_dir → entry count from the marker (not header + entries)", () => {
+    // "Directory: … (N entries)" header + one line per entry. Counting lines
+    // would over-count by the header line; the marker is authoritative.
+    expect(summarizeToolResult("list_dir", "Directory: src (3 entries)\na.ts\nb.ts\nc.ts")).toBe("3 items");
+    expect(summarizeToolResult("list_dir", "Directory: empty (0 entries)\n")).toBe("0 items");
+    expect(summarizeToolResult("list_dir", "Directory: one (1 entries)\nonly.ts")).toBe("1 item");
+  });
+
   it("mutating edits → concise verb", () => {
     expect(summarizeToolResult("edit_file", "ok")).toBe("edited");
     expect(summarizeToolResult("delete_file", "ok")).toBe("deleted");
