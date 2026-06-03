@@ -77,14 +77,9 @@ export const ToolActivity = memo(function ToolActivity({
       progressText = progressText.slice(0, 47) + "...";
     }
 
-    // Derive the running worker's elapsed from its spawn anchor so it advances
-    // on this component's own 200ms timer (below) — smooth, and independent of
-    // how often the parent re-flushes the subagents array.
-    const subElapsedMs = runningSubagent.spawnTs !== undefined
-      ? Date.now() - runningSubagent.spawnTs
-      : runningSubagent.elapsedMs;
-    const subagentElapsed = subElapsedMs !== undefined ? ` · ${formatElapsed(subElapsedMs)}` : "";
-    displayLabel = `${name} ➔ ${progressText}${subagentElapsed}`;
+    // The worker's own elapsed is shown by the SubagentPanel ([running | Ns]);
+    // don't repeat it here — the trailing turn-elapsed below is the single timer.
+    displayLabel = `${name} ➔ ${progressText}`;
   }
 
   const dots = pulseDots(tick);
