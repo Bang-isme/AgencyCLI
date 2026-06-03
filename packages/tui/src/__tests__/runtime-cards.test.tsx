@@ -2,47 +2,12 @@ import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { getTheme, DEFAULT_THEME_ID } from "../themes/registry.js";
 import { DisclosureProvider } from "../state/DisclosureProvider.js";
-import { RuntimeCard } from "../components/RuntimeCard.js";
 import { PatchCard } from "../components/PatchCard.js";
 import { LogCollapse } from "../components/LogCollapse.js";
 import { ExecutionPanel } from "../components/ExecutionPanel.js";
 import { LIFECYCLE_GLYPHS, SEVERITY_GLYPHS } from "../motion/design-system.js";
 
 const theme = getTheme(DEFAULT_THEME_ID);
-
-describe("RuntimeCard", () => {
-  it("renders title, meta and findings as a structured card", () => {
-    const { lastFrame } = render(
-      <RuntimeCard
-        theme={theme}
-        title="Auth cluster identified"
-        tier="primary"
-        tag="ACTIVE"
-        meta={[{ key: "Endpoints", value: "18" }]}
-        findings={["JWT auth detected"]}
-      />
-    );
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("Auth cluster identified");
-    expect(frame).toContain("Endpoints");
-    expect(frame).toContain("18");
-    expect(frame).toContain("JWT auth detected");
-  });
-
-  it("shows only the title row when collapsed", () => {
-    const { lastFrame } = render(
-      <RuntimeCard
-        theme={theme}
-        title="Background trace"
-        findings={["should be hidden"]}
-        collapsed
-      />
-    );
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("Background trace");
-    expect(frame).not.toContain("should be hidden");
-  });
-});
 
 describe("PatchCard", () => {
   it("renders semantic symbol-level changes and hidden trivial count", () => {

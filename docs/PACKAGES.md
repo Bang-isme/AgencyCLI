@@ -229,7 +229,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `components/ToolActivity.tsx` | Loading: spinner + phase + elapsed + tokens |
 | `components/CognitionPanel.tsx` | Runtime thought log (3 disclosure levels) |
 | `components/DataView.tsx` | DataTable, CodeBlock, DiffBlock, ProgressBar |
-| `components/RuntimeCard.tsx` | Runtime UX card component |
 | `components/WorkerProgress.tsx` | Worker step tracker |
 | `components/TrustCard.tsx` | Trust/confidence card |
 | `components/FailureCard.tsx` | Failure display card |

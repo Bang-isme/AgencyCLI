@@ -73,37 +73,6 @@ const linePool = new FormattedLinePool();
 
 // getBadgeStyles and formatTechnicalSubLine extracted to utils/conversation/tool-labels and components/conversation/SubagentStepRow
 
-export function formatStructuredRuntimeCard(line: string, theme: ThemeTokens): React.ReactNode | null {
-  if (line.includes("ReplaceMethodBody") || line.includes("InsertFunction") || line.includes("DeleteNode")) {
-    const op = line.includes("ReplaceMethodBody")
-      ? "ReplaceMethodBody"
-      : line.includes("InsertFunction")
-        ? "InsertFunction"
-        : "DeleteNode";
-    const symbolMatch = line.match(/(?:class|function|method|symbol)\s+([a-zA-Z0-9_#:]+)/i) || line.match(/in\s+([a-zA-Z0-9_#:]+)/i);
-    const symbol = symbolMatch ? symbolMatch[1] : "Symbol";
-    return (
-      <Box flexDirection="row">
-        <Text color={theme.accent} bold>◈ {op} ➔ </Text>
-        <Text color={theme.success} bold>{symbol}()</Text>
-      </Box>
-    );
-  }
-
-  if (line.includes("+++ b/") || line.includes("--- a/")) {
-    const fileMatch = line.match(/(?:\+\+\+\s+b\/|---\s+a\/)(.+)/);
-    if (fileMatch && fileMatch[1]) {
-      return (
-        <Box flexDirection="row">
-          <Text color={theme.accent} bold>modify </Text>
-          <Text color={theme.text}>{fileMatch[1]}</Text>
-        </Box>
-      );
-    }
-  }
-  return null;
-}
-
 export interface AssistantBlock {
   type: "text" | "code" | "action";
   badge?: string;

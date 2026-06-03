@@ -23,8 +23,6 @@ export {
 } from "./sessions/store.js";
 
 // Runtime UX components
-export { RuntimeCard } from "./components/RuntimeCard.js";
-export type { RuntimeCardProps, AttentionTier } from "./components/RuntimeCard.js";
 export { WorkerProgress } from "./components/WorkerProgress.js";
 export type { WorkerProgressProps, WorkerStep, StepStatus } from "./components/WorkerProgress.js";
 export { TrustCard } from "./components/TrustCard.js";

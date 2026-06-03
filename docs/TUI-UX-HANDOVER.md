@@ -63,7 +63,7 @@ Five threads, all landed and verified:
 | File | Change |
 |------|--------|
 | `packages/tui/src/motion/__tests__/design-system.test.ts` | Added `SEVERITY_GLYPHS` (single-cell, no `⚠`), `scanBar`/`energyBar` width, `gradientChar` clamp. Removed breathing tests. |
-| `packages/tui/src/__tests__/runtime-cards.test.tsx` | **NEW** — render smoke for `RuntimeCard`, `PatchCard`, `LogCollapse`, `ExecutionPanel` (verify lifecycle/severity glyphs). |
+| `packages/tui/src/__tests__/runtime-cards.test.tsx` | Render smoke for `PatchCard`, `LogCollapse`, `ExecutionPanel` (verify lifecycle/severity glyphs). |
 | `packages/tui/src/layout/__tests__/terminal-layout.test.ts` | Removed `scrollThumb` tests (helper deleted). |
 
 ### Docs

@@ -167,7 +167,7 @@ cd packages/tui && npx vitest
 
 | Tested (directly or via render smoke) | Not Tested |
 |--------|-----------|
-| Conversation, Chat, Shell, Connect, RuntimeCard, PatchCard, LogCollapse, ExecutionPanel (+ harness/production render smoke) | App.tsx, Splash, WelcomeMenu, GoalRunner, ModelsOverlay, McpOverlay, StatusDashboard, SkillsPicker, Approval, RouteOverlay, +20 more |
+| Conversation, Chat, Shell, Connect, PatchCard, LogCollapse, ExecutionPanel (+ harness/production render smoke) | App.tsx, Splash, WelcomeMenu, GoalRunner, ModelsOverlay, McpOverlay, StatusDashboard, SkillsPicker, Approval, RouteOverlay, +20 more |
 
 ## Writing New Tests
 
