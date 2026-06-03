@@ -611,12 +611,11 @@ export function calculateFormattedLines(
         cached.themeBg === theme.bg &&
         cached.themeText === theme.text
       ) {
-        const filteredCached = cached.lines.filter((l) => {
-          if (l.priority === "LOW" && pressure.pressureScore >= 0.6) return false;
-          if (l.priority === "MEDIUM" && pressure.pressureScore >= 0.8) return false;
-          return true;
-        });
-        lines.push(...filteredCached);
+        // Cached lines render verbatim. Content is NEVER dropped based on
+        // runtime pressure (lag/heap) — doing so made the user's own text
+        // vanish and reappear as the loop got busy, corrupting the scroll
+        // math and jittering the whole layout.
+        lines.push(...cached.lines);
         continue;
       }
     }
@@ -719,12 +718,7 @@ export function calculateFormattedLines(
         ));
       }
 
-      const filtered = messageLines.filter((l) => {
-        if (l.priority === "LOW" && pressure.pressureScore >= 0.6) return false;
-        if (l.priority === "MEDIUM" && pressure.pressureScore >= 0.8) return false;
-        return true;
-      });
-      lines.push(...filtered);
+      lines.push(...messageLines);
 
       if (!isStreamingActive) {
         if (formattedLinesCache.size > 1000) {
@@ -746,8 +740,6 @@ export function calculateFormattedLines(
 
     const messageLines: FormattedLine[] = [];
     const pushBodyLine = (element: React.ReactNode, keyStr: string, priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" = "MEDIUM") => {
-      if (priority === "LOW" && pressure.pressureScore >= 0.6) return;
-      if (priority === "MEDIUM" && pressure.pressureScore >= 0.8) return;
       messageLines.push(linePool.acquire(keyStr, element, priority));
     };
 
@@ -1471,12 +1463,7 @@ export function calculateFormattedLines(
       }
     }
 
-    const filtered = messageLines.filter((l) => {
-      if (l.priority === "LOW" && pressure.pressureScore >= 0.6) return false;
-      if (l.priority === "MEDIUM" && pressure.pressureScore >= 0.8) return false;
-      return true;
-    });
-    lines.push(...filtered);
+    lines.push(...messageLines);
 
     if (!isStreamingActive) {
       if (formattedLinesCache.size > 1000) {
@@ -1642,15 +1629,11 @@ export function calculateFormattedLines(
     ));
   }
 
-  const finalFiltered = lines.filter((l) => {
-    if (l.priority === "LOW" && pressure.pressureScore > 0.6) return false;
-    if (l.priority === "MEDIUM" && pressure.pressureScore > 0.8) return false;
-    return true;
-  }) as FormattedLine[] & { completed?: boolean; lastIndex?: number; dirtyRowsComputed?: number };
-  finalFiltered.completed = completed;
-  finalFiltered.lastIndex = lastIndex;
-  finalFiltered.dirtyRowsComputed = dirtyRowsComputed;
-  return finalFiltered;
+  const finalLines = lines as FormattedLine[] & { completed?: boolean; lastIndex?: number; dirtyRowsComputed?: number };
+  finalLines.completed = completed;
+  finalLines.lastIndex = lastIndex;
+  finalLines.dirtyRowsComputed = dirtyRowsComputed;
+  return finalLines;
 }
 
 // TOOL_ALIASES and tool operations extracted to utils/conversation/tool-labels

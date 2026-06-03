@@ -58,8 +58,8 @@ describe("Production-Grade TUI Chaos & Torture Tests", () => {
     expect(duration).toBeLessThan(5000); // 10 cycles of 1000 items should take < 5s
   });
 
-  it("filters lower priority elements under high loop lag (Render QoS)", () => {
-    // Inject extreme lag mocks to simulate heavy loop delay
+  it("renders content deterministically under high loop lag (no QoS dropping)", () => {
+    // Inject extreme lag + heap pressure to simulate a busy loop.
     vi.spyOn(ScreenModule, "getLoopLag").mockReturnValue(160);
     vi.spyOn(process, "memoryUsage").mockReturnValue({
       heapUsed: 900 * 1024 * 1024,
@@ -69,14 +69,13 @@ describe("Production-Grade TUI Chaos & Torture Tests", () => {
       rss: 0
     });
     const pressure = getRenderPressure(600);
-    expect(pressure.pressureScore).toBeGreaterThanOrEqual(0.6);
+    expect(pressure.pressureScore).toBeGreaterThanOrEqual(0.8);
 
     const messages = [
-      { id: "msg-1", role: "system" as const, content: "SHELL_EXECUTION: npm test\noutput line\n", timestamp: Date.now() },
-      { id: "msg-2", role: "user" as const, content: "Low priority message", timestamp: Date.now() }
+      { id: "qos-msg-1", role: "system" as const, content: "SHELL_EXECUTION: npm test\noutput line\n", timestamp: Date.now() },
+      { id: "qos-msg-2", role: "user" as const, content: "Low priority message", timestamp: Date.now() }
     ];
 
-    // Format under pressure
     const lines = calculateFormattedLines(
       messages,
       80,
@@ -89,9 +88,12 @@ describe("Production-Grade TUI Chaos & Torture Tests", () => {
       false
     );
 
-    // Spacer lines (which are LOW priority) should be filtered out to save layout nodes
-    const hasSpacer = lines.some((l) => l.key.includes("spacer") || l.priority === "LOW");
-    expect(hasSpacer).toBe(false);
+    // Content is NEVER dropped based on transient runtime pressure. Hiding the
+    // user's own rows under load shrank `allLines`, corrupted the scroll math,
+    // and jittered the layout. The shell spacer (LOW priority) must survive —
+    // rendering is now a pure function of the messages, not of loop lag/heap.
+    const hasSpacer = lines.some((l) => l.key.includes("spacer"));
+    expect(hasSpacer).toBe(true);
   });
 
   it("triggers layout invariant checks, writes to tui-diagnostics.log and drops to survival mode", () => {
