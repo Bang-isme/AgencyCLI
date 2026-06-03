@@ -59,7 +59,7 @@ Thứ tự ưu tiên user chốt nhiều lần: **(1) MỌI THỨ vận hành Đ
 - **(a) amateur-tell còn sót (marginal, an toàn):** user-facing đã near-complete. Còn: comment "Premium" nội bộ (GlowingLogo/ModelsOverlay/SkillsPicker/WorkerProgress); `.toUpperCase()` data-value /model diag; Splash exit-log "✓ X ready" trên timer (borderline fake, transient <1s — cân nhắc honest-hóa cho nhất quán de-fake). Grep: `Premium|SUCCESSFULLY|KERNEL|\[[A-Z]{3,}\]`.
 - **(b) badge "needs key" provider picker** (follow-up `eb19ba5`).
 - **(dedup)** 2 TUI translator (`tool-labels.getSemanticToolOperation` ↔ `SemanticTranslator`) — concept trùng, chưa merge (string-only, tránh re-litigate "intentionally distinct").
-- **CỐ Ý KHÔNG đụng (đừng làm lại):** ALL-CAPS Unix headers (NAVIGATION/COMMANDS); ExecutionPanel PLAN/EXECUTE (tested); TrustCard PASSED/FAILED (severity badge); identity "CodexAI skills harness" (đổi identity = behavior). `renameSymbol` naive-rename = limitation có-doc (cần type-checker). Path-traversal: read tools cố ý KHÔNG confine.
+- **CỐ Ý KHÔNG đụng (đừng làm lại):** ALL-CAPS Unix headers (NAVIGATION/COMMANDS); identity "CodexAI skills harness" (đổi identity = behavior). `renameSymbol` naive-rename = limitation có-doc (cần type-checker). Path-traversal: read tools cố ý KHÔNG confine. (ExecutionPanel + TrustCard ĐÃ XÓA — dead/unwired, đừng tham chiếu lại.)
 - **BYOK (CUỐI, cần key):** eval legacy↔hardened + promote hardened→default. CHỈ sau khi P0+(e) ổn + user OK. Config user đang placeholder (xem §4).
 
 ## 4. ⚠ CONFIG-STATE CỦA USER (không phải bug code — ĐỪNG tự sửa key)

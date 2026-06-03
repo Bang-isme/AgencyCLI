@@ -418,28 +418,6 @@ Pixel-art "AGENCYCLI" logo:
 
 ---
 
-### Data Visualization Components
-
-#### `DataView.tsx`
-Reusable data display primitives:
-- `DataTable` — columnar data with headers
-- `CodeBlock` — syntax-highlighted code blocks
-- `DiffBlock` — unified diff with +/- markers
-- `ProgressBar` — horizontal progress bar
-
----
-
-### Dead/Stale Components
-
-| Component | Status |
-|-----------|--------|
-| `RouteChips.tsx` | **Always returns null** — hidden per feature flag |
-| `MessageRow.tsx` | Legacy — not imported anywhere |
-| `UserLine.tsx` | Legacy — not imported anywhere |
-| `AssistantBlock.tsx` | Legacy — not imported anywhere |
-
----
-
 ## Screens System
 
 **Location:** `packages/tui/src/screens/`

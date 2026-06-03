@@ -23,10 +23,6 @@ export {
 // Runtime UX components
 export { WorkerProgress } from "./components/WorkerProgress.js";
 export type { WorkerProgressProps, WorkerStep, StepStatus } from "./components/WorkerProgress.js";
-export { TrustCard } from "./components/TrustCard.js";
-export type { TrustCardProps, ConfidenceLevel, RiskLevel, ValidationState } from "./components/TrustCard.js";
-export { FailureCard } from "./components/FailureCard.js";
-export type { FailureCardProps } from "./components/FailureCard.js";
 export { PatchCard } from "./components/PatchCard.js";
 export type { PatchCardProps, PatchSymbol, PatchAction } from "./components/PatchCard.js";
 export { LogCollapse } from "./components/LogCollapse.js";

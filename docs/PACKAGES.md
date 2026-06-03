@@ -227,10 +227,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `components/GoalRunner.tsx` | Multi-step goal with energy bar |
 | `components/IndexProgress.tsx` | Index scan progress indicator |
 | `components/ToolActivity.tsx` | Loading: spinner + phase + elapsed + tokens |
-| `components/DataView.tsx` | DataTable, CodeBlock, DiffBlock, ProgressBar |
 | `components/WorkerProgress.tsx` | Worker step tracker |
-| `components/TrustCard.tsx` | Trust/confidence card |
-| `components/FailureCard.tsx` | Failure display card |
 | `components/PatchCard.tsx` | Code patch card |
 | `components/LogCollapse.tsx` | Collapsible log view |
 | `components/SubagentPanel.tsx` | Subagent status panel |
