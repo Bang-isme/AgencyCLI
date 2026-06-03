@@ -36,7 +36,7 @@ Load before any UI/frontend task. This skill brings 30 palettes, 21 free font pa
 - `references/palettes.md` — 30 curated palettes with exact hex tokens, mood, app fit, and contrast ratios.
 - `references/typography.md` — 21 free font pairings with imports, weights, style tags, and fallback stacks.
 - `references/patterns.md` — 20 layout patterns with structure, responsive CSS, and usage boundaries.
-- `references/micro-interactions.md` — 15 production-ready motion patterns with CSS or JS code.
+- `references/micro-interactions.md` — 15 motion patterns with CSS or JS code.
 - `references/composition.md` — Visual hierarchy, spacing, grids, storytelling flow, and emphasis rules.
 - `references/trends.md` — Current design trends for 2025-2026 with code signatures and fit guidance.
 - `references/anti-patterns.md` — 15 developer-UI mistakes with wrong/right code and violated principles.
