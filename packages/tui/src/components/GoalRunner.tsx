@@ -26,6 +26,10 @@ export interface GoalStep {
   toolcallsCount?: number;
   durationMs?: number;
   progressStatus?: string;
+  /** 1-based dispatch attempt; >1 means the phase is being retried. */
+  attempt?: number;
+  /** Verification quality-gate state for the in-flight attempt. */
+  gateStatus?: "running" | "passed" | "failed";
 }
 
 export interface GoalRunnerProps {
@@ -305,6 +309,9 @@ export const OrchestrationStepRow = memo(function OrchestrationStepRow({
     boldText = true;
     dimText = false;
     statusTextSuffix = step.progressStatus ? ` · ${step.progressStatus}` : " · active";
+    if (step.attempt && step.attempt > 1) {
+      statusTextSuffix += ` · retry ${step.attempt - 1}`;
+    }
   } else if (isError) {
     statusIcon = "[✕]";
     statusColor = theme.danger;
@@ -367,6 +374,22 @@ export const OrchestrationStepRow = memo(function OrchestrationStepRow({
               <Text color={theme.accent}>│   ├── </Text>
               <Text color={theme.text} bold>⚙ State: </Text>
               <Text color={theme.warning}>{currentSubagent.phase}</Text>
+            </Box>
+          )}
+
+          {/* Verification quality gate */}
+          {step.gateStatus && (
+            <Box flexDirection="row">
+              {boxyBorder && <Text color={theme.accent} dimColor>│ </Text>}
+              <Text color={theme.accent}>│   ├── </Text>
+              <Text color={theme.text} bold>⚙ Verify: </Text>
+              {step.gateStatus === "running" ? (
+                <Text color={theme.warning}>running quality gate…</Text>
+              ) : step.gateStatus === "passed" ? (
+                <Text color={theme.success}>passed</Text>
+              ) : (
+                <Text color={theme.danger}>failed</Text>
+              )}
             </Box>
           )}
 

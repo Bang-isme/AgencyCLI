@@ -1301,7 +1301,7 @@ ${taskDesc}`;
               skillsRoot,
               harness: true,
               maxAttempts: 3,
-              onTaskStart: async (task, agentId, attempt) => {
+              onTaskStart: async (task, _agentId, attempt) => {
                 setGoalCurrentStep(task.id);
                 setGoalSteps((prev) =>
                   prev.map((s) =>
@@ -1309,15 +1309,13 @@ ${taskDesc}`;
                       ? {
                         ...s,
                         status: "running",
+                        attempt,
+                        gateStatus: undefined,
                         todos: s.todos?.map((t) => ({ ...t, status: "running" })),
                       }
                       : s
                   )
                 );
-                addSystemLines([
-                  `[Harness] Dispatching task ${task.id} (Attempt ${attempt}/3)...`,
-                  `[Harness] Routed to specialist agent: ${agentId}`
-                ]);
               },
               onTaskProgress: async (task, _attempt, status, durationMs, toolcallsCount) => {
                 setGoalSteps((prev) =>
@@ -1327,10 +1325,16 @@ ${taskDesc}`;
                 );
               },
               onGateRun: async (taskId) => {
-                addSystemLines([`[Harness] Running verification quality gate for task ${taskId}...`]);
+                setGoalSteps((prev) =>
+                  prev.map((s) => (s.id === taskId ? { ...s, gateStatus: "running" } : s))
+                );
               },
-              onGateResult: async (_taskId, passed) => {
-                addSystemLines([`[Harness] Verification result: ${passed ? "PASSED" : "FAILED"}`]);
+              onGateResult: async (taskId, passed) => {
+                setGoalSteps((prev) =>
+                  prev.map((s) =>
+                    s.id === taskId ? { ...s, gateStatus: passed ? "passed" : "failed" } : s
+                  )
+                );
               },
               onTaskComplete: async (task, durationMs, toolcallsCount) => {
                 setGoalSteps((prev) =>
