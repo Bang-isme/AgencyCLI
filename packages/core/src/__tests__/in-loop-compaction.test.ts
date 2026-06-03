@@ -45,13 +45,6 @@ vi.mock("../chat/turn-helpers.js", () => ({
   repackContextAndSystemPrompt: () => "system",
   recordTurnTokenCost: () => {},
   compactTurnHistory: compactSpy,
-  // The main-turn tool loop now narrates each tool via describeToolActivity →
-  // emitThought (§8.10-A); the stubbed turn-helpers must provide it or the
-  // unconditional call site throws (the tool path here writes t.txt, no agentId).
-  describeToolActivity: () => ({ source: "worker", phase: "editing", severity: "info", confidence: "high", message: "stub" }),
-  // §8.10 in-tool progress — also called unconditionally in the tool path; stub it
-  // (returns a no-op stop()) so the eager call site doesn't invoke undefined.
-  startToolProgressHeartbeat: () => () => {},
   // Auto-continue completion check (off in this test's legacy profile, so these are
   // never actually called — but the no-tool-call branch references them, so the
   // mocked module must export them).

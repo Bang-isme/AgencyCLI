@@ -101,42 +101,6 @@ export interface ApprovalRequest {
   timeoutMs: number;
 }
 
-export type RuntimeSource =
-  | "planner"
-  | "scheduler"
-  | "worker"
-  | "retrieval"
-  | "validator"
-  | "sandbox"
-  | "risk-engine"
-  | "governance"
-  | "replay-engine";
-
-export type RuntimePhase =
-  | "planning"
-  | "retrieval"
-  | "editing"
-  | "validation"
-  | "rollback"
-  | "recovery"
-  | "replay";
-
-export type RuntimeSeverity = "info" | "adaptation" | "warning" | "critical";
-
-export interface RuntimeThoughtEvent {
-  id: string;
-  source: RuntimeSource;
-  phase: RuntimePhase;
-  severity: RuntimeSeverity;
-  confidence?: "high" | "medium" | "low";
-  message: string;
-  timestamp: number;
-  workerId?: string;
-  branchId?: string;
-  collapsible?: boolean;
-  hiddenByDefault?: boolean;
-}
-
 /**
  * Operational execution phases — what the system is doing RIGHT NOW.
  * NEVER expose: "thinking", "exploring", "reasoning", "analyzing internally".
@@ -203,8 +167,4 @@ export interface ProviderExecutionContext {
   /** Estimated context usage percentage */
   contextUsedPercent: number;
 }
-
-export type RuntimeThoughtSource = RuntimeSource;
-export type RuntimeThoughtPhase = RuntimePhase;
-export type RuntimeThoughtSeverity = RuntimeSeverity;
 

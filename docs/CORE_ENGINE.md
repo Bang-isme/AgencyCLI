@@ -395,7 +395,7 @@ runPlan(projectRoot, planPath, opts)
 
 ---
 
-## 10. Event Bus & Cognition
+## 10. Event Bus
 
 **Location:** `packages/core/src/events/`
 
@@ -403,20 +403,7 @@ runPlan(projectRoot, planPath, opts)
 - Singleton pub/sub pattern
 - SHA-256 deduplication (5s sliding window)
 - Wildcard `*` topic support
-- Topics: `thought:emitted`, `dag:task:*`, `dag:rollback:initiated`, etc.
-
-### Cognition Events (`cognition.ts`)
-```typescript
-emitThought({
-  source: "routing" | "retrieval" | "editing" | "planning" | "verification",
-  phase: "start" | "progress" | "complete" | "error",
-  severity: "info" | "adaptation" | "warning" | "critical",
-  message: string,
-  metadata?: Record<string, unknown>
-})
-```
-
-These are consumed by TUI's `CognitionPanel` for real-time thought display.
+- Topics: `subagent:*`, `plan:updated`, `dag:task:*`, `dag:rollback:initiated`, `system:warning`, etc.
 
 ### Event Journal (`event-journal.ts`)
 - SQLite-backed persistence for replay

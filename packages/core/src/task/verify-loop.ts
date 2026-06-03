@@ -47,8 +47,6 @@ export interface VerifyLoopOptions {
   noProgressLimit?: number;
   /** Optional pre-round budget check: return false to stop before the next attempt. */
   hasBudget?: () => boolean;
-  /** Observe each round's verify result (telemetry / progress events). */
-  onRound?: (round: number, verify: VerifyResult) => void | Promise<void>;
 }
 
 export interface VerifyLoopResult {
@@ -79,7 +77,6 @@ export async function runVerifyLoop(
     await attempt({ round, previousFailures });
     const result = await verify();
     history.push({ round, verify: result });
-    if (opts.onRound) await opts.onRound(round, result);
 
     if (result.passed) {
       return { success: true, rounds: round, stopReason: "passed", history };

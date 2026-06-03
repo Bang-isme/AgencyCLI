@@ -350,7 +350,7 @@ interface SessionMessage {
                      ▼
 ┌─────────────────────────────────────────────────────────┐
 │  EVENT BUS (pub/sub, in-memory)                          │
-│  • thought:emitted → CognitionPanel                      │
+│  • subagent:started/progress/finished → SubagentPanel    │
 │  • dag:task:started/completed/failed                     │
 └────────────────────┬────────────────────────────────────┘
                      │

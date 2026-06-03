@@ -181,7 +181,6 @@ additions to `governance/src/__tests__/governance.test.ts`.
 | `AGENCY_MODELS_JSON` | (auto-located) | explicit path to the model catalog (else env→walk-up→cwd) |
 | `AGENCY_CONTEXT_COMPACTION` | off / on | §2.3 — summarize the middle of a long history before it overflows the context window (keeps system + last 4 turns) |
 | `AGENCY_TRACE_RECORD` | off / off | §2.5 — record a per-session behaviour trace (turn timings + tool I/O) to `.agency/traces/` (opt-in; per-tool overhead) |
-| `AGENCY_COGNITION_STREAM` | off / on | emit `thought:emitted` narration (routing + safety decisions) for the TUI CognitionPanel (which already subscribes); gated centrally in `emitThought` |
 
 **27 flags total** (added `memorySemantic`/`AGENCY_MEMORY_SEMANTIC` — wires the dormant HybridRetriever + local embedder). All resolve via `getRuntimeFlags()` (env override → `AGENCY_PROFILE` default → built-in).
 

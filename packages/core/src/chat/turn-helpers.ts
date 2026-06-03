@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-  RuntimeThoughtSource,
-  RuntimeThoughtPhase,
-  RuntimeThoughtSeverity,
-} from "@agency/contracts";
 import {
   loadAgencyConfig,
   resolveApiKey,
@@ -21,7 +16,6 @@ import { getCachedRoute, setCachedRoute } from "../context/session-cache.js";
 import { type TokenBudgetPlan } from "../context/token-policy.js";
 import { routeUserPrompt, type RouteResult } from "../router/model-router.js";
 import { EventBus } from "../events/event-bus.js";
-import { emitThought } from "../events/cognition.js";
 import { globalCostGovernor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import type { ChatTurnInput, ChatMessage } from "./orchestrator.js";
@@ -75,16 +69,6 @@ export async function resolveRoute(
   if (plan.useRouteCache) {
     setCachedRoute(input.projectRoot, input.prompt, route);
   }
-  // Narrate the planner decision to the cognition panel (no-op unless the
-  // cognitionStream flag is on). Only on a fresh resolve — a cache hit is not a
-  // new decision.
-  emitThought({
-    source: "planner",
-    phase: "planning",
-    severity: "info",
-    confidence: "high",
-    message: `Routing: ${route.intent} → ${route.provider}${route.suggested_agent ? ` · ${route.suggested_agent}` : ""}`,
-  });
   return { route, fromCache: false };
 }
 
@@ -331,96 +315,6 @@ export function buildAutoContinueNudge(
     : base;
 }
 
-const SEARCH_NARRATION_TOOLS = new Set(["grep_file", "grep_search", "find_files", "list_dir"]);
-const READ_NARRATION_TOOLS = new Set(["read_file", "file_info", "git_summary", "git_diff"]);
-const EDIT_NARRATION_TOOLS = new Set([
-  "write_file", "append_file", "edit_file", "ast_edit", "batch_edit",
-  "delete_file", "move_file", "create_directory",
-]);
-
-/** A cognition narration ready to hand straight to {@link emitThought}. */
-export interface ToolActivityNarration {
-  source: RuntimeThoughtSource;
-  phase: RuntimeThoughtPhase;
-  severity: RuntimeThoughtSeverity;
-  confidence: "high";
-  message: string;
-}
-
-/**
- * §8.10-A — describe a MAIN-turn tool call as a cognition narration so the TUI
- * status line + CognitionPanel reflect what the agent is DOING in realtime
- * (read→Reading, search→Searching, edit→Editing, exec→Running, dispatch→Spawning
- * subagent) instead of the status sticking on "Writing" while files are read.
- *
- * The message is built from the structured tool name + the already-computed step
- * label (the file/command target) — NOT by regex-parsing the injected
- * `[SYSTEM: Executing tool …]` English, which is the source of the wrong-label
- * bug (e.g. `list_dir · short video`, where the first JSON arg value was picked
- * as the target). This is a category-level mapping (5 buckets), deliberately
- * distinct from the TUI's richer per-tool / MCP `SemanticTranslator` (which is
- * presentation-layer and cannot live in core — layering). Pure; feed the result
- * straight to `emitThought` (a no-op unless `cognitionStream` is on, so callers
- * stay unconditional and the turn is byte-identical when the flag is off).
- */
-export function describeToolActivity(toolName: string, stepLabel: string): ToolActivityNarration {
-  const target = stepLabel.replace(/^[A-Za-z0-9_]+:\s*/, "").trim();
-  const withTarget = (verb: string): string => (target ? `${verb} ${target}` : verb);
-  const base = { severity: "info" as const, confidence: "high" as const };
-
-  if (toolName === "dispatch_subagent") {
-    return { ...base, source: "worker", phase: "planning", message: withTarget("Spawning subagent") };
-  }
-  if (toolName === "execute_command") {
-    return { ...base, source: "sandbox", phase: "editing", message: withTarget("Running") };
-  }
-  if (EDIT_NARRATION_TOOLS.has(toolName)) {
-    return { ...base, source: "worker", phase: "editing", message: withTarget("Editing") };
-  }
-  if (SEARCH_NARRATION_TOOLS.has(toolName)) {
-    return { ...base, source: "retrieval", phase: "retrieval", message: withTarget("Searching") };
-  }
-  if (READ_NARRATION_TOOLS.has(toolName)) {
-    return { ...base, source: "retrieval", phase: "retrieval", message: withTarget("Reading") };
-  }
-  // Unknown / MCP tool — narrate by its (already-built) label so it's never silent.
-  return { ...base, source: "worker", phase: "editing", message: stepLabel || toolName };
-}
-
-/**
- * §8.10 in-tool progress — the §8.10-A narration above fires ONCE, before a tool
- * runs. A single slow tool (a large grep, a big file read, a long shell command)
- * then emits nothing for its whole duration, so the status line freezes on that
- * last narration. This starts a periodic heartbeat that re-narrates the in-flight
- * tool with an elapsed-time suffix (e.g. "Searching src/** (8s)") via the same
- * `describeToolActivity` → `emitThought` path, so the status line keeps moving.
- *
- * Call it right before `await executeTool` and call the returned stop() in a
- * `finally`. `enabled` is passed by the caller (which reads `cognitionStream`) so
- * this stays flag-free: when off, NO timer is created — byte-identical legacy. The
- * timer is `unref`'d so it can never keep the process alive, and the first tick is
- * at `intervalMs` (a fast tool finishes and stops before any heartbeat fires, so
- * sub-`intervalMs` tools are unchanged).
- */
-export function startToolProgressHeartbeat(
-  toolName: string,
-  stepLabel: string,
-  enabled: boolean,
-  intervalMs = 4000
-): () => void {
-  if (!enabled) return () => {};
-  const start = Date.now();
-  const timer = setInterval(() => {
-    const elapsed = Math.round((Date.now() - start) / 1000);
-    const narration = describeToolActivity(toolName, stepLabel);
-    emitThought({ ...narration, message: `${narration.message} (${elapsed}s)` });
-  }, intervalMs);
-  if (typeof (timer as { unref?: () => void }).unref === "function") {
-    (timer as { unref: () => void }).unref();
-  }
-  return () => clearInterval(timer);
-}
-
 /** Minimal provider surface the compactor needs (matches LlmProvider.complete). */
 interface CompletionProvider {
   complete(messages: ChatMessage[], opts?: { maxTokens?: number }): Promise<string>;
@@ -650,16 +544,6 @@ export async function compactTurnHistory(
   } catch {
     /* observability is best-effort */
   }
-
-  // Narrate the context adaptation to the cognition panel (no-op unless the
-  // cognitionStream flag is on). Separate channel from the system:warning above.
-  emitThought({
-    source: "retrieval",
-    phase: "retrieval",
-    severity: "adaptation",
-    confidence: "high",
-    message: `Context compaction: summarized ${middle.length} older turn(s) (~${tokenCount} est tokens) to fit the model window.`,
-  });
 
   return {
     messages: [...head, summaryTurn, ...recent],

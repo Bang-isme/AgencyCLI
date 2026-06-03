@@ -31,8 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, describeToolActivity, startToolProgressHeartbeat, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
-import { emitThought } from "../events/cognition.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
@@ -497,24 +496,8 @@ export async function runChatTurnWithStream(
                 phase: `Running: ${tc.name}`,
                 step: { label: stepLabel, status: "active" }
               });
-            } else {
-              // §8.10-A — the main turn has no agentId (no worker panel). Narrate
-              // the tool to the cognition stream (the canonical narration producer)
-              // so the status line/CognitionPanel reflect what it's DOING in
-              // realtime — read→Reading, edit→Editing, exec→Running — instead of
-              // sticking on "Writing". No-op unless cognitionStream is on.
-              emitThought(describeToolActivity(tc.name, stepLabel));
             }
-            // §8.10 in-tool progress — keep the status line moving while a single
-            // slow tool runs (big grep / large read / long command). No-op timer
-            // when cognitionStream is off (byte-identical legacy). Cleared in finally.
-            const stopHeartbeat = startToolProgressHeartbeat(tc.name, stepLabel, getRuntimeFlags().cognitionStream);
-            let result: string;
-            try {
-              result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
-            } finally {
-              stopHeartbeat();
-            }
+            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal);
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
             traceRecorder?.recordTool(tc.name, tc.arguments, truncated);

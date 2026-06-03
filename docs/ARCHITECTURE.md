@@ -236,8 +236,8 @@ Cùng một `requiresApproval()` / `assertApproval()` bảo vệ: shell commands
 ### 4. Checkpoint-driven Task Runner
 Mỗi task step persist state (`tasks/<id>.json`), cho phép crash recovery. Harness verification loop (max 3 attempts) với auto-gate.
 
-### 5. Cognition via Event Bus
-`EventBus` singleton pub/sub với SHA-256 dedup. Routing, retrieval, editing phase emit `runtimeThoughtEvent` → TUI CognitionPanel real-time display.
+### 5. Event Bus
+`EventBus` singleton pub/sub với SHA-256 dedup. Subagent lifecycle (`subagent:started/progress/finished/error`), plan updates (`plan:updated`), và system/security cảnh báo (`system:warning`, `security:egress-denied`, `chat:verify-failed`) → TUI panels real-time.
 
 ### 6. Provider Failover + Cost Governance
 `CostGovernor` theo dõi token usage, auto-downgrade ở 75% budget. `ProviderSupervisor` health check + automatic failover.

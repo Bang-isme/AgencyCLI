@@ -11,7 +11,6 @@ import { buildIndex, writeIndex } from "../index/workspace-indexer.js";
 import { routeUserPrompt } from "../router/model-router.js";
 import { resolveSkillsRoot } from "../skills-root.js";
 import { EventBus } from "../events/event-bus.js";
-import { emitThought, emitVerifyRoundThought } from "../events/cognition.js";
 import { buildAcceptanceCommands } from "../utils/package-manager.js";
 import {
   AGENT_DISCIPLINES,
@@ -451,16 +450,6 @@ async function dispatchAgentImpl(
         reason: routing.reason,
         timestamp: Date.now(),
       }, { agentId: routing.agentId as string });
-      // Narrate the dispatch reroute to the cognition panel (no-op unless the
-      // cognitionStream flag is on). Separate channel from subagent:routed above.
-      emitThought({
-        source: "scheduler",
-        phase: "planning",
-        severity: "adaptation",
-        confidence: "medium",
-        message: `Rerouted ${req.agentId} → ${routing.agentId} (better capability match${routing.reason ? `: ${routing.reason}` : ""})`,
-        workerId: routing.agentId as string,
-      });
       req = { ...req, agentId: routing.agentId };
     }
   }
@@ -732,8 +721,6 @@ async function dispatchAgentImpl(
             },
             {
               maxRounds: verifyMaxRounds,
-              onRound: (round, verify) =>
-                emitVerifyRoundThought(round, verify, { workerId: req.agentId }),
             }
           );
 
@@ -856,8 +843,6 @@ async function dispatchAgentImpl(
             },
             {
               maxRounds,
-              onRound: (round, verify) =>
-                emitVerifyRoundThought(round, verify, { workerId: req.agentId }),
             }
           );
           if (!loop.success) {

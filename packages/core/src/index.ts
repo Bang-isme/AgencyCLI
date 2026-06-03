@@ -300,12 +300,6 @@ export {
   type HandoverResult,
 } from "./runtime/handover.js";
 export {
-  type RuntimeThoughtEvent,
-  type RuntimeThoughtSeverity,
-  type RuntimeThoughtSource,
-  type RuntimeThoughtPhase,
-} from "@agency/contracts";
-export {
   DeterministicClock,
   DeterministicEntropy,
   installDeterministicGlobals,

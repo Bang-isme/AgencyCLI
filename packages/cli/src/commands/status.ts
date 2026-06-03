@@ -92,7 +92,6 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Model catalog", value: f.modelCatalog ? "on (models.json)" : "off", keys: ["modelCatalog"] },
     { label: "Context compaction", value: f.contextCompaction ? "on (summarize >70% window)" : "off", keys: ["contextCompaction"] },
     { label: "Trace record", value: f.traceRecord ? "on (.agency/traces)" : "off", keys: ["traceRecord"] },
-    { label: "Cognition stream", value: f.cognitionStream ? "on (narrate routing + safety to panel)" : "off", keys: ["cognitionStream"] },
     { label: "Prompt cache prefix", value: f.promptCachePrefix ? "on (static-first → provider prefix cache)" : "off", keys: ["promptCachePrefix"] },
     { label: "Soft approaches", value: f.softApproaches ? "on (scale to a few, not exactly 5)" : "off (exactly 5)", keys: ["softApproaches"] },
     { label: "Resume continuation", value: f.resumeContinuation ? "on (resume notice on loop-limit)" : "off (generic truncation notice)", keys: ["resumeContinuation"] },
