@@ -120,7 +120,11 @@ describe("checkpoint integrity (checksum)", () => {
     EventBus.getInstance().subscribe("system:warning", (e) => warnings.push(e));
     const loaded = loadCheckpoint(projectRoot, "corrupt-cp");
     expect(loaded).toBeNull();
-    await tick();
+    // `void publish` is multi-hop async; a single setImmediate races under
+    // full-suite CPU load (passes in isolation). Poll until the warning lands.
+    for (let i = 0; i < 50 && warningsFor(warnings, "corrupt-cp").length === 0; i++) {
+      await tick();
+    }
     expect(warningsFor(warnings, "corrupt-cp").length).toBeGreaterThan(0);
   });
 
