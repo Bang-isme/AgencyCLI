@@ -34,6 +34,62 @@ describe("pack", () => {
     expect(tree).toContain("    - orchestrator.ts");
   });
 
+  it("injects an absolute references-dir hint for an active skill that ships references/", () => {
+    const skillsRoot = mkdtempSync(join(tmpdir(), "agency-skills-"));
+    dirs.push(skillsRoot);
+    // resolveSkillsRoot() only accepts a root that has .system/manifest.json.
+    mkdirSync(join(skillsRoot, ".system"), { recursive: true });
+    writeFileSync(
+      join(skillsRoot, ".system", "manifest.json"),
+      JSON.stringify({ skills: ["codex-refskill", "codex-norefskill"] }),
+      "utf8"
+    );
+    const refSkillDir = join(skillsRoot, "codex-refskill");
+    mkdirSync(join(refSkillDir, "references"), { recursive: true });
+    writeFileSync(
+      join(refSkillDir, "SKILL.md"),
+      "---\nname: codex-refskill\ndescription: A skill with reference data.\n---\n## Body\nALWAYS read `references/data.md`.\n",
+      "utf8"
+    );
+    writeFileSync(join(refSkillDir, "references", "data.md"), "# Data\n", "utf8");
+    // A skill that ships NO references/ dir → must NOT get the (false) hint.
+    const bareSkillDir = join(skillsRoot, "codex-norefskill");
+    mkdirSync(bareSkillDir, { recursive: true });
+    writeFileSync(
+      join(bareSkillDir, "SKILL.md"),
+      "---\nname: codex-norefskill\ndescription: A skill with no references.\n---\n## Body\nJust guidance.\n",
+      "utf8"
+    );
+
+    const prev = process.env.AGENCY_SKILLS_ROOT;
+    process.env.AGENCY_SKILLS_ROOT = skillsRoot;
+    try {
+      const root = mkdtempSync(join(tmpdir(), "agency-pack-skills-"));
+      dirs.push(root);
+      writeFileSync(join(root, "package.json"), "{}", "utf8");
+      writeIndex(root, buildIndex(root));
+
+      const plan: TokenBudgetPlan = {
+        mode: "normal", maxContextFiles: 5, maxContextChars: 20000, maxLlmOutputTokens: 1024,
+        allowPreflight: false, includeFullRouteJson: false, useRouteCache: false,
+      };
+      const base: RouteResult = { intent: "build", workflow: "implement", provider: "openai", skills: [], warnings: [] };
+
+      const withRefs = buildContextPack(root, { ...base, skills: ["codex-refskill"] }, plan);
+      const refsDir = join(refSkillDir, "references");
+      expect(withRefs).toContain("### Skill: codex-refskill");
+      expect(withRefs).toContain(refsDir); // the absolute path the model can actually read
+      expect(withRefs).toContain("read one with read_file");
+
+      const noRefs = buildContextPack(root, { ...base, skills: ["codex-norefskill"] }, plan);
+      expect(noRefs).toContain("### Skill: codex-norefskill");
+      expect(noRefs).not.toContain("read one with read_file");
+    } finally {
+      if (prev === undefined) delete process.env.AGENCY_SKILLS_ROOT;
+      else process.env.AGENCY_SKILLS_ROOT = prev;
+    }
+  });
+
   it("buildContextPack includes the file tree and file contents", () => {
     const root = mkdtempSync(join(tmpdir(), "agency-pack-context-"));
     dirs.push(root);

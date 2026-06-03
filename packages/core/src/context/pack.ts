@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { formatRouteSummary } from "../chat/route-presentation.js";
 import type { RouteResult } from "../router/model-router.js";
 import { selectContextFiles } from "./selector.js";
@@ -149,7 +149,19 @@ export function buildContextPack(
           const mdPath = resolveSkillMdPath(skillsRoot, skillName);
           if (existsSync(mdPath)) {
             const parsed = parseSkillMd(mdPath);
-            activeSkillsGuidelines.push(`### Skill: ${parsed.name}\nDescription: ${parsed.description}\n\n${parsed.body}`);
+            // A SKILL.md body cites its data files as `references/<file>`, a path
+            // relative to the skill's own directory — which lives OUTSIDE the
+            // workspace. read_file resolves against the project root, so those
+            // relative paths miss and the skill's references (often its core
+            // value: palettes, patterns, checklists) are unreachable. Give the
+            // model the absolute references directory so it can actually open
+            // them (read_file is intentionally not path-confined). Only added
+            // when the skill ships a references/ dir, so the hint is never a lie.
+            const refsDir = join(dirname(mdPath), "references");
+            const refsHint = existsSync(refsDir)
+              ? `\nReference files this guide cites as \`references/<file>\` are at the absolute path \`${refsDir}\`; read one with read_file using that full path.`
+              : "";
+            activeSkillsGuidelines.push(`### Skill: ${parsed.name}\nDescription: ${parsed.description}${refsHint}\n\n${parsed.body}`);
           }
         } catch {
           // Skip missing skill guides
