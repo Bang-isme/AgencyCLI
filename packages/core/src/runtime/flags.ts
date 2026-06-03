@@ -195,8 +195,9 @@ export interface RuntimeFlags {
    * build or failing subagent reset the failure counter, so the breaker never
    * tripped and the model could spin for many minutes re-running a build that
    * always fails (or re-dispatching subagents that always fail). On counts those
-   * toward the breaker so 3 consecutive failures halt the loop. Off in legacy
-   * (byte-identical — only `Error:` counts), on in hardened.
+   * toward the breaker so 3 consecutive failures halt the loop. On by default in
+   * both profiles (reliability-correctness fix); set AGENCY_BREAKER_FAILED_EXITS=0
+   * to restore the legacy behaviour where only `Error:` counts.
    */
   breakerFailedExits: boolean;
   /**
@@ -206,8 +207,8 @@ export interface RuntimeFlags {
    * subagent the subagent's turn-start reset WIPES the main turn's breaker, and
    * parallel subagents share one failure counter + one read-and-clear trip reason
    * → races, false trips, missed trips. Scoping it isolates each execution context.
-   * Off in legacy (one shared breaker — byte-identical for a single turn with no
-   * nested/parallel dispatch), on in hardened.
+   * On by default in both profiles (reliability-correctness fix); set
+   * AGENCY_SCOPED_BREAKER=0 to restore the shared module-singleton behaviour.
    */
   scopedCircuitBreaker: boolean;
   /**
@@ -406,14 +407,16 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // model isn't blind to why a build failed. Opt out with AGENCY_TOOLRESULT_TAIL=0
     // to restore the legacy head-only truncation. Other tools stay head-only.
     toolResultTailKept: parseBool(env.AGENCY_TOOLRESULT_TAIL, true),
-    // Behaviour-changing (a failed command/dispatch `Exit Code: <nonzero>` counts
-    // toward the breaker's consecutive-failure guard) → off in legacy (only
-    // `Error:` counts, byte-identical), on in hardened.
-    breakerFailedExits: parseBool(env.AGENCY_BREAKER_FAILED_EXITS, hardened),
-    // Behaviour-changing (per-turn/per-agent circuit breaker vs one shared module
-    // singleton) → off in legacy (shared breaker, byte-identical for a single
-    // turn), on in hardened.
-    scopedCircuitBreaker: parseBool(env.AGENCY_SCOPED_BREAKER, hardened),
+    // Reliability-correctness fix → on by default in BOTH profiles: a failed
+    // command/dispatch `Exit Code: <nonzero>` counts toward the breaker's
+    // consecutive-failure guard, so a build/subagent that always fails halts at
+    // 3 instead of spinning to maxLoops. Opt out with AGENCY_BREAKER_FAILED_EXITS=0.
+    breakerFailedExits: parseBool(env.AGENCY_BREAKER_FAILED_EXITS, true),
+    // Reliability-correctness fix → on by default in BOTH profiles: each turn
+    // (main + every subagent, incl. parallel) gets its own breaker instead of one
+    // shared module singleton a dispatched subagent would wipe. Opt out with
+    // AGENCY_SCOPED_BREAKER=0 to restore the shared-singleton behaviour.
+    scopedCircuitBreaker: parseBool(env.AGENCY_SCOPED_BREAKER, true),
     // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
     // → off in legacy (no confinement, byte-identical), on in hardened.
     pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),
