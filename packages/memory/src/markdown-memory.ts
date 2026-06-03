@@ -21,9 +21,9 @@
  * Recall keeps the index small enough to always load in full and surfaces topic
  * bodies by relevance within a char budget; `user`/`feedback` memories are always
  * surfaced (they are standing instructions), `project`/`reference` are ranked by
- * the query. Ranking is keyword-overlap by default; pass an {@link Embedder} for
- * semantic (cosine) ranking — the "better than a flat list" path, reusing the
- * same local embedder the SQLite recall uses so no network/key is required.
+ * keyword overlap with the query. The curated set is small (the index always
+ * loads in full), so lexical overlap is enough to order a handful of topics —
+ * there is no embedding/vector step here, unlike the SQLite episodic recall.
  *
  * Dependency-free (node:fs/path only) so it stays a leaf with no import cycle.
  */
