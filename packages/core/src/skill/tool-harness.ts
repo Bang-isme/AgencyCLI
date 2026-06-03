@@ -398,7 +398,12 @@ registry.register({
       // forcing the model to chain create_directory first (a common churn source).
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, contentArg, "utf8");
-      return `Success: File written successfully to "${pathArg}" (${contentArg.length} characters)`;
+      // Report real bytes on disk (UTF-8), not `content.length` (JS UTF-16 code
+      // units — wrong for any multibyte char) and not the stale "characters"
+      // wording. This also keeps the result in lockstep with `append_file` and
+      // with `summarizeToolResult`'s `(\d+) bytes` matcher, which otherwise falls
+      // back to a bare "saved" in the activity line.
+      return `Success: File written successfully to "${pathArg}" (${Buffer.byteLength(contentArg, "utf8")} bytes)`;
     } catch (err: any) {
       return `Error writing file: ${err.message || String(err)}`;
     }

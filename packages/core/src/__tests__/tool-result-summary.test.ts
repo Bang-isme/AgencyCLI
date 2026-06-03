@@ -30,8 +30,9 @@ describe("summarizeToolResult", () => {
   });
 
   it("write_file / append_file → human byte size, else 'saved'", () => {
-    expect(summarizeToolResult("write_file", "Successfully wrote; file now 2048 bytes")).toBe("2.0 KB");
-    expect(summarizeToolResult("append_file", "Appended; file now 512 bytes")).toBe("512 B");
+    // The exact strings the harness emits today (kept in lockstep on purpose).
+    expect(summarizeToolResult("write_file", 'Success: File written successfully to "a.ts" (2048 bytes)')).toBe("2.0 KB");
+    expect(summarizeToolResult("append_file", 'Success: Appended 10 characters to "a.ts"; file now 512 bytes')).toBe("512 B");
     expect(summarizeToolResult("write_file", "Successfully wrote file")).toBe("saved");
   });
 

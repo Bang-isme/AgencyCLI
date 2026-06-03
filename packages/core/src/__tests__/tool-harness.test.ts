@@ -541,6 +541,16 @@ Here is my decision:
       expect(res).toContain("Error: File not found");
     });
 
+    it("write_file reports real UTF-8 bytes (not JS char count), in lockstep with summarizeToolResult", async () => {
+      // "café" is 4 JS code units but 5 UTF-8 bytes (é = 0xC3 0xA9). The result
+      // must report bytes — both for honesty and because summarizeToolResult
+      // matches `(\d+) bytes` to show the size in the activity line (else "saved").
+      const res = await executeTool("write_file", { path: "accent.txt", content: "café" }, tempDir);
+      expect(res).toContain("Success: File written successfully");
+      expect(res).toContain("5 bytes");
+      expect(res).not.toContain("characters");
+    });
+
     it("append_file builds a large file incrementally (write first chunk, then append)", async () => {
       // This is the supported path for a file too big for one write_file call —
       // the model splits it into chunks instead of resorting to shell escaping.
