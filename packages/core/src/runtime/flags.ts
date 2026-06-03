@@ -226,10 +226,12 @@ export interface RuntimeFlags {
    * pinned to the buffer end, and there was no undo. When on, the composer tracks
    * a caret position: Left/Right (and Ctrl+←/→ word) navigation, Ctrl+A/Ctrl+E
    * to line start/end, insert and Delete/Backspace at the caret, Ctrl+W delete
-   * word, and Ctrl+Z / Ctrl+Y undo/redo. Off in legacy (append-only input +
-   * end-pinned caret preserved byte-identical), on in hardened. The caret stays
-   * end-equivalent for the only previously-reachable state (typing at the end),
-   * so existing flows are unchanged; only mid-buffer editing is new.
+   * word, and Ctrl+Z / Ctrl+Y undo/redo. On by default in both profiles (the
+   * append-only composer left Left/Right doing nothing, so a typo earlier in the
+   * line was unreachable — user-reported). The caret stays end-equivalent for the
+   * only previously-reachable state (typing at the end), so existing flows are
+   * byte-identical; only mid-buffer editing is new. Opt out with
+   * AGENCY_COMPOSER_CURSOR=0 to restore append-only input.
    */
   composerCursorEdit: boolean;
   /**
@@ -398,10 +400,13 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // instead of all running at once) → off in legacy (uncapped Promise.all,
     // byte-identical), on in hardened. Purely protective; single dispatch unaffected.
     subagentConcurrencyCap: parseBool(env.AGENCY_SUBAGENT_CONCURRENCY_CAP, hardened),
-    // Behaviour-changing (caret navigation + insert/delete-at-cursor + undo in the
-    // TUI composer) → off in legacy (append-only, end-pinned caret, byte-identical),
-    // on in hardened. Opt in with AGENCY_COMPOSER_CURSOR=1.
-    composerCursorEdit: parseBool(env.AGENCY_COMPOSER_CURSOR, hardened),
+    // UX-correctness fix → on by default in BOTH profiles: the legacy append-only
+    // composer could not edit mid-buffer at all — Left/Right did nothing, so a typo
+    // earlier in the line was unreachable (user-reported). Typing at the end is
+    // byte-identical (the caret is end-pinned until you move it), so existing flows
+    // are unchanged; only mid-buffer caret nav / insert / delete / undo is newly
+    // enabled. Opt out with AGENCY_COMPOSER_CURSOR=0 to restore append-only input.
+    composerCursorEdit: parseBool(env.AGENCY_COMPOSER_CURSOR, true),
     // Behaviour-changing (a selected workflow activates its full declared skill
     // chain → more SKILL.md in the context pack, more tokens) → off in legacy (only
     // the router's own skills load, byte-identical), on in hardened.
