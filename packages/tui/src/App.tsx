@@ -1978,8 +1978,16 @@ ${taskDesc}`;
   const baseFixedHeight = 2 + 1 + composerHeight + 1; // Header (2) + Divider (1) + Composer + Footer (1)
 
   const suggestionsHeight = menuActive ? 9 : 0;
-  const loadingHeight = loading && !goalActive ? 1 : 0;
+  // ToolActivity renders one row + a marginTop blank line (2 total), and only
+  // when NOT in a goal (the GoalRunner already shows live activity — showing the
+  // spinner too is redundant and was never height-reserved during goals).
+  const loadingHeight = loading && !goalActive ? 2 : 0;
   const indexingHeight = indexing ? 3 : 0;
+  // ErrorBanner (bordered) renders below the conversation; reserve its height so
+  // it can't overflow + clip the layout. Estimate: border(2)+header(1)+
+  // marginTop(1)+message(2)+marginBottom(1), +2 when several errors stack.
+  const activeErrorCount = errorNotifications.filter((e) => !e.dismissed).length;
+  const errorBannerHeight = activeErrorCount > 0 ? 7 + (activeErrorCount > 1 ? 2 : 0) : 0;
 
   // We want conversationHeight to be at least 4
   const minConversationHeight = 4;
@@ -2038,7 +2046,7 @@ ${taskDesc}`;
     planPanelHeight = planOverhead + visibleRows + (truncated ? 1 : 0);
   }
 
-  const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight + planPanelHeight;
+  const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + executionPanelHeight + cognitionPanelHeight + planPanelHeight + errorBannerHeight;
   const conversationHeight = Math.max(4, rows - fixedHeight - 1);
 
   useKeyboardHandlers({
@@ -2751,7 +2759,7 @@ ${taskDesc}`;
                 </>
               );
             })()}
-            {loading ? (
+            {loading && !goalActive ? (
               <ToolActivity
                 theme={theme}
                 active={loading}
