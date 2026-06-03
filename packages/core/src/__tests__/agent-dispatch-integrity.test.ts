@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -52,6 +52,31 @@ describe("agent dispatch-space integrity", () => {
       (agent) => !subagentPromptPath(SKILLS_ROOT, agent)
     );
     expect(missing).toEqual([]);
+  });
+
+  it("each mapped prompt template is a runtime-ready subagent prompt, not a fill-in doc-template", () => {
+    // The orchestrator reads the template VERBATIM as the subagent's system
+    // instruction (no substitution step). So a doc-template that addresses the
+    // coordinator ("Use this template when dispatching…") and carries unfilled
+    // INPUT placeholders ([task name], the full task text, commit SHAs) would
+    // surface that scaffolding inside the subagent's prompt. The task itself is
+    // supplied separately as the user message, so the template must be a clean,
+    // direct role prompt with no fill-in scaffolding.
+    const SCAFFOLDING = [
+      "Use this template",          // coordinator-facing doc preamble
+      "[task name]",                // unfilled input placeholder
+      "FULL TEXT of task",          // coordinator fill-in instruction
+      "[SHA before task]",
+      "[From implementer's report]",
+    ];
+    const offenders: string[] = [];
+    for (const file of new Set(Object.values(AGENT_SUBAGENT_PROMPT))) {
+      const path = join(SKILLS_ROOT, "codex-subagent-execution", "agents", file as string);
+      const body = readFileSync(path, "utf8");
+      const hits = SCAFFOLDING.filter((m) => body.includes(m));
+      if (hits.length) offenders.push(`${file}: ${hits.join(", ")}`);
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("every discipline skill referenced by an agent is a declared manifest skill", () => {
