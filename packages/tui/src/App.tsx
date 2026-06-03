@@ -77,6 +77,7 @@ import { SessionPicker } from "./components/SessionPicker.js";
 import { WelcomeScreen } from "./components/WelcomeScreen.js";
 import { WelcomeMenu } from "./components/WelcomeMenu.js";
 import { GoalRunner, type GoalStep } from "./components/GoalRunner.js";
+import { PlanPanel, type PlanTodo } from "./components/PlanPanel.js";
 import { IndexProgressPanel } from "./components/IndexProgress.js";
 import { executeSlash, parseSlashCommand } from "./slash/commands.js";
 import { newMessageId, type SessionMessage } from "./state/messages.js";
@@ -426,6 +427,9 @@ export function App({
   const [goalActive, setGoalActive] = useState(false);
   const [goalTask, setGoalTask] = useState("");
   const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
+  // Live plan/todo list for the normal Agent chat, driven by the `plan:updated`
+  // event the `update_plan` tool publishes (distinct from /goal's GoalRunner).
+  const [planTodos, setPlanTodos] = useState<PlanTodo[]>([]);
   const [goalCurrentStep, setGoalCurrentStep] = useState(0);
   const [goalStartMs, setGoalStartMs] = useState(0);
   const [goalRunnerViewMode, setGoalRunnerViewMode] = useState<"flat" | "boxy">(
@@ -729,10 +733,25 @@ export function App({
       }
     };
 
+    // Live plan/todo list — the model calls `update_plan` with the full current
+    // list each time; we mirror it verbatim (per-item status is the model's, not
+    // a decorative flip). Survives until the next update or session switch.
+    const handlePlanUpdated = (event: any) => {
+      const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
+      if (Array.isArray(payload?.todos)) {
+        setPlanTodos(
+          payload.todos
+            .filter((t: any) => t && typeof t.step === "string" && t.step.trim())
+            .map((t: any) => ({ step: String(t.step), status: String(t.status ?? "pending") }))
+        );
+      }
+    };
+
     EventBus.getInstance().subscribe("subagent:started", handleSubagentStarted);
     EventBus.getInstance().subscribe("subagent:progress", handleSubagentProgress);
     EventBus.getInstance().subscribe("subagent:finished", handleSubagentFinished);
     EventBus.getInstance().subscribe("subagent:error", handleSubagentError);
+    EventBus.getInstance().subscribe("plan:updated", handlePlanUpdated);
 
     // No per-second "live elapsed" heartbeat: the elapsed readouts self-tick in
     // their leaf components (anchored to each worker's spawnTs), so we no longer
@@ -751,6 +770,7 @@ export function App({
       EventBus.getInstance().unsubscribe("subagent:progress", handleSubagentProgress);
       EventBus.getInstance().unsubscribe("subagent:finished", handleSubagentFinished);
       EventBus.getInstance().unsubscribe("subagent:error", handleSubagentError);
+      EventBus.getInstance().unsubscribe("plan:updated", handlePlanUpdated);
     };
   }, []);
 
@@ -2146,6 +2166,7 @@ ${taskDesc}`;
                 const loaded = loadSession(project, s.id);
                 if (loaded) {
                   setSession(loaded);
+                  setPlanTodos([]);
                   addSystemLines([`Resumed session ${s.id} (${s.messageCount} messages)`]);
                 }
                 setOverlayOpen("resume", false);
@@ -2610,6 +2631,7 @@ ${taskDesc}`;
                   const loaded = loadSession(project, s.id);
                   if (loaded) {
                     setSession(loaded);
+                    setPlanTodos([]);
                     addSystemLines([`Resumed session ${s.id} (${s.messageCount} messages)`]);
                   }
                   setOverlayOpen("resume", false);
@@ -2725,6 +2747,9 @@ ${taskDesc}`;
                 subagents={subagents}
                 tokenCount={tokenCount}
               />
+            ) : null}
+            {!goalActive && planTodos.length > 0 ? (
+              <PlanPanel theme={theme} todos={planTodos} />
             ) : null}
             {indexing ? (
               <IndexProgressPanel
