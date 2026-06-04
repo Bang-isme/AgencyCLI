@@ -5,6 +5,11 @@
 > [PRODUCTION_AUDIT_APPENDIX.md](PRODUCTION_AUDIT_APPENDIX.md) (per-subsystem `file:line` evidence), and
 > [ROADMAP_HANDOFF.md](ROADMAP_HANDOFF.md) (the bigger plan: từ "không sập" → harness thật → đo được độ tin cậy).
 > Last updated: 2026-05-30.
+>
+> **⚠ Append-only historical log.** The dated `cont'd N` entries are point-in-time records and
+> some reference systems **since removed** (e.g. the cognition / `CognitionPanel` / `ExecutionPanel`
+> pipeline, the `cognitionStream` flag). Confirm current state via `git log` + `pnpm verify` +
+> `agency status` — **do not treat an old entry as current truth.**
 
 ---
 

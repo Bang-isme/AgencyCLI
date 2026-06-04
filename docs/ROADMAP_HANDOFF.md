@@ -6,6 +6,11 @@
 > Companion: [HARDENING_HANDOFF.md](HARDENING_HANDOFF.md) (việc P0/P1 đã xong),
 > [PRODUCTION_AUDIT.md](PRODUCTION_AUDIT.md) (gap matrix), `agencycli-production-hardening` (memory).
 > Tạo: 2026-05-30.
+>
+> **⚠ Log lịch sử (append-only).** Các mục theo ngày/slice (`cont'd N`, "Baseline giờ", §2.x)
+> là ảnh chụp tại thời điểm đó — một số nhắc tới hệ thống **ĐÃ GỠ về sau** (vd pipeline
+> cognition / `CognitionPanel` / `ExecutionPanel`, cờ `cognitionStream`). Xác nhận hiện trạng
+> bằng `git log` + `pnpm verify` + `agency status`; **đừng coi mục cũ là sự thật hiện tại**.
 
 ---
 
