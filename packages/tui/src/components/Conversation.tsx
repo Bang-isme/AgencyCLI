@@ -3,8 +3,64 @@ import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { SessionMessage } from "../state/messages.js";
 import type { SubagentStatus } from "../state/subagent-status.js";
+import { parseToolCalls } from "@agency/core";
 import { EmptyChat } from "./EmptyChat.js";
 import { contentWidth as measureContentWidth } from "../layout/terminal-layout.js";
+
+/** Verb shown in the per-message file-change summary, by write-tool name. */
+const FILE_TOOL_VERB: Record<string, string> = {
+  write_file: "write",
+  append_file: "append",
+  edit_file: "edit",
+  ast_edit: "edit",
+  batch_edit: "edit",
+  delete_file: "delete",
+  move_file: "rename",
+  create_directory: "create dir",
+};
+
+export interface FileChange {
+  verb: string;
+  path: string;
+}
+
+/**
+ * Honest, flat file-change summary for an assistant message: which files the
+ * turn actually changed, read from the RAW content's write/edit/delete/move tool
+ * calls (the `⚡ Tool "edit_file" completed: edited` lines drop the path, so this
+ * fills that gap). Deduped per (verb, path); empty when there are no write tools.
+ * Pure + exported for unit testing.
+ */
+export function extractFileChanges(rawContent: string): FileChange[] {
+  if (typeof rawContent !== "string" || !rawContent.includes("<")) return [];
+  let calls: { name: string; arguments: Record<string, string> }[];
+  try {
+    calls = parseToolCalls(rawContent);
+  } catch {
+    return [];
+  }
+  const out: FileChange[] = [];
+  const seen = new Set<string>();
+  for (const c of calls) {
+    const verb = FILE_TOOL_VERB[c.name];
+    if (!verb) continue;
+    let path: string;
+    if (c.name === "move_file") {
+      const src = (c.arguments.source ?? "").trim();
+      const dst = (c.arguments.destination ?? "").trim();
+      if (!src && !dst) continue;
+      path = dst ? `${src} → ${dst}` : src;
+    } else {
+      path = (c.arguments.path ?? "").trim();
+    }
+    if (!path) continue;
+    const key = `${verb}:${path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ verb, path });
+  }
+  return out;
+}
 
 export interface VirtualLine {
   type: "header" | "body" | "spacer";
@@ -1070,6 +1126,32 @@ export function calculateFormattedLines(
         messageLines.push(...formatted);
       } else {
         const blocks = parseAssistantContent(cleanedContent);
+
+        // Structured file-change summary (flat lines — fits the line-pool, no
+        // bordered card): show WHICH files this turn changed, read honestly from
+        // the raw tool calls. Renders first in the body so it's immediately
+        // scannable; the ⚡ tool lines (collapsed in traces) only say "edited".
+        if (m.role === "assistant") {
+          const fileChanges = extractFileChanges(m.content);
+          fileChanges.forEach((fc, i) => {
+            const verbColor =
+              fc.verb === "delete" ? theme.danger
+              : fc.verb === "write" ? theme.success
+              : fc.verb === "rename" || fc.verb === "create dir" ? theme.accent
+              : theme.warning;
+            pushBodyLine(
+              (
+                <Box flexDirection="row" width={innerWidth}>
+                  <Text color={prefixColor}>│ </Text>
+                  <Text color={verbColor} bold>{fc.verb}</Text>
+                  <Text color={theme.text} wrap="truncate"> {fc.path}</Text>
+                </Box>
+              ),
+              `${m.id}-filechange-${i}`,
+              "HIGH"
+            );
+          });
+        }
 
         // Partition non-streaming blocks into Conversational, Code, and Traces
         const conversationalParagraphs: { blockIdx: number; text: string; isHeader: boolean }[] = [];

@@ -228,7 +228,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `components/IndexProgress.tsx` | Index scan progress indicator |
 | `components/ToolActivity.tsx` | Loading: spinner + phase + elapsed + tokens |
 | `components/WorkerProgress.tsx` | Worker step tracker |
-| `components/PatchCard.tsx` | Code patch card (edit/write tool results in the conversation) |
 | `state/subagent-status.ts` | `SubagentStatus` type (Workers panel renders inline in `Conversation`) |
 | `components/ErrorBanner.tsx` | Inline error notification banner (`ErrorNotification`) |
 | `components/conversation/TraceTelemetry.tsx` | Inline trace/telemetry readout. `parseSystemActivityLine()` is the SINGLE canonical `[SYSTEM:]`-line classifier (§8.10-E) consumed by both live renderers — `SystemActivityLine` (verbose) + `toConciseTelemetry` (concise); do NOT re-inline the pattern regexes. (The byte-identical dead `formatSystemActivityLine` was removed.) |
