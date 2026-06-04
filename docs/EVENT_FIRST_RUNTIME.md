@@ -271,10 +271,17 @@ to events.
 Each phase: a flag in `core/runtime/flags.ts`, legacy byte-identical, small
 commits, `pnpm verify` REAL_EXIT_CODE=0. Ordered by impact-on-the-screenshots ÷ risk.
 
-- **Phase A — Emit the tool lifecycle (additive, no flag, zero UI change).**
-  Add `tool:*`/`fs:*`/`exec:*`/`build:*` publishes at the tool boundary
-  (stream.ts ~463/527 + tool harness). Nothing consumes them yet → no behavior
-  change; pure foundation. Guard test: every tool call emits a start+finish.
+- **Phase A — Emit the tool lifecycle (additive, no flag, zero UI change). ✅ DONE.**
+  `core/chat/tool-events.ts` (pure `classifyTool`/`toolTarget`/`toolResultIsFailure`
+  + `emitToolStarted`/`emitToolFinished`) publishes `tool:started` and
+  `tool:finished`/`tool:failed` on the EventBus at the tool boundary
+  (stream.ts ~463/527), with a per-turn `seq` so the timeline orders
+  deterministically and the bus dedup-cache can't merge distinct calls. Emitted
+  ALONGSIDE the legacy `⚡ [SYSTEM:]` text → nothing consumes the events yet → no
+  behaviour change. Tests: tool-events (4, pure) + a chat-stream wiring test that
+  subscribes to the bus and asserts the events fire. (`fs:*`/`exec:*`/`build:*`
+  specialisation deferred to their consumers — Phase E recovery; today the
+  `category`/`action` fields carry that info.)
 - **Phase B — Activity Timeline panel (flag `eventDrivenActivity`).** Add
   `<ActivityTimeline>` + `useRuntimeEvents()`; render from Phase-A events.
   Still also show the text (both) so it's verifiable side-by-side.

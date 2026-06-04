@@ -42,6 +42,7 @@ import { buildSystemPrompt } from "./prompt.js";
 import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall } from "../skill/tool-harness.js";
 import { consumeBreakerTrip, type CircuitBreakerState } from "./circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
+import { emitToolStarted, emitToolFinished, toolResultIsFailure } from "./tool-events.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
 
 
@@ -275,6 +276,9 @@ export async function runChatTurnWithStream(
   const aggregatedUsage = { promptTokens: 0, completionTokens: 0, reasoningTokens: 0 };
   let resolvedOptimization: any = undefined;
   let loopCount = 0;
+  // Per-turn monotonic counter for tool-lifecycle events (Phase A — so the
+  // Activity Timeline can order them deterministically).
+  let toolEventSeq = 0;
 
   try {
     let provider = getProvider(config, providerId);
@@ -456,10 +460,19 @@ export async function runChatTurnWithStream(
       const toolCalls = parseToolCalls(toolCallSource);
       if (toolCalls.length > 0) {
         carryOverText = ""; // consumed — the call(s) parsed completely
+        const turnAgentId = input.agentId || process.env.AGENCY_AGENT_ID;
         for (const tc of toolCalls) {
           if (isFileWritingTool(tc.name) && tc.arguments.path) {
             filesWritten.add(tc.arguments.path);
           }
+          // Phase A: structured event on the bus (additive) + the legacy text.
+          emitToolStarted({
+            name: tc.name,
+            toolArgs: tc.arguments,
+            seq: toolEventSeq++,
+            turnId: resolvedSessionId,
+            agentId: turnAgentId,
+          });
           handlers.onDelta(formatToolCallNotice(tc.name, tc.arguments));
         }
 
@@ -504,9 +517,21 @@ export async function runChatTurnWithStream(
                 step: { label: stepLabel, status: "active" }
               });
             }
+            const toolStartedAt = Date.now();
             const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, input.signal, turnBreaker ?? undefined);
             const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
             const truncated = truncateToolResult(tc.name, result, modelName);
+            // Phase A: structured completion event on the bus (additive).
+            emitToolFinished({
+              name: tc.name,
+              toolArgs: tc.arguments,
+              seq: toolEventSeq++,
+              turnId: resolvedSessionId,
+              agentId,
+              ok: !toolResultIsFailure(result),
+              summary: summarizeToolResult(tc.name, result),
+              durationMs: Date.now() - toolStartedAt,
+            });
             traceRecorder?.recordTool(tc.name, tc.arguments, truncated);
             safeAddEpisode(
               input.projectRoot,

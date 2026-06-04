@@ -19,6 +19,7 @@ import * as providers from "@agency/providers";
 import { routeUserPrompt } from "../router/model-router.js";
 import { clearRouteCache } from "../context/session-cache.js";
 import { runChatTurnWithStream } from "../chat/stream.js";
+import { EventBus } from "../events/event-bus.js";
 
 const mockedRoute = vi.mocked(routeUserPrompt);
 const mockedConfig = vi.mocked(providers.loadAgencyConfig);
@@ -77,6 +78,58 @@ describe("runChatTurnWithStream", () => {
     expect(deltas).toEqual(["Hel", "lo"]);
     expect(result.routeOnly).toBe(false);
     expect(result.assistantText).toContain("Hello");
+  });
+
+  it("publishes tool:started / tool:finished on the EventBus (Phase A event-first)", async () => {
+    mockedConfig.mockReturnValue({
+      defaultProvider: "openrouter",
+      providers: { openrouter: { apiKey: "key" } },
+    });
+    // Turn 1 emits a tool call; turn 2 ends the loop with plain prose.
+    let call = 0;
+    mockedGetProvider.mockReturnValue({
+      id: "openrouter",
+      complete: vi.fn(),
+      streamComplete: vi.fn(async (_msgs, opts) => {
+        call += 1;
+        if (call === 1) {
+          const xml = `<tool_call name="find_files">\n  <pattern>*.nonexistent-xyz</pattern>\n</tool_call>`;
+          opts.onDelta(xml);
+          return xml;
+        }
+        opts.onDelta("All done.");
+        return "All done.";
+      }),
+    });
+
+    const started: any[] = [];
+    const done: any[] = [];
+    const bus = EventBus.getInstance();
+    // Subscribers receive the ReplayEvent; the structured payload is event.payload
+    // (a JSON string), per the App's own consumption pattern.
+    const parse = (event: any) =>
+      typeof event?.payload === "string" ? JSON.parse(event.payload) : event?.payload ?? event;
+    const onStart = (e: any) => started.push(parse(e));
+    const onDone = (e: any) => done.push(parse(e));
+    bus.subscribe("tool:started", onStart);
+    bus.subscribe("tool:finished", onDone);
+    bus.subscribe("tool:failed", onDone);
+    try {
+      await runChatTurnWithStream(input, { onRoute: () => {}, onDelta: () => {} });
+      // Delivery is async (scheduleDrain → setImmediate); flush before asserting.
+      await new Promise((r) => setTimeout(r, 30));
+    } finally {
+      bus.unsubscribe("tool:started", onStart);
+      bus.unsubscribe("tool:finished", onDone);
+      bus.unsubscribe("tool:failed", onDone);
+    }
+
+    const startedFind = started.find((e) => e.name === "find_files");
+    expect(startedFind).toBeTruthy();
+    expect(startedFind.category).toBe("search");
+    expect(typeof startedFind.seq).toBe("number");
+    // A completion event (finished or failed) fires for the same tool.
+    expect(done.some((e) => e.name === "find_files")).toBe(true);
   });
 
   it("falls back to complete with single delta when stream unsupported", async () => {

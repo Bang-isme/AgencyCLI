@@ -13,6 +13,7 @@ import { dispatchAgent } from "../agents/orchestrator.js";
 import { resolveSkillsRoot } from "../skills-root.js";
 import { loadIgnoreFilter } from "../index/gitignore-parser.js";
 import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure, resetCircuitBreaker, consumeBreakerTrip, type CircuitBreakerState } from "../chat/circuit-breaker.js";
+import { isErrorResult, isNonZeroExitResult } from "../chat/tool-result-status.js";
 import { z } from "zod";
 import { getModelSpec } from "@agency/providers";
 import { MarkdownMemoryStore, type MemoryType } from "@agency/memory";
@@ -1308,9 +1309,9 @@ export async function executeTool(
     // subagent (`dispatch_subagent`) used to RESET the failure counter — the
     // breaker never tripped and the model spun re-running a build that always
     // fails. When `breakerFailedExits` is on, a non-zero exit counts as a failure.
-    const isError = /^Error[:\s]/.test(result);
+    const isError = isErrorResult(result);
     const isFailedExit =
-      getRuntimeFlags().breakerFailedExits && /^Exit Code:\s*[1-9]/.test(result);
+      getRuntimeFlags().breakerFailedExits && isNonZeroExitResult(result);
     if (isError || isFailedExit) {
       recordToolFailure(state);
     } else {
