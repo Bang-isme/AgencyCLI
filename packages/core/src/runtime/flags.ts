@@ -154,8 +154,9 @@ export interface RuntimeFlags {
    * / code parts in true arrival order, tool + `[SYSTEM:]` lines shown concisely)
    * instead of the two divergent parsers (streaming buckets vs final badge-regex)
    * that rendered the same content differently once a turn finished and flattened
-   * activity out of order. Off → the legacy dual-parser render (byte-identical),
-   * on (opt-in) → the unified opencode-style timeline. TUI-render only.
+   * activity out of order. Default ON in both profiles (the unified opencode-style
+   * timeline); set AGENCY_TIMELINE_PARTS=0 to restore the legacy dual-parser
+   * render. TUI-render only.
    */
   timelineParts: boolean;
   /**
@@ -180,6 +181,19 @@ export interface RuntimeFlags {
    * §2.2 / §8 completion detection.
    */
   autoContinue: boolean;
+  /**
+   * Auto-extend a turn that EXHAUSTS its loop budget (`maxLoops`) while it is
+   * still making real progress, instead of stopping with the user-facing
+   * "send \"continue\" to resume" notice. When a productive iteration would hit
+   * the cap, the cap is bumped by one window — but ONLY while the set of files
+   * written this turn keeps GROWING (a no-progress window stops it) and only up
+   * to an absolute ceiling (`maxLoops × 4`); the circuit breaker still halts
+   * identical/failed calls. These three guards are exactly what the old 6-minute
+   * runaway lacked. On by default in both profiles (the manual "continue" is a
+   * runtime concern, not the user's); set AGENCY_AUTO_CONTINUE_EXHAUSTION=0 to
+   * restore the hard stop at `maxLoops`. Roadmap: docs/EVENT_FIRST_RUNTIME.md §7.
+   */
+  autoContinueOnExhaustion: boolean;
   /**
    * Reassemble a tool call that the output-token limit split across
    * length-continuations. A large `write_file` whose content exceeds one
@@ -419,8 +433,11 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // no-markdown-recall prompt (tools stay registered/executable, just unadvertised).
     fileMemory: parseBool(env.AGENCY_FILE_MEMORY, true),
     // TUI-render only: unify the conversation into one ordered activity timeline.
-    // Off in legacy (dual-parser render byte-identical), on in hardened (opt-in).
-    timelineParts: parseBool(env.AGENCY_TIMELINE_PARTS, hardened),
+    // PROMOTED default-on in BOTH profiles (user OK): the legacy dual-parser dumped
+    // tool/[SYSTEM:] activity into message text and re-rendered differently when a
+    // turn finished — the chaotic experience the user reported. Opt out with
+    // AGENCY_TIMELINE_PARTS=0 to restore the legacy dual-parser render.
+    timelineParts: parseBool(env.AGENCY_TIMELINE_PARTS, true),
     // TUI-interaction only: keyboard-driven transcript focus/navigation. Off in
     // legacy (keys keep legacy meaning, render byte-identical), on in hardened (opt-in).
     transcriptNav: parseBool(env.AGENCY_TRANSCRIPT_NAV, hardened),
@@ -429,6 +446,11 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // on a half-done result. Bounded by MAX_AUTO_CONTINUE within maxLoops. Opt out
     // with AGENCY_AUTO_CONTINUE=0 to restore the legacy turn-ends-immediately path.
     autoContinue: parseBool(env.AGENCY_AUTO_CONTINUE, true),
+    // Reliability/UX fix → on by default in BOTH profiles: a turn that exhausts
+    // maxLoops WHILE still writing new files extends its budget (bounded by an
+    // absolute ceiling + a no-progress detector + the circuit breaker) instead of
+    // forcing a manual "send continue". Opt out with AGENCY_AUTO_CONTINUE_EXHAUSTION=0.
+    autoContinueOnExhaustion: parseBool(env.AGENCY_AUTO_CONTINUE_EXHAUSTION, true),
     // Churn-cluster correctness fix → on by default in BOTH profiles: a write split
     // across token-limit continuations is rejoined and executes once instead of
     // being dropped (→ no "file corrupted, rewrite from scratch" churn). Opt out
