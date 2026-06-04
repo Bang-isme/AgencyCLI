@@ -100,6 +100,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Timeline parts", value: f.timelineParts ? "on (unified ordered activity timeline)" : "off (legacy dual-parser render)", keys: ["timelineParts"] },
     { label: "Transcript nav", value: f.transcriptNav ? "on (Ctrl+T focus + ↑/↓ message navigation)" : "off (arrows scroll)", keys: ["transcriptNav"] },
     { label: "Auto-continue", value: f.autoContinue ? "on (resume on unfinished stop)" : "off", keys: ["autoContinue"] },
+    { label: "Auto-continue on exhaustion", value: f.autoContinueOnExhaustion ? "on (extend while writing new files, no manual continue)" : "off (stop at maxLoops)", keys: ["autoContinueOnExhaustion"] },
     { label: "Tool-call reassembly", value: f.toolCallReassembly ? "on (rejoin a write split by the output limit)" : "off", keys: ["toolCallReassembly"] },
     { label: "Tool-result tail", value: f.toolResultTailKept ? "on (keep head+tail of command output)" : "off (head only)", keys: ["toolResultTailKept"] },
     { label: "Breaker failed exits", value: f.breakerFailedExits ? "on (non-zero Exit Code counts as a breaker failure)" : "off (only Error: counts)", keys: ["breakerFailedExits"] },

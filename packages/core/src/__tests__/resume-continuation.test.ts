@@ -92,6 +92,7 @@ describe("§8.10 buildIncompleteTurnNotice (pure)", () => {
 describe("§8.10 resume-continuation wiring (loop exhaustion)", () => {
   let root: string;
   const prev = process.env.AGENCY_RESUME_CONTINUATION;
+  const prevExhaust = process.env.AGENCY_AUTO_CONTINUE_EXHAUSTION;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -102,6 +103,12 @@ describe("§8.10 resume-continuation wiring (loop exhaustion)", () => {
       defaultProvider: "openrouter",
       providers: { openrouter: { apiKey: "key", model: "gpt-4o-mini" } },
     });
+    // These tests isolate the resume-NOTICE wiring at the hard maxLoops stop.
+    // Phase E (autoContinueOnExhaustion, now default-on) would otherwise EXTEND
+    // the loop past maxLoops; pin it off so the loop exhausts at maxLoops exactly.
+    // (In production the two compose: Phase E extends while progressing, then the
+    // resume notice fires when it finally stops.)
+    process.env.AGENCY_AUTO_CONTINUE_EXHAUSTION = "0";
   });
 
   afterEach(() => {
@@ -109,6 +116,8 @@ describe("§8.10 resume-continuation wiring (loop exhaustion)", () => {
     if (existsSync(root)) rmSync(root, { recursive: true, force: true });
     if (prev === undefined) delete process.env.AGENCY_RESUME_CONTINUATION;
     else process.env.AGENCY_RESUME_CONTINUATION = prev;
+    if (prevExhaust === undefined) delete process.env.AGENCY_AUTO_CONTINUE_EXHAUSTION;
+    else process.env.AGENCY_AUTO_CONTINUE_EXHAUSTION = prevExhaust;
   });
 
   it("flag ON: folds the resume notice (with the modified file) into assistantText + streams it", async () => {

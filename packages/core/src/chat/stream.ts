@@ -325,7 +325,35 @@ export async function runChatTurnWithStream(
       ? createTurnCircuitBreaker()
       : null;
     if (!turnBreaker) resetToolCircuitBreaker();
-    const maxLoops = resolveMaxLoops(budget, input.maxLoops);
+    // `let` so Phase E (autoContinueOnExhaustion) can extend the cap while the
+    // turn keeps making real progress. The original value bounds the extension.
+    let maxLoops = resolveMaxLoops(budget, input.maxLoops);
+    const baseMaxLoops = maxLoops;
+    const hardLoopCeiling = baseMaxLoops * 4; // absolute runaway backstop
+    let filesAtLastExtension = 0; // grows only when NEW files are written
+
+    // Phase E: when a productive iteration would exhaust the loop budget, extend
+    // it ONE window instead of stopping with "send continue" — but only while the
+    // set of files written keeps GROWING (no-progress window stops it) and only up
+    // to the hard ceiling. The circuit breaker independently halts churn. Called
+    // right after a productive loopCount++ so the `while` keeps running.
+    const extendLoopBudgetIfProgressing = (): void => {
+      if (
+        getRuntimeFlags().autoContinueOnExhaustion &&
+        loopCount >= maxLoops &&
+        loopCount < hardLoopCeiling &&
+        filesWritten.size > filesAtLastExtension
+      ) {
+        filesAtLastExtension = filesWritten.size;
+        maxLoops = Math.min(hardLoopCeiling, maxLoops + baseMaxLoops);
+        void EventBus.getInstance().publish("continuation:started", {
+          turnId: resolvedSessionId,
+          loopCount,
+          maxLoops,
+          filesModified: filesWritten.size,
+        });
+      }
+    };
 
     while (loopCount < maxLoops) {
       await compactIfEnabled();
@@ -578,6 +606,7 @@ export async function runChatTurnWithStream(
         }
 
         loopCount++;
+        extendLoopBudgetIfProgressing();
         continue;
       }
 
@@ -603,6 +632,7 @@ export async function runChatTurnWithStream(
           },
         ];
         loopCount++;
+        extendLoopBudgetIfProgressing();
       } else if (
         getRuntimeFlags().autoContinue &&
         autoContinueCount < MAX_AUTO_CONTINUE &&
@@ -625,6 +655,7 @@ export async function runChatTurnWithStream(
           { role: "user" as const, content: buildAutoContinueNudge(filesWritten, input.projectRoot) },
         ];
         loopCount++;
+        extendLoopBudgetIfProgressing();
       } else {
         carryOverText = "";
         break;

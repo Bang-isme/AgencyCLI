@@ -1,4 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { RouteResult } from "../router/model-router.js";
 
 vi.mock("../router/model-router.js", () => ({
@@ -20,6 +23,18 @@ import { routeUserPrompt } from "../router/model-router.js";
 import { clearRouteCache } from "../context/session-cache.js";
 import { runChatTurnWithStream } from "../chat/stream.js";
 import { EventBus } from "../events/event-bus.js";
+import { closeAllDbs } from "@agency/memory";
+
+/** Release the per-project SQLite handle, then best-effort remove the temp dir
+ * (the DB file can linger locked on Windows — never fail the test on cleanup). */
+function cleanupRoot(root: string): void {
+  try {
+    closeAllDbs();
+  } catch {}
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {}
+}
 
 const mockedRoute = vi.mocked(routeUserPrompt);
 const mockedConfig = vi.mocked(providers.loadAgencyConfig);
@@ -130,6 +145,70 @@ describe("runChatTurnWithStream", () => {
     expect(typeof startedFind.seq).toBe("number");
     // A completion event (finished or failed) fires for the same tool.
     expect(done.some((e) => e.name === "find_files")).toBe(true);
+  });
+
+  it("Phase E: extends the loop while NEW files are written, bounded by the ceiling", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-phaseE-"));
+    try {
+      mockedConfig.mockReturnValue({
+        defaultProvider: "openrouter",
+        providers: { openrouter: { apiKey: "key" } },
+      });
+      let calls = 0;
+      mockedGetProvider.mockReturnValue({
+        id: "openrouter",
+        complete: vi.fn(),
+        streamComplete: vi.fn(async (_m: any, opts: any) => {
+          calls += 1;
+          // A NEW file each loop → filesWritten keeps growing → extension allowed.
+          const xml = `<tool_call name="write_file">\n  <path>gen/file${calls}.ts</path>\n  <content>export const v${calls} = ${calls};</content>\n</tool_call>`;
+          opts.onDelta(xml);
+          return xml;
+        }),
+      });
+      await runChatTurnWithStream(
+        { prompt: "build it", projectRoot: root, skillsRoot: "/skills", maxLoops: 2 } as any,
+        { onRoute: () => {}, onDelta: () => {} }
+      );
+      // base maxLoops 2 → hard ceiling 8. With new files each loop it must run well
+      // PAST the base budget (extended) yet stay BOUNDED (no runaway).
+      expect(calls).toBeGreaterThan(4);
+      expect(calls).toBeLessThanOrEqual(10);
+    } finally {
+      cleanupRoot(root);
+    }
+  });
+
+  it("Phase E: stops near maxLoops when NO new files are written (no-progress detector)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agency-phaseE-np-"));
+    try {
+      mockedConfig.mockReturnValue({
+        defaultProvider: "openrouter",
+        providers: { openrouter: { apiKey: "key" } },
+      });
+      let calls = 0;
+      mockedGetProvider.mockReturnValue({
+        id: "openrouter",
+        complete: vi.fn(),
+        streamComplete: vi.fn(async (_m: any, opts: any) => {
+          calls += 1;
+          // SAME path every loop (content differs so the breaker's identical-call
+          // guard doesn't fire) → filesWritten stays size 1 → no sustained progress.
+          const xml = `<tool_call name="write_file">\n  <path>same.ts</path>\n  <content>v${calls}</content>\n</tool_call>`;
+          opts.onDelta(xml);
+          return xml;
+        }),
+      });
+      await runChatTurnWithStream(
+        { prompt: "spin", projectRoot: root, skillsRoot: "/skills", maxLoops: 2 } as any,
+        { onRoute: () => {}, onDelta: () => {} }
+      );
+      // At most one "first file" courtesy extension, then it stops far short of the
+      // ceiling (8) — no runaway.
+      expect(calls).toBeLessThanOrEqual(5);
+    } finally {
+      cleanupRoot(root);
+    }
   });
 
   it("falls back to complete with single delta when stream unsupported", async () => {
