@@ -2227,12 +2227,13 @@ ${taskDesc}`;
     conversationHeight,
   ]);
 
-  // Mouse wheel is handled entirely by the terminal: `enterAlternateScreen`
-  // enables alternate-scroll mode (?1007h), so Windows Terminal / xterm translate
-  // the wheel into ↑/↓ arrow keys that the keyboard handler already scrolls on.
-  // No in-JS mouse tracking is enabled, so there is no click/scroll parser here.
-  // (To restore click-to-select on overlays, re-enable ?1000h/?1006h in
-  // enterAlternateScreen and reinstate an SGR parser on Ink's internal_eventEmitter.)
+  // Mouse handling lives in the mouse layer (flag `mouseSupport`, default-on), not
+  // here. When on, `enterAlternateScreen` enables SGR tracking (?1000h/?1002h/?1006h)
+  // and the wheel is OWNED in JS: `useMouseEvents` in useKeyboardHandlers maps
+  // wheel-up/down onto the same transcript scroll as ↑/↓ (so ?1007h is NOT set —
+  // we translate it ourselves). When the flag is OFF we fall back to ?1007h
+  // alternate-scroll and let the terminal turn the wheel into arrow keys. Click and
+  // drag subscribers ride the shared `subscribeMouse` API in `terminal/mouse.ts`.
 
   const skillsLabel = useMemo(() => {
     try {
