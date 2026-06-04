@@ -116,6 +116,9 @@ export function parseSystemActivityLine(line: string): ParsedSystemActivity {
     m = cleanLine.match(/Tool "([a-zA-Z0-9_-]+)" completed with result length: (\d+) characters\./);
     if (m) return { kind: "completed", cleanLine, toolName: m[1]!, len: m[2]! };
   }
+  // BACK-COMPAT: the per-turn gate-quick verification block that emitted these
+  // markers was removed in `3a22f11` (verify now drives EventBus events). Kept so
+  // pre-refactor SAVED sessions still render their verify lines — not dead code.
   if (cleanLine.includes("Running auto-verification")) {
     const m = cleanLine.match(/Running auto-verification \((.+?)\)\.\.\./);
     return { kind: "verify-run", cleanLine, gate: m ? m[1]! : "verification" };

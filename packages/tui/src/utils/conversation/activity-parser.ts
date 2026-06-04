@@ -1,15 +1,21 @@
 export function isSystemActivityLine(line: string): boolean {
   const cleanLine = line.replace(/^[⚡◆\s]+/, "").trim();
   return (
+    // Live markers (current emitters in core/chat/stream.ts + retry path).
+    cleanLine.includes("[SYSTEM:") ||
+    cleanLine.includes("[SYSTEM WARNING:") ||
     cleanLine.includes("Spawning specialist") ||
     cleanLine.includes("Executing tool") ||
+    cleanLine.includes("Retrying in") ||
+    // BACK-COMPAT — formats from the per-turn gate-quick verification block +
+    // the old "result length" tool summary, removed in `3a22f11`. No longer
+    // emitted, but kept so SAVED sessions from before that refactor still
+    // collapse correctly. Do NOT delete as "dead" — they detect historical
+    // content, not live output.
     cleanLine.includes("completed with result length") ||
     cleanLine.includes("Running auto-verification") ||
     cleanLine.includes("Verification passed successfully") ||
-    cleanLine.includes("Verification failed! Re-routing") ||
-    cleanLine.includes("[SYSTEM:") ||
-    cleanLine.includes("[SYSTEM WARNING:") ||
-    cleanLine.includes("Retrying in")
+    cleanLine.includes("Verification failed! Re-routing")
   );
 }
 
