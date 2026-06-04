@@ -63,7 +63,7 @@ Five threads, all landed and verified:
 | File | Change |
 |------|--------|
 | `packages/tui/src/motion/__tests__/design-system.test.ts` | Added `SEVERITY_GLYPHS` (single-cell, no `⚠`), `scanBar`/`energyBar` width, `gradientChar` clamp. Removed breathing tests. |
-| `packages/tui/src/__tests__/runtime-cards.test.tsx` | Render smoke for `PatchCard`, `LogCollapse` (verify severity glyphs). |
+| `packages/tui/src/__tests__/runtime-cards.test.tsx` | Render smoke for `PatchCard`. |
 | `packages/tui/src/layout/__tests__/terminal-layout.test.ts` | Removed `scrollThumb` tests (helper deleted). |
 
 ### Docs
@@ -93,7 +93,7 @@ Current exports — **this is the single source of truth; do not redefine spinne
 
 > Warning is `▲` not `⚠` (the latter renders double-width on many Windows terminals). `text.ts` re-exports `SPINNER_FRAMES` as an alias of `AGENCY_SPINNER` — one spinner array codebase-wide.
 
-Consumers (keep these in sync if you touch the identity): `ToolActivity`, `IndexProgress`, `LogCollapse`, `SubagentStepRow`, `WorkerProgress`, `GoalRunner`, `Splash`, `TraceTelemetry`.
+Consumers (keep these in sync if you touch the identity): `ToolActivity`, `IndexProgress`, `SubagentStepRow`, `WorkerProgress`, `GoalRunner`, `Splash`, `TraceTelemetry`.
 
 ---
 

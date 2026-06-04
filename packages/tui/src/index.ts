@@ -25,8 +25,6 @@ export { WorkerProgress } from "./components/WorkerProgress.js";
 export type { WorkerProgressProps, WorkerStep, StepStatus } from "./components/WorkerProgress.js";
 export { PatchCard } from "./components/PatchCard.js";
 export type { PatchCardProps, PatchSymbol, PatchAction } from "./components/PatchCard.js";
-export { LogCollapse } from "./components/LogCollapse.js";
-export type { LogCollapseProps, LogEntry, LogSeverity } from "./components/LogCollapse.js";
 export type { SubagentStatus } from "./state/subagent-status.js";
 
 export interface RenderOptions {
