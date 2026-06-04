@@ -17,19 +17,20 @@
 
 ## 1. Verified ground truth (re-run to refresh; do not trust without re-running)
 
-**Measured 2026-06-05, HEAD `50afc3e`, `master`, clean tree.
-`pnpm verify` (= `pnpm -r build && pnpm -r test`) → build 16/16, REAL_EXIT_CODE=0.**
+**Measured 2026-06-05 (post docs-consistency guard + K1 RuntimeState), `master`,
+clean tree. `pnpm verify` (= `pnpm -r build && pnpm -r test`) → build 16/16,
+REAL_EXIT_CODE=0.**
 
 | Package | tests | Package | tests | Package | tests |
 |---|---:|---|---:|---|---:|
-| core | 496 | cli | 581 | tui | 208 |
+| core | 504 | cli | 588 | tui | 208 |
 | providers | 855 | memory | 48 | security | 39 |
 | benchmark | 18 | tooling | 14 | workspace | 11 |
 | telemetry | 9 | governance | 7 | context | 6 |
 | heuristics | 6 | browser | 5 | skills-bridge | 18 (+1 skip) |
 
-**Totals: ≈ 2321 passing · 16 packages · 21 built-in tools · 8 agents · 28 skills ·
-8 workflows · 41 runtime flags (42 `getRuntimeFlags()` keys incl. `profile`).**
+**Totals: ≈ 2336 passing · 16 packages · 21 built-in tools · 8 agents · 28 skills ·
+8 workflows · 42 runtime flags (43 `getRuntimeFlags()` keys incl. `profile`).**
 
 > These numbers are a **dated snapshot**. The live source is always `pnpm verify`
 > (test totals, flag count) + `agency status` (flags) + the guard in §3 (structural
@@ -115,7 +116,7 @@ or a guard — never a vibe. ✅ done & wired · ◐ partial · ✗ not started.
 | E | Invisible continuation on loop-exhaustion | ✅ | `411b2e2`, flag `autoContinueOnExhaustion` |
 | B | `<ActivityTimeline>` panel from events | ✗ | flag `eventDrivenActivity` (== K4) |
 | C | Cut the `⚡[SYSTEM:]` text round-trip | ✗ | same flag (== K4) |
-| D | `RuntimeState` reducer over the journal | ✗ | **== K1, the unlock** |
+| D | `RuntimeState` reducer over the journal | ◐ | reducer + `agency status` consumer landed (flag `runtimeState`); TUI panels pending. **== K1** |
 | F | Checkpoint generalization + content-snapshot revert | ✗ | TUI P5 |
 | G | Auto-handoff memory + adr/handoff types | ✗ | reuse `MarkdownMemoryStore` |
 | H | `safety:blocked` events + reasoning-spam suppression | ✗ | prompt + safety |
@@ -124,7 +125,7 @@ or a guard — never a vibe. ✅ done & wired · ◐ partial · ✗ not started.
 ### 5B. Agent-OS keystones (`AGENT_OS_BLUEPRINT.md`)
 | Keystone | Status | Note |
 |---|:--:|---|
-| K1 `RuntimeState` (reducer over durable journal) | ✗ | == EVENT_FIRST D; **ship first** (low-risk pure fold; unblocks all others) |
+| K1 `RuntimeState` (reducer over durable journal) | ◐ | `reduceRuntimeState` + `agency status` consumer **DONE** (flag `runtimeState`, `core/runtime/runtime-state.ts`); TUI Tasks/Status panel consumer pending (== EVENT_FIRST D) |
 | K2 Session Hierarchy (subagent → real session) | ✗ | `dispatch-*.json` is the proto-record to formalize |
 | K3 Supervisor Runtime (one observer over 6+ detectors) | ✗ | biggest compose-don't-build win |
 | K4 Activity Timeline (event-fed surface) | ✗ | == EVENT_FIRST B/C; the visible payoff |

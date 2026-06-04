@@ -5,6 +5,8 @@ import {
   getMemoryTelemetry,
   getAgentRegistrySnapshot,
   listCheckpoints,
+  loadRuntimeState,
+  type RuntimeState,
   EventBus,
 } from "@agency/core";
 import { resolveProjectRoot } from "../resolve-project.js";
@@ -26,6 +28,11 @@ interface StatusReport {
     recoverable: ReturnType<typeof discoverRecoverableTasks>;
   };
   agents: ReturnType<typeof getAgentRegistrySnapshot>;
+  /**
+   * Journal-derived RuntimeState (K1). Only present when `runtimeState` is on, so
+   * the report shape (and `--json`) is byte-identical to legacy when the flag is off.
+   */
+  runtime?: RuntimeState;
 }
 
 function buildReport(projectRoot: string): StatusReport {
@@ -37,7 +44,7 @@ function buildReport(projectRoot: string): StatusReport {
     byStatus[cp.status] = (byStatus[cp.status] ?? 0) + 1;
   }
   const tel = getMemoryTelemetry(projectRoot);
-  return {
+  const report: StatusReport = {
     projectRoot,
     profile: flags.profile,
     flags,
@@ -60,6 +67,12 @@ function buildReport(projectRoot: string): StatusReport {
     },
     agents: getAgentRegistrySnapshot(),
   };
+  // K1: fold the durable journal into RuntimeState (read-only). Gated so legacy
+  // status output stays byte-identical apart from the flag row.
+  if (flags.runtimeState) {
+    report.runtime = loadRuntimeState(projectRoot);
+  }
+  return report;
 }
 
 type Flags = ReturnType<typeof getRuntimeFlags>;
@@ -109,6 +122,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Subagent concurrency cap", value: f.subagentConcurrencyCap ? "on (≤ maxParallelAgents concurrent dispatch)" : "off (uncapped fan-out)", keys: ["subagentConcurrencyCap"] },
     { label: "Composer cursor editing", value: f.composerCursorEdit ? "on (caret nav + insert/delete + undo)" : "off (append-only)", keys: ["composerCursorEdit"] },
     { label: "Workflow skill loads", value: f.workflowSkillLoads ? "on (selected workflow activates its declared skill chain)" : "off (router skills only)", keys: ["workflowSkillLoads"] },
+    { label: "Runtime state", value: f.runtimeState ? "on (journal-derived runtime summary in status)" : "off", keys: ["runtimeState"] },
   ];
 }
 
@@ -157,6 +171,39 @@ function printHuman(r: StatusReport): void {
         `    ${a.id.padEnd(20)} ${dim}ok ${a.health.successCount} · fail ${a.health.failureCount} · rate ${rate} · load ${load}${reset}`
       );
     }
+  }
+  if (r.runtime) {
+    const rt = r.runtime;
+    console.log("");
+    console.log(`  ${bold}Runtime${reset} ${dim}(derived from the event journal)${reset}`);
+    console.log(`    ${"Events".padEnd(20)} ${rt.eventCount} ${dim}(seq ${rt.lastSeq})${reset}`);
+    if (rt.plan.length > 0) {
+      const pp = rt.planProgress;
+      console.log(
+        `    ${"Plan".padEnd(20)} ${pp.completed}/${rt.plan.length} done${pp.inProgress ? ` · ${pp.inProgress} in progress` : ""}`
+      );
+    }
+    console.log(
+      `    ${"Tools".padEnd(20)} ${rt.tools.total} call(s)${rt.tools.failed ? ` · ${rt.tools.failed} failed` : ""}${rt.tools.last ? ` ${dim}· last: ${rt.tools.last.name}${rt.tools.last.ok ? "" : " (failed)"}${reset}` : ""}`
+    );
+    if (rt.modifiedFiles.length > 0) {
+      console.log(`    ${"Files modified".padEnd(20)} ${rt.modifiedFiles.length}`);
+      for (const f of rt.modifiedFiles.slice(0, 8)) console.log(`      ${dim}${f}${reset}`);
+      if (rt.modifiedFiles.length > 8) console.log(`      ${dim}… and ${rt.modifiedFiles.length - 8} more${reset}`);
+    }
+    if (rt.agents.length > 0) {
+      console.log(`    ${"Subagents".padEnd(20)} ${rt.agents.length}`);
+      for (const a of rt.agents.slice(0, 8)) {
+        console.log(`      ${dim}${a.agentId} · ${a.status}${a.phase ? ` · ${a.phase}` : ""}${reset}`);
+      }
+    }
+    if (rt.continuations > 0) console.log(`    ${"Continuations".padEnd(20)} ${rt.continuations}`);
+    if (rt.warnings > 0) {
+      console.log(
+        `    ${"Warnings".padEnd(20)} ${rt.warnings}${rt.lastWarning ? ` ${dim}(last: ${rt.lastWarning.slice(0, 60)})${reset}` : ""}`
+      );
+    }
+    if (rt.totalCostUsd > 0) console.log(`    ${"Cost".padEnd(20)} $${rt.totalCostUsd.toFixed(4)}`);
   }
 }
 

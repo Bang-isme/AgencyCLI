@@ -285,6 +285,14 @@ export {
   type ApprovalToolPathMode,
 } from "./runtime/flags.js";
 export {
+  reduceRuntimeState,
+  loadRuntimeState,
+  type RuntimeState,
+  type RuntimePlanItem,
+  type RuntimeAgentState,
+  type RuntimeToolStats,
+} from "./runtime/runtime-state.js";
+export {
   bootstrapRuntime,
   discoverRecoverableTasks,
   autoResumeRecoverableTasks,

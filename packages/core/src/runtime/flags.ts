@@ -306,6 +306,18 @@ export interface RuntimeFlags {
    * hardened. The context pack is char-budgeted, so the extra content can't overflow.
    */
   workflowSkillLoads: boolean;
+  /**
+   * Derive a first-class RuntimeState (plan/steps, modified files, tool + agent
+   * health, continuations, warnings, cost) as a PURE reducer over the durable
+   * EventBus journal, and surface it as a "Runtime" section in `agency status`
+   * (human + `--json`). The journal is already persisted (`persistEvents`), so
+   * this is a read-only fold — no new write path, no behaviour change to the run
+   * itself. Off in legacy (status output byte-identical apart from the flag row),
+   * on in hardened. The reducer (`reduceRuntimeState`) is the shared single source
+   * the later Activity Timeline / Tasks panels and the supervisor will also fold.
+   * Roadmap: docs/AGENT_OS_BLUEPRINT.md K1 / EVENT_FIRST_RUNTIME.md §3.
+   */
+  runtimeState: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -489,5 +501,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // chain → more SKILL.md in the context pack, more tokens) → off in legacy (only
     // the router's own skills load, byte-identical), on in hardened.
     workflowSkillLoads: parseBool(env.AGENCY_WORKFLOW_SKILL_LOADS, hardened),
+    // Additive read-only (folds the durable journal into a status section) → off
+    // in legacy (status byte-identical apart from the flag row), on in hardened.
+    runtimeState: parseBool(env.AGENCY_RUNTIME_STATE, hardened),
   };
 }

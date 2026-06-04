@@ -288,8 +288,13 @@ commits, `pnpm verify` REAL_EXIT_CODE=0. Ordered by impact-on-the-screenshots ÷
 - **Phase C — Cut the text round-trip (same flag).** When `eventDrivenActivity`
   on, suppress `formatToolCallNotice`/completion `onDelta` injection →
   Conversation becomes prose-only. This is the "no tool spam in chat" win.
-- **Phase D — RuntimeState reducer + Task/Status panels.** Fold the journal into
-  `RuntimeState`; surface plan/steps/modified-files.
+- **Phase D — RuntimeState reducer + Task/Status panels. ◐ PARTIAL.** The reducer
+  landed: `core/runtime/runtime-state.ts` `reduceRuntimeState(events)` (PURE fold)
+  + `loadRuntimeState(projectRoot)`, consumed by `agency status` (flag
+  `runtimeState`, default hardened-on). Folds plan/steps, modified files, tool +
+  agent health, continuations, warnings, cost from events the bus already emits —
+  no new write path. **Pending:** the TUI Tasks/Status panel consumer (folds the
+  same reducer live off the bus — do NOT add a second derivation).
 - **Phase E — Invisible continuation (flag `autoContinueOnExhaustion`, default-on). ✅ DONE `411b2e2`.**
   A productive iteration that would exhaust `maxLoops` extends the budget one
   window instead of stopping with "send continue". Three guards prevent the old
