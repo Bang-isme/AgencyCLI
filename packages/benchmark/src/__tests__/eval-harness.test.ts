@@ -81,7 +81,9 @@ describe("eval harness — execute step", () => {
     const res = await runBenchmarkTask(scriptCompilationTask, tempRoot());
     expect(res.success).toBe(true);
     expect(res.error).toBeUndefined();
-  });
+    // Spawns the real `tsc` compiler (~2s alone) — the default 5s timeout flakes
+    // under the parallel CPU load of a full `pnpm -r test`. Give it headroom.
+  }, 30000);
 });
 
 describe("aggregateResults", () => {
