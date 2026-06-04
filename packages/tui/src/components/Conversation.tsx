@@ -1865,7 +1865,7 @@ export function calculateFormattedLines(
         (
           <Box marginLeft={4} marginTop={0}>
             <Text color={theme.muted} italic>
-              ▲ +{sortedSubagents.length - maxVisibleWorkers} more background workers active...
+              ▲ +{sortedSubagents.length - maxVisibleWorkers} more workers
             </Text>
           </Box>
         ),
