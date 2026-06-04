@@ -106,7 +106,7 @@ export function Approval({ theme, pending, width }: ApprovalProps) {
       width={boxWidth}
     >
       <Box marginBottom={1} flexDirection="row" justifyContent="space-between" width={innerWidth}>
-        <ShimmerText text={`■  ${title.toUpperCase()}`} theme={theme} bold />
+        <ShimmerText text={`■  ${title}`} theme={theme} bold />
         {pending.riskLevel ? (
           <Box paddingX={1}>
             <Text backgroundColor={isHighRisk ? theme.danger : isMediumRisk ? theme.warning : theme.success} color="black" bold>
