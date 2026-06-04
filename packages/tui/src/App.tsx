@@ -81,6 +81,7 @@ import {
   type TranscriptFocus,
   inactiveFocus,
   focusedMessageId as resolveFocusedMessageId,
+  scrollOffsetForFocus,
 } from "./state/transcript-focus.js";
 import {
   DEFAULT_THEME_ID,
@@ -2128,6 +2129,51 @@ ${taskDesc}`;
     }
     prevActiveExecutionRef.current = activeExecution;
   }, [activeExecution, survivalModeActive, virtualLinesCount, conversationHeight]);
+
+  // Bring the focused turn into view when the transcript-nav focus moves (flag
+  // `transcriptNav`). `scrollOffset` indexes the same line model Conversation
+  // renders, so we locate the focused `…-header` row and nudge the offset only
+  // when it sits outside the viewport. Runs only while a message is focused →
+  // the legacy path (focusedMessageId null) is untouched. The snap effects above
+  // key off virtualLinesCount/conversationHeight (unchanged by a focus move), so
+  // they don't fight this; `userHasScrolledUpRef` is set so auto-snap-to-bottom
+  // doesn't immediately yank a focus that landed in history.
+  useEffect(() => {
+    if (!focusedMessageId) return;
+    const lines = calculateFormattedLines(
+      messagesToProcess,
+      composerWidth,
+      theme,
+      latestAssistantId,
+      subagents,
+      loading,
+      expandedTui,
+      undefined,
+      goalActive,
+      focusedMessageId
+    );
+    const idx = lines.findIndex((l) => l.key === `${focusedMessageId}-header`);
+    if (idx < 0) return;
+    setScrollOffset((prev) => {
+      const next = scrollOffsetForFocus(idx, prev, conversationHeight);
+      // Mark "viewing history" whenever a focus move scrolls, so auto-snap-to-
+      // bottom doesn't immediately yank the highlight away. The snap effect
+      // clears it again once the offset reaches within 2 lines of the bottom.
+      if (next !== prev) userHasScrolledUpRef.current = true;
+      return next;
+    });
+  }, [
+    focusedMessageId,
+    messagesToProcess,
+    composerWidth,
+    theme,
+    latestAssistantId,
+    subagents,
+    loading,
+    expandedTui,
+    goalActive,
+    conversationHeight,
+  ]);
 
   // Mouse wheel is handled entirely by the terminal: `enterAlternateScreen`
   // enables alternate-scroll mode (?1007h), so Windows Terminal / xterm translate

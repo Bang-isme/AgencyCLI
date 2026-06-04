@@ -6,6 +6,7 @@ import {
   exitTranscriptFocus,
   moveTranscriptFocus,
   focusedMessageId,
+  scrollOffsetForFocus,
 } from "../state/transcript-focus.js";
 import type { SessionMessage } from "../state/messages.js";
 
@@ -75,5 +76,32 @@ describe("transcript-focus (P2 nav)", () => {
     const shrunk = [msg("u1", "user"), msg("a1", "assistant")];
     // index 3 is now out of range → clamps to the last focusable
     expect(focusedMessageId(f, shrunk)).toBe("a1");
+  });
+
+  describe("scrollOffsetForFocus (auto-scroll windowing)", () => {
+    it("leaves the offset alone when the line is already visible", () => {
+      // window [10, 19] (height 10) — line 14 is inside
+      expect(scrollOffsetForFocus(14, 10, 10)).toBe(10);
+      expect(scrollOffsetForFocus(10, 10, 10)).toBe(10); // top edge
+      expect(scrollOffsetForFocus(19, 10, 10)).toBe(10); // bottom edge
+    });
+
+    it("scrolls up to the line when it is above the window", () => {
+      expect(scrollOffsetForFocus(3, 10, 10)).toBe(3);
+    });
+
+    it("scrolls down (1-line bottom margin) when below the window", () => {
+      // line 25, window height 10 → offset 25 - 10 + 2 = 17 → window [17, 26]
+      expect(scrollOffsetForFocus(25, 10, 10)).toBe(17);
+    });
+
+    it("never returns a negative offset and tolerates a tiny viewport", () => {
+      expect(scrollOffsetForFocus(0, 0, 1)).toBe(0);
+      expect(scrollOffsetForFocus(5, 0, 0)).toBeGreaterThanOrEqual(0);
+    });
+
+    it("returns the previous offset for a missing line (idx < 0)", () => {
+      expect(scrollOffsetForFocus(-1, 7, 10)).toBe(7);
+    });
   });
 });

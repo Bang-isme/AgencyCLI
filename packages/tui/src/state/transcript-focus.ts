@@ -75,3 +75,23 @@ export function focusedMessageId(
   const idx = Math.min(ids.length - 1, Math.max(0, focus.index));
   return ids[idx] ?? null;
 }
+
+/**
+ * The scroll offset that brings line `idx` into a `viewportHeight`-tall window
+ * currently starting at `prevOffset` (scrollOffset = index of the first visible
+ * line). Scrolls up to the line when it is above the window, down (leaving a
+ * one-line bottom margin) when below, and leaves the offset unchanged when the
+ * line is already visible. Pure so the auto-scroll-to-focus windowing math is
+ * unit-testable; the App effect applies it and manages the scrolled-up flag.
+ */
+export function scrollOffsetForFocus(
+  idx: number,
+  prevOffset: number,
+  viewportHeight: number
+): number {
+  if (idx < 0) return prevOffset;
+  const h = Math.max(1, viewportHeight);
+  if (idx < prevOffset) return idx;
+  if (idx > prevOffset + h - 1) return Math.max(0, idx - h + 2);
+  return prevOffset;
+}
