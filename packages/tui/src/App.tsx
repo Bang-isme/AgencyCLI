@@ -83,6 +83,7 @@ import {
   focusedMessageId as resolveFocusedMessageId,
   scrollOffsetForFocus,
 } from "./state/transcript-focus.js";
+import { writeClipboard } from "./utils/clipboard.js";
 import {
   DEFAULT_THEME_ID,
   getTheme,
@@ -469,6 +470,15 @@ export function App({
     () => (transcriptNav && transcriptFocus.active ? resolveFocusedMessageId(transcriptFocus, messagesToProcess) : null),
     [transcriptNav, transcriptFocus, messagesToProcess]
   );
+
+  // Copy the focused turn's text to the OS clipboard (transcript-nav `c`/`y`).
+  const copyFocusedMessage = useCallback(() => {
+    if (!focusedMessageId) return;
+    const m = messagesToProcess.find((x) => x.id === focusedMessageId);
+    if (!m) return;
+    const ok = writeClipboard(m.content);
+    addSystemLines([ok ? "✓ Copied turn to clipboard" : "⚠ Clipboard copy failed"]);
+  }, [focusedMessageId, messagesToProcess, addSystemLines]);
 
   const [lastRouteProvider, setLastRouteProvider] = useState<string | null>(
     null
@@ -2053,6 +2063,7 @@ ${taskDesc}`;
     transcriptNav,
     transcriptFocus,
     setTranscriptFocus,
+    copyFocusedMessage,
     userHasScrolledUpRef,
     phase,
     setPhase,

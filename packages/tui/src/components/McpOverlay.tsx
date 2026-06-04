@@ -3,9 +3,8 @@ import { Box, Text, useInput } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { execSync } from "node:child_process";
-import { platform } from "node:os";
 import { loadMcpConfigs, type McpServerStatus, EventBus } from "@agency/core";
+import { readClipboard } from "../utils/clipboard.js";
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
 import { panelWidth } from "../layout/terminal-layout.js";
 import { applyTextInput } from "../hooks/useTextInput.js";
@@ -34,38 +33,6 @@ type Phase =
   | "add_env"
   | "edit_select"
   | "edit_val";
-
-function getClipboardText(): string {
-  try {
-    const os = platform();
-    if (os === "win32") {
-      return execSync('powershell -NoProfile -Command "Get-Clipboard"', {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-    } else if (os === "darwin") {
-      return execSync("pbpaste", {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-    } else {
-      // Linux
-      try {
-        return execSync("xclip -selection clipboard -o", {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim();
-      } catch {
-        return execSync("wl-paste", {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim();
-      }
-    }
-  } catch {
-    return "";
-  }
-}
 
 function parsePastedConfig(input: string): { command: string; args: string[]; env?: Record<string, string> } | null {
   const clean = input.trim();
@@ -487,7 +454,7 @@ export function McpOverlay({
             setImportError("");
             setPhase("add_paste_name");
           } else if (t.id === "clipboard") {
-            const clipText = getClipboardText();
+            const clipText = readClipboard();
             const parsed = parsePastedConfig(clipText);
             if (!parsed) {
               showNotification("error", "Clipboard is empty or has no valid config.");
