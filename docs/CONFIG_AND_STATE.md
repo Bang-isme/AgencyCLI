@@ -293,7 +293,7 @@ interface SessionMessage {
   role: "user" | "assistant" | "system";
   content: string;
   presentation?: {
-    chips?: Chip[];
+    chips?: RouteChip[];
     suggestions?: string[];
     cacheHint?: "cached";
   };
@@ -304,7 +304,7 @@ interface SessionMessage {
 
 #### Context Tracker (`context-tracker.ts`)
 - **Token estimate:** 4 chars/token heuristic
-- **Activity phases:** idle → routing → exploring → reading → analyzing → thinking → writing → editing
+- **Activity phases:** idle → routing → exploring → reading → analyzing → thinking → writing → editing → running
 - **Context window lookup:** via provider registry model specs
 
 ---

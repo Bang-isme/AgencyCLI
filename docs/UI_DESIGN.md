@@ -556,7 +556,7 @@ interface SessionMessage {
   role: "user" | "assistant" | "system";
   content: string;
   presentation?: {
-    chips?: Chip[];
+    chips?: RouteChip[];
     suggestions?: string[];
     cacheHint?: "cached" | undefined;
   };

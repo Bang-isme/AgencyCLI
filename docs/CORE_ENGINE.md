@@ -620,7 +620,7 @@ The headless/streaming output renderer that turns orchestration events into surf
 - `filters/` — `output-filter` suppresses/throttles noisy output
 - `utils/` — `byte-format`, `time-format`, `worker-names` helpers
 
-This layer backs both the CLI's headless rendering and the data the TUI's runtime cards consume.
+This layer backs the CLI's headless rendering; the TUI renders its own surfaces from the same event stream.
 
 ---
 
