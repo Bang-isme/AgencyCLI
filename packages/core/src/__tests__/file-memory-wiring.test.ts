@@ -56,8 +56,8 @@ describe("§file-memory wiring (remember tool + markdown recall + flag gating)",
     expect(recall).toContain("Tokens are verified in middleware/auth.ts");
   });
 
-  it("flag OFF (legacy): markdown memory is NOT recalled (byte-identical empty recall)", async () => {
-    delete process.env.AGENCY_FILE_MEMORY; // legacy default off
+  it("flag OFF (AGENCY_FILE_MEMORY=0): markdown memory is NOT recalled (opt-out empty recall)", async () => {
+    process.env.AGENCY_FILE_MEMORY = "0"; // explicit opt-out (default is now on)
     await executeTool(
       "remember",
       { description: "Auth uses JWT", content: "secret recall marker zzz", type: "project" },
@@ -89,7 +89,7 @@ describe("§file-memory wiring (remember tool + markdown recall + flag gating)",
     expect(on).toContain("`forget`");
     expect(on).toContain("PERSISTENT MEMORY PROTOCOL");
 
-    delete process.env.AGENCY_FILE_MEMORY;
+    process.env.AGENCY_FILE_MEMORY = "0"; // explicit opt-out (default is now on)
     const off = buildSystemPrompt(route, "hi", "", root);
     expect(off).not.toContain("PERSISTENT MEMORY PROTOCOL");
     // Neither curated-memory tool may be advertised in the legacy tool docs.

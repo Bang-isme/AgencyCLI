@@ -144,8 +144,9 @@ export interface RuntimeFlags {
    * instructions) AND advertise + enable the `remember` tool so the agent can
    * deliberately save durable facts (preferences, decisions, "don't re-investigate"
    * findings) as human-readable markdown — distinct from the automatic, opaque
-   * SQLite episodic store. Off in legacy (no markdown recall, `remember` not
-   * advertised → byte-identical prompt), on in hardened.
+   * SQLite episodic store. On by default in both profiles (safe: best-effort
+   * recall, gitignored writes); opt out with AGENCY_FILE_MEMORY=0 to restore the
+   * legacy no-markdown-recall prompt.
    */
   fileMemory: boolean;
   /**
@@ -391,10 +392,13 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Behaviour-changing (shortens the per-turn tool docs → fewer prompt tokens)
     // → off in legacy (verbose docs byte-identical), on in hardened.
     compactToolDocs: parseBool(env.AGENCY_COMPACT_TOOL_DOCS, hardened),
-    // Behaviour-changing (injects curated markdown memory into the prompt +
-    // advertises the `remember` tool) → off in legacy (no markdown recall, tool
-    // not advertised → byte-identical), on in hardened.
-    fileMemory: parseBool(env.AGENCY_FILE_MEMORY, hardened),
+    // Curated markdown memory → on by default in BOTH profiles: injects the
+    // deliberately-saved `.agency/memory` facts into the prompt, advertises the
+    // `remember`/`forget` tools, and adds the PERSISTENT MEMORY PROTOCOL. Recall
+    // is best-effort (try/catch → "") and writes are gitignored, so it is safe to
+    // default on. Opt out with AGENCY_FILE_MEMORY=0 to restore the legacy
+    // no-markdown-recall prompt (tools stay registered/executable, just unadvertised).
+    fileMemory: parseBool(env.AGENCY_FILE_MEMORY, true),
     // Churn-cluster correctness fix → on by default in BOTH profiles: a turn that
     // explicitly signalled unfinished work continues instead of stranding the user
     // on a half-done result. Bounded by MAX_AUTO_CONTINUE within maxLoops. Opt out
