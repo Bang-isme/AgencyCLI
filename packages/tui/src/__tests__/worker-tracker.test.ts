@@ -1,5 +1,34 @@
 import { describe, it, expect } from "vitest";
-import { WorkerLifecycleTracker } from "../state/semantic-orchestration.js";
+import { WorkerLifecycleTracker, SemanticTranslator } from "../state/semantic-orchestration.js";
+
+describe("SemanticTranslator.translatePhase (no shouty raw enum leak)", () => {
+  it("maps every WorkerState enum value to a calm sentence-case label", () => {
+    const states = [
+      "SPAWNING",
+      "ACQUIRING_CONTEXT",
+      "ANALYZING",
+      "MAPPING_DEPENDENCIES",
+      "SYNTHESIZING",
+      "VERIFYING",
+      "SELF_HEALING",
+      "CONSOLIDATING",
+      "COMPLETED",
+      "FAILED",
+      "INTERRUPTED",
+    ];
+    for (const s of states) {
+      const label = SemanticTranslator.translatePhase(s);
+      // Never echo the raw uppercase enum back to the user.
+      expect(label).not.toBe(s);
+      expect(label).not.toMatch(/[A-Z]{2,}/); // no SHOUTY tokens or SNAKE_CASE
+    }
+  });
+
+  it("still threads a target file into the relevant labels", () => {
+    expect(SemanticTranslator.translatePhase("ANALYZING", "auth.ts")).toContain("auth.ts");
+    expect(SemanticTranslator.translatePhase("SYNTHESIZING", "auth.ts")).toContain("auth.ts");
+  });
+});
 
 describe("WorkerLifecycleTracker.finalizeOrphans / reset", () => {
   it("lands a still-running worker on INTERRUPTED (terminal) with active steps downgraded", () => {

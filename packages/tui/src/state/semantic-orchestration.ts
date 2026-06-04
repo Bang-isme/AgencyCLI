@@ -79,6 +79,22 @@ export class SemanticTranslator {
 
   public static translatePhase(phase: string, target = ""): string {
     const p = phase.toLowerCase();
+    // The tracker passes the raw WorkerState enum (e.g. "ANALYZING") straight in;
+    // map each to a calm, sentence-case human label so the runtime view never
+    // shows a shouty raw enum name (exact match — free-form event phrases below
+    // still flow through the substring heuristics).
+    switch (p) {
+      case "spawning": return "Starting up…";
+      case "acquiring_context": return target ? `Reading ${target}…` : "Gathering context…";
+      case "analyzing": return target ? `Analyzing ${target}…` : "Analyzing…";
+      case "mapping_dependencies": return "Mapping dependencies…";
+      case "synthesizing": return target ? `Writing ${target}…` : "Writing changes…";
+      case "self_healing": return "Self-healing…";
+      case "consolidating": return "Consolidating…";
+      case "completed": return "Done";
+      case "failed": return "Failed";
+      case "interrupted": return "Stopped";
+    }
     if (p.includes("routing")) return `Routing…`;
     if (p.includes("llm") || p.includes("thought") || p.includes("thinking")) {
       return target ? `Analyzing ${target}…` : "Thinking…";
