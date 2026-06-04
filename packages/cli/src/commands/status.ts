@@ -98,6 +98,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Compact tool docs", value: f.compactToolDocs ? "on (terse args, fewer prompt tokens)" : "off (verbose per-arg)", keys: ["compactToolDocs"] },
     { label: "File memory", value: f.fileMemory ? "on (curated markdown memory + remember tool)" : "off", keys: ["fileMemory"] },
     { label: "Timeline parts", value: f.timelineParts ? "on (unified ordered activity timeline)" : "off (legacy dual-parser render)", keys: ["timelineParts"] },
+    { label: "Transcript nav", value: f.transcriptNav ? "on (Ctrl+T focus + ↑/↓ message navigation)" : "off (arrows scroll)", keys: ["transcriptNav"] },
     { label: "Auto-continue", value: f.autoContinue ? "on (resume on unfinished stop)" : "off", keys: ["autoContinue"] },
     { label: "Tool-call reassembly", value: f.toolCallReassembly ? "on (rejoin a write split by the output limit)" : "off", keys: ["toolCallReassembly"] },
     { label: "Tool-result tail", value: f.toolResultTailKept ? "on (keep head+tail of command output)" : "off (head only)", keys: ["toolResultTailKept"] },

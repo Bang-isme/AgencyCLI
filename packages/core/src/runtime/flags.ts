@@ -159,6 +159,16 @@ export interface RuntimeFlags {
    */
   timelineParts: boolean;
   /**
+   * Keyboard-driven transcript navigation (opencode-style message focus): `Ctrl+T`
+   * enters a focus mode on the latest turn, `↑`/`↓` move a highlight between real
+   * turns (system activity rows are skipped), `Esc`/`Ctrl+T` exit. The focused
+   * message header gets a flat gutter highlight; this selection is the anchor the
+   * later interaction phases (expand / copy / fork / revert) act on. Off → the
+   * keys keep their legacy meaning (`Ctrl+T` unused, `↑`/`↓` scroll), render
+   * byte-identical. On (opt-in) → focus navigation active. TUI-interaction only.
+   */
+  transcriptNav: boolean;
+  /**
    * Auto-continue a turn when the model stops emitting tool calls but explicitly
    * signalled the work is UNFINISHED — an end-of-message "I'll continue…"
    * promise, a "to be continued" marker, or a left-in "…rest of the code"
@@ -411,6 +421,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // TUI-render only: unify the conversation into one ordered activity timeline.
     // Off in legacy (dual-parser render byte-identical), on in hardened (opt-in).
     timelineParts: parseBool(env.AGENCY_TIMELINE_PARTS, hardened),
+    // TUI-interaction only: keyboard-driven transcript focus/navigation. Off in
+    // legacy (keys keep legacy meaning, render byte-identical), on in hardened (opt-in).
+    transcriptNav: parseBool(env.AGENCY_TRANSCRIPT_NAV, hardened),
     // Churn-cluster correctness fix → on by default in BOTH profiles: a turn that
     // explicitly signalled unfinished work continues instead of stranding the user
     // on a half-done result. Bounded by MAX_AUTO_CONTINUE within maxLoops. Opt out

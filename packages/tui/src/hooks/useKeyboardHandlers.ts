@@ -21,6 +21,12 @@ import {
   redo,
 } from "../utils/text-buffer.js";
 import { nextMode } from "../state/agent-modes.js";
+import {
+  type TranscriptFocus,
+  enterTranscriptFocus,
+  exitTranscriptFocus,
+  moveTranscriptFocus,
+} from "../state/transcript-focus.js";
 import { saveTuiConfig } from "../config/tui-config.js";
 export interface OverlayStates {
   connect: boolean;
@@ -48,6 +54,11 @@ export interface UseKeyboardHandlersOptions {
   setScrollOffset: React.Dispatch<React.SetStateAction<number>>;
   activeSubagentId: string | null;
   setActiveSubagentId: React.Dispatch<React.SetStateAction<string | null>>;
+  // Transcript focus/navigation (flag `transcriptNav`). When off, none of the
+  // transcript-nav branches run and the keys keep their legacy meaning.
+  transcriptNav: boolean;
+  transcriptFocus: TranscriptFocus;
+  setTranscriptFocus: React.Dispatch<React.SetStateAction<TranscriptFocus>>;
   userHasScrolledUpRef: React.MutableRefObject<boolean>;
 
   // Contextual states and triggers
@@ -116,6 +127,9 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
         setScrollOffset,
         activeSubagentId,
         setActiveSubagentId,
+        transcriptNav,
+        transcriptFocus,
+        setTranscriptFocus,
         userHasScrolledUpRef,
         phase,
         loading,
@@ -295,6 +309,30 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
     if (((key.ctrl && input === "h") || (input === "?" && buffer.length === 0))) {
       closeAllOverlays();
       setOverlayOpen("help", true);
+      return;
+    }
+
+    // ── Transcript focus navigation (flag transcriptNav) ──
+    // Modal: while focus is active ↑/↓ move the highlight between turns (instead
+    // of scrolling) and Esc/Ctrl+T exit. Placed before the scroll handlers so it
+    // intercepts the arrows. Ctrl+C/Ctrl+Q still fall through to exit/abort.
+    if (transcriptNav && transcriptFocus.active) {
+      if (key.upArrow) {
+        setTranscriptFocus((f) => moveTranscriptFocus(f, messagesToProcess, -1));
+        return;
+      }
+      if (key.downArrow) {
+        setTranscriptFocus((f) => moveTranscriptFocus(f, messagesToProcess, 1));
+        return;
+      }
+      if (key.escape || (key.ctrl && input === "t")) {
+        setTranscriptFocus(exitTranscriptFocus());
+        return;
+      }
+      if (!(key.ctrl && (input === "c" || input === "q"))) return;
+    } else if (transcriptNav && key.ctrl && input === "t") {
+      const next = enterTranscriptFocus(messagesToProcess);
+      if (next.active) setTranscriptFocus(next);
       return;
     }
 

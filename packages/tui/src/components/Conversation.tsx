@@ -442,6 +442,8 @@ interface FormattedLinesCacheEntry {
   thought: string;
   streaming: boolean;
   expandedTui: boolean;
+  /** Whether this message held the transcript focus highlight when cached. */
+  focused: boolean;
   cols: number;
   themeBg: string;
   themeText: string;
@@ -644,6 +646,7 @@ export function calculateFormattedLines(
   expandedTui?: boolean,
   _tick?: number,
   goalActive?: boolean,
+  focusedMessageId?: string | null,
   deadlineOptions?: {
     maxDuration?: number;
     startIndex?: number;
@@ -718,6 +721,11 @@ export function calculateFormattedLines(
     const m = messages[mIdx]!;
     const isLastMessage = mIdx === messages.length - 1;
     const isStreamingActive = isLastMessage && loading;
+    // Transcript focus highlight (flag `transcriptNav`). Off → focusedMessageId is
+    // null/undefined → always false → headers render via the legacy path
+    // (byte-identical). Part of the cache key so moving focus re-renders both the
+    // message that lost it and the one that gained it.
+    const isFocused = !!focusedMessageId && m.id === focusedMessageId;
 
     if (!isStreamingActive) {
       const cached = formattedLinesCache.get(m.id);
@@ -727,6 +735,7 @@ export function calculateFormattedLines(
         cached.thought === (m.thought || "") &&
         cached.streaming === m.streaming &&
         cached.expandedTui === !!expandedTui &&
+        cached.focused === isFocused &&
         cached.cols === cols &&
         cached.themeBg === theme.bg &&
         cached.themeText === theme.text
@@ -849,6 +858,7 @@ export function calculateFormattedLines(
           thought: m.thought || "",
           streaming: !!m.streaming,
           expandedTui: !!expandedTui,
+          focused: isFocused,
           cols,
           themeBg: theme.bg,
           themeText: theme.text,
@@ -877,6 +887,19 @@ export function calculateFormattedLines(
 
     const prefixColor = m.role === "user" ? theme.accent : badgeColor;
 
+    // The focused message (transcript nav) gets a flat gutter (▎) in place of the
+    // 2-column indent so the badge stays aligned; un-focused uses the original
+    // marginLeft={2} box → byte-identical when nothing is focused.
+    const headerBox = (badge: React.ReactNode) =>
+      isFocused ? (
+        <Box flexDirection="row">
+          <Text color={theme.accent} bold>{"▎ "}</Text>
+          {badge}
+        </Box>
+      ) : (
+        <Box marginLeft={2}>{badge}</Box>
+      );
+
     if (m.role === "user") {
       // Clean up planning/review/read-only prefixes from history view
       let cleanContent = m.content;
@@ -895,12 +918,10 @@ export function calculateFormattedLines(
       // 1. Header
       messageLines.push(linePool.acquire(
         `${m.id}-header`,
-        (
-          <Box marginLeft={2}>
-            <Text color={theme.accent} bold>
-              ● User
-            </Text>
-          </Box>
+        headerBox(
+          <Text color={theme.accent} bold>
+            ● User
+          </Text>
         ),
         "MEDIUM"
       ));
@@ -944,12 +965,10 @@ export function calculateFormattedLines(
       // 1. Header
       messageLines.push(linePool.acquire(
         `${m.id}-header`,
-        (
-          <Box marginLeft={2}>
-            <Text color={badgeColor} bold={!isSystem || isSubagent || isThinkingOrExplore} dimColor={isSystem && !isSubagent && !isThinkingOrExplore}>
-              {badgeText}
-            </Text>
-          </Box>
+        headerBox(
+          <Text color={badgeColor} bold={!isSystem || isSubagent || isThinkingOrExplore} dimColor={isSystem && !isSubagent && !isThinkingOrExplore}>
+            {badgeText}
+          </Text>
         ),
         "MEDIUM"
       ));
@@ -1637,6 +1656,7 @@ export function calculateFormattedLines(
         thought: m.thought || "",
         streaming: !!m.streaming,
         expandedTui: !!expandedTui,
+        focused: isFocused,
         cols,
         themeBg: theme.bg,
         themeText: theme.text,
@@ -1921,6 +1941,8 @@ export interface ConversationProps {
   subagents?: SubagentStatus[];
   expandedTui?: boolean;
   goalActive?: boolean;
+  /** Id of the message holding the transcript-nav focus highlight (flag `transcriptNav`). */
+  focusedMessageId?: string | null;
 }
 
 export const Conversation = memo(
@@ -1941,6 +1963,7 @@ export const Conversation = memo(
     subagents,
     expandedTui = false,
     goalActive = false,
+    focusedMessageId = null,
   }: ConversationProps) {
     const degradationTier = getDegradationTier(messages.length);
     const survivalModeActive = degradationTier === 3;
@@ -1974,7 +1997,7 @@ export const Conversation = memo(
     const allLines = useMemo(() => {
       const msgs = messagesToProcess;
       if (isSmallSession) {
-        return calculateFormattedLines(msgs, cols, theme, latestAssistantId, subagents, loading, expandedTui, undefined, goalActive);
+        return calculateFormattedLines(msgs, cols, theme, latestAssistantId, subagents, loading, expandedTui, undefined, goalActive, focusedMessageId);
       }
       if (linesState && linesState.messages === msgs && linesState.completed) {
         return linesState.lines;
@@ -1990,10 +2013,11 @@ export const Conversation = memo(
         expandedTui,
         undefined,
         goalActive,
+        focusedMessageId,
         { maxDuration: 12, startIndex: 0 }
       );
       return initialChunk;
-    }, [messagesToProcess, cols, theme, latestAssistantId, subagents, loading, expandedTui, goalActive, isSmallSession, linesState]);
+    }, [messagesToProcess, cols, theme, latestAssistantId, subagents, loading, expandedTui, goalActive, focusedMessageId, isSmallSession, linesState]);
 
     useEffect(() => {
       if (isSmallSession) {
@@ -2020,6 +2044,7 @@ export const Conversation = memo(
                 expandedTui,
                 undefined,
                 goalActive,
+                focusedMessageId,
                 {
                   maxDuration: 12,
                   startIndex,
@@ -2056,6 +2081,7 @@ export const Conversation = memo(
                 expandedTui,
                 undefined,
                 goalActive,
+                focusedMessageId,
                 {
                   maxDuration: 12,
                   startIndex,
@@ -2106,7 +2132,7 @@ export const Conversation = memo(
           messages: msgs
         });
       }
-    }, [messagesToProcess, cols, theme, latestAssistantId, subagents, loading, expandedTui, goalActive, isSmallSession, allLines]);
+    }, [messagesToProcess, cols, theme, latestAssistantId, subagents, loading, expandedTui, goalActive, focusedMessageId, isSmallSession, allLines]);
 
     const innerWidth = useMemo(() => measureContentWidth(cols), [cols]);
 
@@ -2281,6 +2307,7 @@ export const Conversation = memo(
     if (prevProps.loading !== nextProps.loading) return false;
     if (prevProps.expandedTui !== nextProps.expandedTui) return false;
     if (prevProps.goalActive !== nextProps.goalActive) return false;
+    if (prevProps.focusedMessageId !== nextProps.focusedMessageId) return false;
     if (prevProps.indexing !== nextProps.indexing) return false;
     if (prevProps.indexReady !== nextProps.indexReady) return false;
     if (prevProps.themeId !== nextProps.themeId) return false;

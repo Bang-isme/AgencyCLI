@@ -78,6 +78,11 @@ import { IndexProgressPanel } from "./components/IndexProgress.js";
 import { executeSlash, parseSlashCommand } from "./slash/commands.js";
 import { newMessageId, type SessionMessage } from "./state/messages.js";
 import {
+  type TranscriptFocus,
+  inactiveFocus,
+  focusedMessageId as resolveFocusedMessageId,
+} from "./state/transcript-focus.js";
+import {
   DEFAULT_THEME_ID,
   getTheme,
   type ThemeId,
@@ -268,6 +273,8 @@ export function App({
   const [mcpConnecting, setMcpConnecting] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [activeSubagentId, setActiveSubagentId] = useState<string | null>(null);
+  // Transcript focus/navigation state (flag `transcriptNav`). Off → stays inert.
+  const [transcriptFocus, setTranscriptFocus] = useState<TranscriptFocus>(inactiveFocus);
   const userHasScrolledUpRef = useRef(false);
 
   const closeAllOverlays = useCallback(() => {
@@ -375,6 +382,9 @@ export function App({
   // Cursor-editing state (flag `composerCursorEdit`). When off, cursorPos is
   // unused and the composer stays append-only / end-pinned (byte-identical).
   const composerCursorEdit = useMemo(() => getRuntimeFlags().composerCursorEdit, []);
+  // Transcript navigation flag (Ctrl+T focus + ↑/↓ between turns). Off → keys keep
+  // their legacy meaning and the render is byte-identical.
+  const transcriptNav = useMemo(() => getRuntimeFlags().transcriptNav, []);
   const [cursorPos, setCursorPos] = useState(0);
   // Authoritative editing state, read+written synchronously by the keystroke
   // handler so rapid typing/paste bursts never read a batched-stale caret. The
@@ -452,6 +462,12 @@ export function App({
     const msgs = messagesToProcess;
     return calculateFormattedLines(msgs, composerWidth, theme, latestAssistantId, subagents, loading, expandedTui, undefined, goalActive).length;
   }, [messagesToProcess, composerWidth, theme, latestAssistantId, subagents, loading, expandedTui, goalActive]);
+
+  // The message currently holding the transcript-nav focus highlight (flag-gated).
+  const focusedMessageId = useMemo(
+    () => (transcriptNav && transcriptFocus.active ? resolveFocusedMessageId(transcriptFocus, messagesToProcess) : null),
+    [transcriptNav, transcriptFocus, messagesToProcess]
+  );
 
   const [lastRouteProvider, setLastRouteProvider] = useState<string | null>(
     null
@@ -2033,6 +2049,9 @@ ${taskDesc}`;
     setScrollOffset,
     activeSubagentId,
     setActiveSubagentId,
+    transcriptNav,
+    transcriptFocus,
+    setTranscriptFocus,
     userHasScrolledUpRef,
     phase,
     setPhase,
@@ -2718,6 +2737,7 @@ ${taskDesc}`;
                     subagents={subagents}
                     expandedTui={expandedTui}
                     goalActive={goalActive}
+                    focusedMessageId={focusedMessageId}
                   />
                   <ErrorBanner
                     theme={theme}
