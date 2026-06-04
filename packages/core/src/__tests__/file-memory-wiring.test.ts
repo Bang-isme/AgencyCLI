@@ -96,4 +96,27 @@ describe("§file-memory wiring (remember tool + markdown recall + flag gating)",
     expect(off).not.toMatch(/\d+\.\s+`remember`/);
     expect(off).not.toMatch(/\d+\.\s+`forget`/);
   });
+
+  // Coupling guard: a dispatched subagent runs through the same
+  // `runChatTurnWithStream` → `buildSystemPrompt` with a `systemInstructionOverride`
+  // (its specialist prompt). The override must be PREPENDED, not a replacement, so
+  // the specialist still inherits curated memory (protocol + remember/forget tools)
+  // and the loaded historical recall. If a future refactor flips the override to
+  // replace the base prompt, every subagent silently loses persistent memory —
+  // this locks that link.
+  it("subagent path (systemInstructionOverride) still inherits curated memory + recall when on", () => {
+    process.env.AGENCY_FILE_MEMORY = "1";
+    const override = "SUBAGENT_SPECIALIST_PROMPT_MARKER";
+    const memories = "HISTORICAL_RECALL_MARKER";
+    const out = buildSystemPrompt(route, "do the task", "", root, undefined, override, memories);
+    // The specialist prompt sits at the very top, but is additive...
+    expect(out.startsWith(`${override}\n\n`)).toBe(true);
+    // ...so the subagent still gets the curated-memory protocol + tools...
+    expect(out).toContain("PERSISTENT MEMORY PROTOCOL");
+    expect(out).toContain("`remember`");
+    expect(out).toContain("`forget`");
+    // ...and the loaded historical recall block.
+    expect(out).toContain("SYSTEM HISTORICAL MEMORIES");
+    expect(out).toContain(memories);
+  });
 });
