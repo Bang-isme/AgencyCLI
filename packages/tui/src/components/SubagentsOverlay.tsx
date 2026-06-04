@@ -118,7 +118,7 @@ export function SubagentsOverlay({
     }
     if (selectedDetail.stderr) {
       if (text) text += "\n";
-      text += `ERROR LOG:\n${selectedDetail.stderr}`;
+      text += `Stderr:\n${selectedDetail.stderr}`;
     }
     if (!text) {
       text = "(No logs or stdout/stderr generated)";
@@ -204,7 +204,7 @@ export function SubagentsOverlay({
         <>
           <Box flexDirection="row" justifyContent="space-between" marginTop={1} overflow="hidden">
             <Text color={theme.accent} bold wrap="wrap">
-              ● SUBAGENT RUNS HISTORY{scrollUpHint}
+              ● Subagent runs{scrollUpHint}
             </Text>
             <Text color={theme.muted} wrap="wrap">
               {dispatches.length} runs found
@@ -286,11 +286,6 @@ export function SubagentsOverlay({
             <Text color={theme.muted} dimColor wrap="wrap">
               {innerWidth >= 45 ? `↑↓ navigate · Enter view logs · Esc close${scrollDownHint}` : `↑↓:nav · Enter:logs · Esc:close${scrollDownHint}`}
             </Text>
-            {innerWidth >= 60 && (
-              <Text color={theme.muted} dimColor wrap="wrap">
-                AgencyCLI Subagents TUX
-              </Text>
-            )}
           </Box>
         </>
       ) : (

@@ -2437,20 +2437,20 @@ ${taskDesc}`;
           }
 
           return (
-            <Box flexDirection="column" width={composerWidth} padding={1} borderStyle="double" borderColor={theme.accent}>
+            <Box flexDirection="column" width={composerWidth} padding={1} borderStyle="round" borderColor={theme.accent}>
               {/* Header */}
               <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
                 <Text color={theme.accent} bold>
                   worker.{subagent.agentId} — {subagent.status}
                 </Text>
                 <Text color={theme.muted}>
-                  Explore ({subagentIndex + 1} of {totalSubagents})
+                  Worker {subagentIndex + 1} of {totalSubagents}
                 </Text>
               </Box>
 
               {/* Task */}
               <Box flexDirection="column" marginBottom={1}>
-                <Text color={theme.muted} bold>Task Description:</Text>
+                <Text color={theme.muted} bold>Task</Text>
                 <Text color={theme.text} wrap="truncate">{truncatedTask}</Text>
               </Box>
 
@@ -2463,18 +2463,18 @@ ${taskDesc}`;
 
               {/* Steps & Findings checklist */}
               <Box flexDirection="column" marginBottom={1}>
-                <Text color={theme.muted} bold>Execution Steps & Tool Operations:</Text>
+                <Text color={theme.muted} bold>Steps</Text>
                 {visibleSteps.length > 0 ? (
                   <WorkerProgress theme={theme} steps={visibleSteps} />
                 ) : (
-                  <Text color={theme.muted} dimColor>No steps logged yet</Text>
+                  <Text color={theme.muted} dimColor>No steps yet</Text>
                 )}
               </Box>
 
               {/* Real-time Streaming stdout/text response */}
               {outputLines.length > 0 ? (
                 <Box flexDirection="column" marginBottom={1}>
-                  <Text color={theme.muted} bold>Current Output / Findings Summary:</Text>
+                  <Text color={theme.muted} bold>Output</Text>
                   {outputLines.map((line, idx) => (
                     <Text key={idx} color={theme.success} wrap="truncate">{line}</Text>
                   ))}
@@ -2484,7 +2484,7 @@ ${taskDesc}`;
               {/* Bottom Navigation hint */}
               <Box flexDirection="row" justifyContent="space-between" marginTop={1} borderStyle="single" borderColor={theme.dimBorder} paddingX={1}>
                 <Text color={theme.muted}>esc back · ctrl+c quit</Text>
-                <Text color={theme.accent} bold>Parent up · Prev left · Next right</Text>
+                <Text color={theme.accent} bold>↑ parent · ← prev · → next</Text>
               </Box>
             </Box>
           );

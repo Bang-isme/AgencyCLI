@@ -104,6 +104,11 @@ describe("overlay empty-state smoke", () => {
     const { lastFrame } = render(
       <SubagentsOverlay theme={theme} project={MISSING} onClose={noop} />
     );
-    expect(typeof lastFrame()).toBe("string");
+    const frame = lastFrame() ?? "";
+    expect(typeof frame).toBe("string");
+    // De-shout regression: sentence-case header, no shouty title or "TUX" filler.
+    expect(frame).toContain("Subagent runs");
+    expect(frame).not.toContain("SUBAGENT RUNS HISTORY");
+    expect(frame).not.toContain("TUX");
   });
 });
