@@ -78,15 +78,27 @@ export function parseConversationParts(content: string): ConversationPart[] {
   // An unterminated code fence (mid-stream) still flushes what we have so far.
   if (inCode) flushCode();
 
-  // Drop text parts that are entirely blank (no phantom rows), and trim leading/
-  // trailing blank lines inside surviving text parts.
+  // Drop text parts that are entirely blank (no phantom rows), trim leading/
+  // trailing blank lines, and collapse interior runs of ≥2 blank lines to a
+  // single blank line inside surviving text parts. The interior collapse is what
+  // closes the tall empty "hole" left after `stripToolCalls` removes a tool-call
+  // block (its surrounding newlines join into `\n\n\n\n`) — and it tidies any
+  // hand-authored double blanks too, giving opencode-style single-line spacing.
   return parts
     .map((p) => {
       if (p.kind !== "text") return p;
       const trimmedLines = [...p.lines];
       while (trimmedLines.length > 0 && trimmedLines[0]!.trim() === "") trimmedLines.shift();
       while (trimmedLines.length > 0 && trimmedLines[trimmedLines.length - 1]!.trim() === "") trimmedLines.pop();
-      return { kind: "text" as const, lines: trimmedLines };
+      const collapsed: string[] = [];
+      let prevBlank = false;
+      for (const line of trimmedLines) {
+        const isBlank = line.trim() === "";
+        if (isBlank && prevBlank) continue;
+        collapsed.push(line);
+        prevBlank = isBlank;
+      }
+      return { kind: "text" as const, lines: collapsed };
     })
     .filter((p) => !(p.kind === "text" && p.lines.length === 0));
 }

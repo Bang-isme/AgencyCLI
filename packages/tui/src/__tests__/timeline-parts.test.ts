@@ -53,6 +53,19 @@ describe("parseConversationParts (ordered timeline categorizer)", () => {
     expect(parts[0]).toMatchObject({ kind: "text", lines: ["Real text."] });
   });
 
+  it("collapses an interior run of blank lines to a single blank line", () => {
+    // The shape `stripToolCalls` leaves behind: prose, then the joined newlines
+    // of a removed tool-call block, then more prose — one text part with a
+    // multi-blank hole in the middle.
+    const content = ["Before the tool.", "", "", "", "After the tool."].join("\n");
+    const parts = parseConversationParts(content);
+    expect(parts.map((p) => p.kind)).toEqual(["text"]);
+    expect(parts[0]).toMatchObject({
+      kind: "text",
+      lines: ["Before the tool.", "", "After the tool."],
+    });
+  });
+
   it("flushes an unterminated (mid-stream) code fence", () => {
     const content = ["Writing:", "```js", "const a = 1;"].join("\n");
     const parts = parseConversationParts(content);
