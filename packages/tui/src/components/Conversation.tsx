@@ -97,6 +97,7 @@ export function getMaxScrollOffset(
 import { wrapText, parseInlineSpans, getStringWidth, type StyledSpan } from "../utils/text.js";
 import { useTick } from "../motion/useTick.js";
 import { frameAt, SPINNER_FRAMES } from "../motion/text.js";
+import { LIFECYCLE_GLYPHS } from "../motion/design-system.js";
 import { getBadgeStyles } from "../utils/conversation/tool-labels.js";
 import { isSystemActivityLine, isSubagentNotice, isThinkingOrExploreNotice } from "../utils/conversation/activity-parser.js";
 import { formatTechnicalSubLine, SubagentStepRow } from "./conversation/SubagentStepRow.js";
@@ -1691,10 +1692,44 @@ export function calculateFormattedLines(
   }
 
   if (completed && !goalActive && subagents && subagents.length > 0) {
+    const workerLifecycle = getRuntimeFlags().workerPanelLifecycle;
     const doneCount = subagents.filter((a) => a.status === "done").length;
     const errCount = subagents.filter((a) => a.status === "error").length;
     const runCount = subagents.filter((a) => a.status === "running").length;
     const queuedCount = subagents.filter((a) => a.status === "queued").length;
+    const interruptedCount = subagents.filter((a) => a.status === "interrupted").length;
+
+    // Smart collapse: once the turn is idle and no worker is still active, fold the
+    // multi-row live panel into one terse summary line — the live detail mattered
+    // while running, not as a permanent transcript fixture. Flag-gated; legacy
+    // keeps the full always-on panel (byte-identical when off).
+    const allTerminal = runCount === 0 && queuedCount === 0;
+    if (workerLifecycle && !loading && allTerminal) {
+      const parts: string[] = [];
+      if (doneCount > 0) parts.push(`${doneCount} done`);
+      if (errCount > 0) parts.push(`${errCount} failed`);
+      if (interruptedCount > 0) parts.push(`${interruptedCount} stopped`);
+      const summary = parts.length > 0 ? parts.join(" · ") : `${subagents.length} finished`;
+      lines.push(linePool.acquire(
+        "subagents-summary",
+        (
+          <Box flexDirection="row" marginLeft={2} marginTop={0}>
+            <Text color={errCount > 0 ? theme.danger : theme.success}>
+              {errCount > 0 ? LIFECYCLE_GLYPHS.error : LIFECYCLE_GLYPHS.done}{" "}
+            </Text>
+            <Text color={theme.muted}>
+              Workers · {summary}
+            </Text>
+          </Box>
+        ),
+        "MEDIUM"
+      ));
+      lines.push(linePool.acquire(
+        "subagents-divider-spacer",
+        <Text>{" "}</Text>,
+        "MEDIUM"
+      ));
+    } else {
 
     lines.push(linePool.acquire(
       "subagents-header",
@@ -1708,6 +1743,7 @@ export function calculateFormattedLines(
             {doneCount > 0 ? ` · ${doneCount} done` : ""}
             {queuedCount > 0 ? ` · ${queuedCount} queued` : ""}
             {errCount > 0 ? ` · ${errCount} failed` : ""}
+            {interruptedCount > 0 ? ` · ${interruptedCount} stopped` : ""}
           </Text>
         </Box>
       ),
@@ -1715,9 +1751,9 @@ export function calculateFormattedLines(
     ));
 
     const sortedSubagents = [...subagents].sort((a, b) => {
-      const statusPriority = { running: 0, error: 1, done: 2, queued: 3 };
-      const pA = statusPriority[a.status] ?? 4;
-      const pB = statusPriority[b.status] ?? 4;
+      const statusPriority = { running: 0, error: 1, interrupted: 2, done: 3, queued: 4 };
+      const pA = statusPriority[a.status] ?? 5;
+      const pB = statusPriority[b.status] ?? 5;
       if (pA !== pB) return pA - pB;
       return a.agentId.localeCompare(b.agentId);
     });
@@ -1735,10 +1771,12 @@ export function calculateFormattedLines(
       if (agent.status === "done") statusColor = theme.success;
       else if (agent.status === "running") statusColor = theme.accent;
       else if (agent.status === "error") statusColor = theme.danger;
+      else if (agent.status === "interrupted") statusColor = theme.warning;
 
       const elapsedSec = agent.elapsedMs !== undefined ? `${(agent.elapsedMs / 1000).toFixed(0)}s` : "";
       const timingInfo = elapsedSec ? ` | ${elapsedSec}` : "";
-      const statusLabel = `[${agent.status}${timingInfo}]`;
+      const statusWord = agent.status === "interrupted" ? "stopped" : agent.status;
+      const statusLabel = `[${statusWord}${timingInfo}]`;
 
       if (!expandedTui) {
         // Collapsed Workers
@@ -1835,6 +1873,7 @@ export function calculateFormattedLines(
       <Text>{" "}</Text>,
       "MEDIUM"
     ));
+    }
   }
 
   const finalLines = lines as FormattedLine[] & { completed?: boolean; lastIndex?: number; dirtyRowsComputed?: number };

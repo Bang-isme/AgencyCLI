@@ -10,7 +10,13 @@ import type { WorkerStep } from "../components/WorkerProgress.js";
 export interface SubagentStatus {
   agentId: string;
   task: string;
-  status: "queued" | "running" | "done" | "error";
+  /**
+   * `interrupted` = the worker was still non-terminal when its turn ended (halted
+   * by the circuit breaker / a rate-limit retry loop) and was finalized so its
+   * elapsed stops climbing a fake "running" — distinct from a genuine `error`
+   * the worker reported. Only produced when the `workerPanelLifecycle` flag is on.
+   */
+  status: "queued" | "running" | "done" | "error" | "interrupted";
   elapsedMs?: number;
   /**
    * Wall-clock spawn timestamp (ms). Lets an elapsed readout self-tick from a

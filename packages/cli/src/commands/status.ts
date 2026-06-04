@@ -124,6 +124,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Workflow skill loads", value: f.workflowSkillLoads ? "on (selected workflow activates its declared skill chain)" : "off (router skills only)", keys: ["workflowSkillLoads"] },
     { label: "Runtime state", value: f.runtimeState ? "on (journal-derived runtime summary in status)" : "off", keys: ["runtimeState"] },
     { label: "Auto-expand thinking", value: f.autoExpandThinking ? "on (expand live thought while streaming, collapse when done)" : "off (manual ctrl+o only)", keys: ["autoExpandThinking"] },
+    { label: "Worker panel lifecycle", value: f.workerPanelLifecycle ? "on (finalize orphans, reset between turns, collapse when idle)" : "off (verbatim always-on panel)", keys: ["workerPanelLifecycle"] },
   ];
 }
 

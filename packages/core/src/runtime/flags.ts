@@ -330,6 +330,22 @@ export interface RuntimeFlags {
    * render byte-identical), on in hardened. TUI-render only.
    */
   autoExpandThinking: boolean;
+  /**
+   * Lifecycle-correct the TUI Workers panel. The panel mirrored the worker
+   * tracker verbatim, so two stale states leaked through: (1) a worker whose
+   * turn was halted (circuit breaker / rate-limit retry loop) never received a
+   * finished/error event, so it stayed "running" with a self-ticking elapsed
+   * that climbed to a fake "running | 1014s"; (2) the tracker Map is a process
+   * singleton never cleared between turns, so prior-turn workers reappeared in
+   * the next turn's panel. When on: any worker still non-terminal when the turn
+   * ends is finalized to an honest `interrupted` ("stopped") state (elapsed
+   * frozen at the real wall-clock), the tracker is reset on a new prompt, and an
+   * idle all-terminal panel folds from the multi-row live view to a single terse
+   * summary line. On by default in BOTH profiles (user-reported breakage); set
+   * AGENCY_WORKER_LIFECYCLE=0 to restore the legacy always-on verbatim panel.
+   * TUI-render only.
+   */
+  workerPanelLifecycle: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -519,5 +535,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // TUI-render only: auto-expand the live thought while streaming, auto-collapse
     // when it ends → off in legacy (manual ctrl+o only, byte-identical), on in hardened.
     autoExpandThinking: parseBool(env.AGENCY_AUTO_EXPAND_THINKING, hardened),
+    // TUI-render only: lifecycle-correct the Workers panel → on by default in BOTH
+    // profiles (user-reported breakage: fake "running | 1014s" orphans + the panel
+    // never clearing). Opt out with AGENCY_WORKER_LIFECYCLE=0 to restore the legacy
+    // always-on verbatim panel.
+    workerPanelLifecycle: parseBool(env.AGENCY_WORKER_LIFECYCLE, true),
   };
 }

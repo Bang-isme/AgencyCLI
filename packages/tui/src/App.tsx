@@ -388,6 +388,9 @@ export function App({
   // Transcript navigation flag (Ctrl+T focus + ↑/↓ between turns). Off → keys keep
   // their legacy meaning and the render is byte-identical.
   const transcriptNav = useMemo(() => getRuntimeFlags().transcriptNav, []);
+  // Worker-panel lifecycle flag. On → finalize orphaned workers when the turn ends,
+  // reset the tracker on a new prompt. Off → legacy always-on verbatim panel.
+  const workerPanelLifecycle = useMemo(() => getRuntimeFlags().workerPanelLifecycle, []);
   const [cursorPos, setCursorPos] = useState(0);
   // Authoritative editing state, read+written synchronously by the keystroke
   // handler so rapid typing/paste bursts never read a batched-stale caret. The
@@ -626,7 +629,7 @@ export function App({
       setSubagents(trackerList.map(w => {
         const activeStep = w.steps?.find((s: any) => s.status === "active");
         const progressDetail = activeStep ? activeStep.label : SemanticTranslator.translatePhase(w.state, w.targetFile);
-        const isRunning = w.state !== "COMPLETED" && w.state !== "FAILED";
+        const isRunning = w.state !== "COMPLETED" && w.state !== "FAILED" && w.state !== "INTERRUPTED";
         // A worker's self-reported elapsedMs freezes during long LLM turns (no
         // progress events). Derive live wall-clock elapsed from the spawn
         // timestamp while running; freeze at the final value once finished.
@@ -637,7 +640,7 @@ export function App({
         return {
           agentId: w.agentId,
           task: w.task,
-          status: w.state === "COMPLETED" ? "done" as const : w.state === "FAILED" ? "error" as const : "running" as const,
+          status: w.state === "COMPLETED" ? "done" as const : w.state === "FAILED" ? "error" as const : w.state === "INTERRUPTED" ? "interrupted" as const : "running" as const,
           phase: progressDetail,
           elapsedMs,
           // Stable anchor so the elapsed readouts self-tick in their leaf
@@ -790,6 +793,21 @@ export function App({
       EventBus.getInstance().unsubscribe("plan:updated", handlePlanUpdated);
     };
   }, []);
+
+  // When a turn finishes (loading true → false), land any worker still mid-flight
+  // on a terminal `interrupted` state. A worker only leaves "running" via a
+  // finished/error event; a turn halted by the circuit breaker or stuck in a
+  // rate-limit retry loop emits neither, so without this the panel keeps a fake
+  // "running | NNNNs" that self-ticks forever. Flag-gated; legacy keeps the
+  // verbatim panel.
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => {
+    const was = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+    if (workerPanelLifecycle && was && !loading) {
+      globalWorkerTracker.finalizeOrphans();
+    }
+  }, [loading, workerPanelLifecycle]);
 
 
 
@@ -1867,6 +1885,10 @@ ${taskDesc}`;
     const prompt = buffer.trim();
     if (!prompt) return;
     setBuffer("");
+    // Clear the worker tracker too (not just the React mirror): the tracker Map is
+    // a process singleton, so without this the previous turn's workers leak back
+    // into this turn's panel on the next notify.
+    if (workerPanelLifecycle) globalWorkerTracker.reset();
     setSubagents([]);
     setActiveSubagentId(null);
     // A new turn starts fresh: drop the previous turn's plan so a stale/
@@ -1877,7 +1899,7 @@ ${taskDesc}`;
     userHasScrolledUpRef.current = false;
     promptQueueRef.current.push(prompt);
     void processNextInQueue();
-  }, [buffer, processNextInQueue]);
+  }, [buffer, processNextInQueue, workerPanelLifecycle]);
 
   const clearApproval = useCallback(
     (decision: "approve" | "deny") => {

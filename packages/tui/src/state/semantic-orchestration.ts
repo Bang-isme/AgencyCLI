@@ -8,7 +8,12 @@ export type WorkerState =
   | "SELF_HEALING"
   | "CONSOLIDATING"
   | "COMPLETED"
-  | "FAILED";
+  | "FAILED"
+  // Terminal, but distinct from FAILED: the worker was still mid-flight when its
+  // owning turn ended (halted by the circuit breaker / a rate-limit retry loop)
+  // and never received a finished/error event. Finalizing it here stops the panel
+  // from showing a fake, forever-climbing "running" elapsed.
+  | "INTERRUPTED";
 
 export interface WorkerLifecycleState {
   agentId: string;
@@ -250,6 +255,61 @@ export class WorkerLifecycleTracker {
       w.elapsedMs = elapsedMs;
       this.notify();
     }
+  }
+
+  /**
+   * Land every worker still in a non-terminal state on `INTERRUPTED`. Called when
+   * the owning turn ends (the main loop returned or was halted) so an orphaned
+   * worker that never received a finished/error event stops self-ticking a fake
+   * "running" elapsed: its elapsed is frozen at the real wall-clock since spawn
+   * and any active step is downgraded to pending. Workers that already finished
+   * (COMPLETED/FAILED) are left untouched.
+   */
+  public finalizeOrphans(reason = "Interrupted — turn ended before completion") {
+    const now = Date.now();
+    let changed = false;
+    for (const w of this.workers.values()) {
+      if (w.state === "COMPLETED" || w.state === "FAILED" || w.state === "INTERRUPTED") continue;
+      // A debounced terminal transition (the 800ms minimum-dwell delay) may still
+      // be queued — honour it rather than clobbering a worker that actually
+      // finished/failed with an "interrupted" verdict.
+      const pending = this.pendingTransitions.get(w.agentId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pendingTransitions.delete(w.agentId);
+      }
+      const terminal: WorkerState =
+        pending && (pending.nextState === "COMPLETED" || pending.nextState === "FAILED")
+          ? pending.nextState
+          : "INTERRUPTED";
+      w.state = terminal;
+      w.lastStateChange = now;
+      const spawnTs = w.timeline[0]?.timestamp;
+      if (typeof spawnTs === "number") w.elapsedMs = now - spawnTs;
+      if (terminal === "COMPLETED") {
+        w.steps.forEach((s) => (s.status = "done"));
+      } else {
+        w.steps.forEach((s) => {
+          if (s.status === "active") s.status = "pending";
+        });
+      }
+      w.timeline.push({ timestamp: now, state: terminal, label: terminal === "INTERRUPTED" ? reason : pending!.label });
+      changed = true;
+    }
+    if (changed) this.notify();
+  }
+
+  /**
+   * Clear all tracked workers (and any pending debounced transitions). Called at
+   * the start of a new turn so the previous turn's workers — the tracker Map is a
+   * process singleton — don't leak into the next turn's panel.
+   */
+  public reset() {
+    for (const p of this.pendingTransitions.values()) clearTimeout(p.timeout);
+    this.pendingTransitions.clear();
+    if (this.workers.size === 0) return;
+    this.workers.clear();
+    this.notify();
   }
 }
 
