@@ -728,7 +728,7 @@ So this doesn't get re-derived each session. Verified 2026-06-01.
 5. **Compaction** — `compactTurnHistory` trims the middle of a long history before it overflows the window (flag `contextCompaction`).
 
 ### Built-in tools (single registry)
-`registry = new ToolRegistry()` (from `@agency/tooling`) in `skill/tool-harness.ts` — **one registry**, no second tool table. 20 tools (the curated-memory pair `remember`/`forget` is advertised to the model by default — `fileMemory` is on in both profiles — and hidden only when opted out with `AGENCY_FILE_MEMORY=0`):
+`registry = new ToolRegistry()` (from `@agency/tooling`) in `skill/tool-harness.ts` — **one registry**, no second tool table. 21 tools (the curated-memory pair `remember`/`forget` is advertised to the model by default — `fileMemory` is on in both profiles — and hidden only when opted out with `AGENCY_FILE_MEMORY=0`):
 
 | Category | Tools |
 |---|---|
@@ -736,11 +736,11 @@ So this doesn't get re-derived each session. Verified 2026-06-01.
 | write (approval-gated) | `write_file`, `append_file` (append to end; build a large file in chunks when one write_file would be truncated — never via shell heredocs), `edit_file` (text replace), `ast_edit` (real-TS-AST structural; see Canonical Homes), `delete_file`, `move_file`, `create_directory`, `batch_edit` |
 | memory | `remember` (save a durable fact), `forget` (remove one by slug) — curated cross-session markdown memory; not file-writing / not gate-triggering; advertised by default (`fileMemory` on in both profiles; hide with `AGENCY_FILE_MEMORY=0`) — see Canonical Homes |
 | compile | `execute_command` (sandboxed shell) |
-| other | `dispatch_subagent` (spawns a specialist via the orchestrator) |
+| other | `dispatch_subagent` (spawns a specialist via the orchestrator), `update_plan` (maintains the live todo/plan list the user sees in the TUI `PlanPanel`; non-mutating, no approval) |
 
 MCP tools register into the **same** registry with an `mcpSchema` marker and are approval-gated as external (MEDIUM-floored). "Which tools write files" → `isFileWritingTool` (single source; see Canonical Homes).
 
-> **Runtime ToolRegistry ≠ `plugin-tools.json` — two intentionally distinct tool universes (don't try to "sync" them).** The 20 tools above are the agent's **in-process LLM tools** (the model calls them mid-turn). `plugin-tools.json` (`.system/references/plugin-tools.json`, ~10 tools loaded by `loadPluginTools`) is the pack's **external plugin-SDK contract** — Python maintenance/validation/release/memory scripts (`pack_health`, `codex_plugin_validate`, `release_zip_dry_run`, `memory_status`, …) run via `runTool` from `agency plugin`/`doctor` and external plugin harnesses, **not** from a chat turn. Zero overlap by design; a sync guard between them would conflate the two layers. Their script paths *are* guarded for existence by `cli/__tests__/workflow-pack-integrity.test.ts` (alongside `WORKFLOWS` steps + `BUILTIN_SCRIPTS`).
+> **Runtime ToolRegistry ≠ `plugin-tools.json` — two intentionally distinct tool universes (don't try to "sync" them).** The 21 tools above are the agent's **in-process LLM tools** (the model calls them mid-turn). `plugin-tools.json` (`.system/references/plugin-tools.json`, ~10 tools loaded by `loadPluginTools`) is the pack's **external plugin-SDK contract** — Python maintenance/validation/release/memory scripts (`pack_health`, `codex_plugin_validate`, `release_zip_dry_run`, `memory_status`, …) run via `runTool` from `agency plugin`/`doctor` and external plugin harnesses, **not** from a chat turn. Zero overlap by design; a sync guard between them would conflate the two layers. Their script paths *are* guarded for existence by `cli/__tests__/workflow-pack-integrity.test.ts` (alongside `WORKFLOWS` steps + `BUILTIN_SCRIPTS`).
 
 ### Skills pack (bundled in `@agency/cli`)
 - **Home:** `packages/cli/skills/` (shipped via the cli `files` field). Manifest: `.system/manifest.json`.
