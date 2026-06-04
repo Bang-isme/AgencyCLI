@@ -56,15 +56,17 @@ export async function runShellCommand(
   // which would kill the agent the moment such a command was approved. The
   // message steers the model to the safe path instead of leaving it stuck.
   if (isSelfKillingCommand(command)) {
-    const msg =
-      `Refused (self-termination): this command would kill Agency's own Node.js process — the CLI/TUI you are running inside — and end the session, so it is never executed. ` +
-      `\`taskkill /IM node.exe\`, \`killall node\`, \`pkill node\`, and killing this PID/PPID all hit EVERY Node process, including this one. ` +
-      `Safe alternatives: (1) to (re)start a dev server, just run it (e.g. \`npm run dev\`) — Agency auto-detaches long-running dev servers to the background, so you do NOT need to kill the old one first; ` +
-      `(2) to free a specific port, kill only that listener's PID, e.g. \`netstat -ano | findstr :3000\` then \`taskkill /F /PID <pid>\` (never \`/IM node.exe\`).`;
-    process.stderr.write(`${msg}\n`);
-    void EventBus.getInstance().publish("system:warning", { message: msg });
+    // Two messages: a concise, ACTIONABLE one for the model (so it self-corrects
+    // to the safe path) and a terse one-liner for the user-facing warning card
+    // (the user doesn't need the lecture — the model already got the guidance).
+    const modelMsg =
+      `Refused (self-termination): this would kill Agency's own Node process and end the session. ` +
+      `To (re)start a dev server just run it (e.g. \`npm run dev\`) — Agency auto-detaches it, so no kill is needed; to free a port, kill only that port's PID, never \`node\` by name.`;
+    const userMsg = `⚠ Skipped a command that would kill Agency's own Node process (dev servers auto-restart — no kill needed).`;
+    process.stderr.write(`${modelMsg}\n`);
+    void EventBus.getInstance().publish("system:warning", { message: userMsg });
     appendAudit(projectRoot, { action: "shell", command, approved: false });
-    throw new ApprovalRequiredError(msg);
+    throw new ApprovalRequiredError(modelMsg);
   }
 
   // Security clearance check
