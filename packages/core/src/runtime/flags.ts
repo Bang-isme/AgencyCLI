@@ -150,6 +150,15 @@ export interface RuntimeFlags {
    */
   fileMemory: boolean;
   /**
+   * Render the conversation as ONE ordered activity timeline (text / tool-activity
+   * / code parts in true arrival order, tool + `[SYSTEM:]` lines shown concisely)
+   * instead of the two divergent parsers (streaming buckets vs final badge-regex)
+   * that rendered the same content differently once a turn finished and flattened
+   * activity out of order. Off → the legacy dual-parser render (byte-identical),
+   * on (opt-in) → the unified opencode-style timeline. TUI-render only.
+   */
+  timelineParts: boolean;
+  /**
    * Auto-continue a turn when the model stops emitting tool calls but explicitly
    * signalled the work is UNFINISHED — an end-of-message "I'll continue…"
    * promise, a "to be continued" marker, or a left-in "…rest of the code"
@@ -399,6 +408,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // default on. Opt out with AGENCY_FILE_MEMORY=0 to restore the legacy
     // no-markdown-recall prompt (tools stay registered/executable, just unadvertised).
     fileMemory: parseBool(env.AGENCY_FILE_MEMORY, true),
+    // TUI-render only: unify the conversation into one ordered activity timeline.
+    // Off in legacy (dual-parser render byte-identical), on in hardened (opt-in).
+    timelineParts: parseBool(env.AGENCY_TIMELINE_PARTS, hardened),
     // Churn-cluster correctness fix → on by default in BOTH profiles: a turn that
     // explicitly signalled unfinished work continues instead of stranding the user
     // on a half-done result. Bounded by MAX_AUTO_CONTINUE within maxLoops. Opt out

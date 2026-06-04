@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { SessionMessage } from "../state/messages.js";
 import type { SubagentStatus } from "../state/subagent-status.js";
-import { parseToolCalls } from "@agency/core";
+import { parseToolCalls, getRuntimeFlags } from "@agency/core";
 import { EmptyChat } from "./EmptyChat.js";
 import { contentWidth as measureContentWidth } from "../layout/terminal-layout.js";
 
@@ -101,6 +101,7 @@ import { getBadgeStyles } from "../utils/conversation/tool-labels.js";
 import { isSystemActivityLine, isSubagentNotice, isThinkingOrExploreNotice } from "../utils/conversation/activity-parser.js";
 import { formatTechnicalSubLine, SubagentStepRow } from "./conversation/SubagentStepRow.js";
 import { SystemActivityLine, toConciseTelemetry } from "./conversation/TraceTelemetry.js";
+import { parseConversationParts, type ConversationPart } from "../utils/conversation/timeline-parts.js";
 import { getLoopLag, getDegradationTier, writeRawStdout } from "../terminal/screen.js";
 import fs from "fs";
 import path from "path";
@@ -287,6 +288,97 @@ export function parseAssistantContent(content: string): AssistantBlock[] {
   flushText();
 
   return blocks;
+}
+
+interface RenderPartsContext {
+  mId: string;
+  innerWidth: number;
+  prefixColor: string;
+  theme: ThemeTokens;
+  isStreamingActive: boolean;
+  tick: number;
+}
+
+/**
+ * Render an assistant message as ONE ordered activity timeline (flag
+ * `timelineParts`). Walks {@link parseConversationParts} output in arrival order
+ * so text, tool/`[SYSTEM:]` activity, and code interleave exactly as they
+ * happened — the opencode-style timeline — instead of the legacy dual-parser
+ * render that bucketed/re-ordered them and flattened activity into text. Activity
+ * lines render concisely via {@link toConciseTelemetry} (no verbatim `[SYSTEM:]`
+ * dumps). Flat lines only — fits the line-pool, never a bordered card.
+ */
+function renderConversationParts(parts: ConversationPart[], ctx: RenderPartsContext): FormattedLine[] {
+  const { mId, innerWidth, prefixColor, theme, isStreamingActive, tick } = ctx;
+  const out: FormattedLine[] = [];
+  const wrapWidth = Math.max(4, innerWidth - 2);
+  const lastPartIdx = parts.length - 1;
+
+  parts.forEach((part, pIdx) => {
+    if (part.kind === "text") {
+      part.lines.forEach((rawLine, lIdx) => {
+        const wrapped = wrapText(rawLine, wrapWidth);
+        (wrapped.length ? wrapped : [""]).forEach((lineText, wIdx) => {
+          out.push(linePool.acquire(
+            `${mId}-tl-${pIdx}-text-${lIdx}-${wIdx}`,
+            (
+              <Box flexDirection="row" width={innerWidth}>
+                <Text color={prefixColor}>│ </Text>
+                <Box flexGrow={1} overflow="hidden">{formatInlineText(lineText, theme)}</Box>
+              </Box>
+            ),
+            "MEDIUM"
+          ));
+        });
+      });
+    } else if (part.kind === "activity") {
+      part.lines.forEach((line, lIdx) => {
+        const isActive = isStreamingActive && pIdx === lastPartIdx && lIdx === part.lines.length - 1;
+        out.push(linePool.acquire(
+          `${mId}-tl-${pIdx}-act-${lIdx}`,
+          (
+            <Box flexDirection="row" width={innerWidth}>
+              <Text color={theme.muted}>│ </Text>
+              <Box flexGrow={1} overflow="hidden">{toConciseTelemetry(line, theme, isActive, tick)}</Box>
+            </Box>
+          ),
+          "HIGH"
+        ));
+      });
+    } else {
+      // code: line-numbered, monospaced; flat rows (no border).
+      const maxLineNumWidth = String(Math.max(1, part.lines.length)).length;
+      part.lines.forEach((codeLine, lIdx) => {
+        const lineNum = String(lIdx + 1).padStart(maxLineNumWidth, " ");
+        out.push(linePool.acquire(
+          `${mId}-tl-${pIdx}-code-${lIdx}`,
+          (
+            <Box flexDirection="row" width={innerWidth}>
+              <Text color={prefixColor}>│ </Text>
+              <Text color={theme.muted}>  {lineNum} │ </Text>
+              <Box flexGrow={1} overflow="hidden"><Text color={theme.text} backgroundColor={theme.panel}>{codeLine}</Text></Box>
+            </Box>
+          ),
+          "HIGH"
+        ));
+      });
+    }
+    // Spacer between parts (skip after the last so the message ends tight).
+    if (pIdx < lastPartIdx) {
+      out.push(linePool.acquire(
+        `${mId}-tl-${pIdx}-sp`,
+        (
+          <Box flexDirection="row" width={innerWidth}>
+            <Text color={prefixColor}>│ </Text>
+            <Text>{" "}</Text>
+          </Box>
+        ),
+        "LOW"
+      ));
+    }
+  });
+
+  return out;
 }
 
 export function renderStyledLine(spans: StyledSpan[], theme: ThemeTokens): React.ReactNode {
@@ -571,6 +663,9 @@ export function calculateFormattedLines(
   }
 
   linePool.reset();
+  // Unified ordered activity timeline (opt-in). Constant per process, so it does
+  // not need to be part of the per-message cache key.
+  const useTimelineParts = getRuntimeFlags().timelineParts;
   const lines: FormattedLine[] = deadlineOptions?.existingLines ? [...deadlineOptions.existingLines] : [];
   const innerWidth = measureContentWidth(cols);
 
@@ -911,7 +1006,24 @@ export function calculateFormattedLines(
 
       const cleanedContent = stripToolCalls(m.content);
 
-      if (m.role === "assistant" && m.streaming) {
+      if (useTimelineParts && m.role === "assistant") {
+        // Unified ordered timeline: one parser/renderer for both streaming and
+        // final, so the SAME content never re-renders differently once the turn
+        // ends, and tool/[SYSTEM:] activity stays in true order (rendered concise,
+        // not dumped verbatim). Replaces the file-change summary + dual-parser
+        // body for assistant messages; the thought block above is unchanged.
+        messageLines.push(...renderConversationParts(
+          parseConversationParts(cleanedContent),
+          {
+            mId: m.id,
+            innerWidth,
+            prefixColor,
+            theme,
+            isStreamingActive: !!isStreamingActive,
+            tick: _tick || 0,
+          }
+        ));
+      } else if (m.role === "assistant" && m.streaming) {
         const wrapWidth = Math.max(4, innerWidth - 2);
 
         let cached = streamingCache.get(m.id);
