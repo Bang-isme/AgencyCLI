@@ -38,6 +38,23 @@ export function createSession(projectRoot: string): AgencySession {
   };
 }
 
+/**
+ * Branch a new session from `source` containing the messages up to and including
+ * `upToMessageId` (opencode-style fork). The new session gets a fresh id so the
+ * original is left intact on disk; messages are cloned so later edits to one
+ * branch don't mutate the other. If the id isn't found, the whole history is
+ * copied (a plain duplicate). Pure — the caller switches/saves.
+ */
+export function forkSession(
+  source: AgencySession,
+  upToMessageId: string
+): AgencySession {
+  const idx = source.messages.findIndex((m) => m.id === upToMessageId);
+  const slice = idx >= 0 ? source.messages.slice(0, idx + 1) : source.messages;
+  const forked = createSession(source.projectRoot);
+  return { ...forked, messages: slice.map((m) => ({ ...m })) };
+}
+
 export function saveSession(session: AgencySession): void {
   const dir = sessionsDir(session.projectRoot);
   mkdirSync(dir, { recursive: true });

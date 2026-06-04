@@ -61,6 +61,8 @@ export interface UseKeyboardHandlersOptions {
   setTranscriptFocus: React.Dispatch<React.SetStateAction<TranscriptFocus>>;
   /** Copy the currently-focused turn to the clipboard (transcript-nav `c`/`y`). */
   copyFocusedMessage: () => void;
+  /** Fork a new session at the focused turn (transcript-nav `f`). */
+  forkFocusedMessage: () => void;
   userHasScrolledUpRef: React.MutableRefObject<boolean>;
 
   // Contextual states and triggers
@@ -133,6 +135,7 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
         transcriptFocus,
         setTranscriptFocus,
         copyFocusedMessage,
+        forkFocusedMessage,
         userHasScrolledUpRef,
         phase,
         loading,
@@ -335,6 +338,11 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
       // Copy the focused turn (c / y "yank"); stays in focus mode afterwards.
       if (!key.ctrl && (input === "c" || input === "y")) {
         copyFocusedMessage();
+        return;
+      }
+      // Fork a new session at the focused turn (f); exits focus mode.
+      if (!key.ctrl && input === "f") {
+        forkFocusedMessage();
         return;
       }
       if (!(key.ctrl && (input === "c" || input === "q"))) return;

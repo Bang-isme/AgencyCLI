@@ -60,6 +60,7 @@ import { terminalBell } from "./motion/terminal.js";
 import { loadTuiConfig } from "./config/tui-config.js";
 import {
   createSession,
+  forkSession,
   loadLatestSession,
   loadSession,
   listSessionSummaries,
@@ -479,6 +480,23 @@ export function App({
     const ok = writeClipboard(m.content);
     addSystemLines([ok ? "✓ Copied turn to clipboard" : "⚠ Clipboard copy failed"]);
   }, [focusedMessageId, messagesToProcess, addSystemLines]);
+
+  // Fork a new session branched at the focused turn (transcript-nav `f`). Creates
+  // a fresh session with the messages up to that turn and switches to it; the
+  // original is left intact on disk. Refused mid-turn (would swap the session out
+  // from under a streaming write).
+  const forkFocusedMessage = useCallback(() => {
+    if (!focusedMessageId) return;
+    if (loading) {
+      addSystemLines(["⚠ Can't fork while a turn is running"]);
+      return;
+    }
+    setTranscriptFocus(inactiveFocus);
+    userHasScrolledUpRef.current = false; // show the forked branch from the end
+    updateSession((s) => forkSession(s, focusedMessageId));
+    setSessionSummaries(listSessionSummaries(project));
+    addSystemLines(["✓ Forked a new session at the focused turn"]);
+  }, [focusedMessageId, loading, updateSession, project, addSystemLines]);
 
   const [lastRouteProvider, setLastRouteProvider] = useState<string | null>(
     null
@@ -2064,6 +2082,7 @@ ${taskDesc}`;
     transcriptFocus,
     setTranscriptFocus,
     copyFocusedMessage,
+    forkFocusedMessage,
     userHasScrolledUpRef,
     phase,
     setPhase,
