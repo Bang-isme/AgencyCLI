@@ -132,7 +132,7 @@ describe("buildSystemPrompt soft-approaches rule (§8.11-C)", () => {
     delete process.env.AGENCY_SOFT_APPROACHES;
   });
 
-  it("legacy (flag off) keeps the rigid exactly-5 rule verbatim", () => {
+  it("opt-out (AGENCY_SOFT_APPROACHES=0) restores the rigid exactly-5 rule verbatim", () => {
     process.env.AGENCY_SOFT_APPROACHES = "off";
     const out = build();
     expect(out).toContain("THE 5-APPROACHES RULE");

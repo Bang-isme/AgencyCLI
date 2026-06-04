@@ -104,9 +104,10 @@ export interface RuntimeFlags {
   /**
    * Soften the system prompt's "MUST outline exactly 5 approaches every turn"
    * rule to a complexity-scaled "a few (2–3), or a single clear recommendation
-   * for simple tasks". Off in legacy (the exact-5 rule preserved verbatim), on
-   * in hardened. Saves output tokens (pricier than input) + less formulaic on
-   * easy tasks while keeping multi-option depth for hard ones. Roadmap §8.11-C.
+   * for simple tasks". On by default in both profiles (output-quality fix — the
+   * rigid exact-5 rule reads formulaic and wastes output tokens, pricier than
+   * input); set AGENCY_SOFT_APPROACHES=0 to restore the verbatim exact-5 rule.
+   * Roadmap §8.11-C.
    */
   softApproaches: boolean;
   /**
@@ -377,9 +378,11 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // stable across turns → enables provider-side prefix caching) → off in
     // legacy (variable-first order preserved byte-identical), on in hardened.
     promptCachePrefix: parseBool(env.AGENCY_PROMPT_CACHE, hardened),
-    // Behaviour-changing (relaxes the "exactly 5 approaches" output rule) → off
-    // in legacy (rule preserved verbatim), on in hardened.
-    softApproaches: parseBool(env.AGENCY_SOFT_APPROACHES, hardened),
+    // Output-quality fix → on by default in BOTH profiles: relaxes the formulaic
+    // "MUST outline exactly 5 approaches every turn" rule to a complexity-scaled
+    // "a few". Opt out with AGENCY_SOFT_APPROACHES=0 to restore the verbatim
+    // exact-5 rule.
+    softApproaches: parseBool(env.AGENCY_SOFT_APPROACHES, true),
     // Churn-cluster correctness fix → on by default in BOTH profiles: a "continue"
     // after loop exhaustion must see the on-disk state, not restart from scratch.
     // Opt out with AGENCY_RESUME_CONTINUATION=0 to restore the legacy generic,
