@@ -49,7 +49,7 @@ safety (✅), memory (✅), orchestrator (✅) already exist. The work is: put t
 | Subsystem | Status | Where it lives today |
 |---|---|---|
 | Agent Runtime | ✅ | `core/chat/{stream,orchestrator,turn-helpers}.ts` (turn loop, tool loop, continuation) |
-| Tool Runtime | ✅ | `@agency/tooling` ToolRegistry + `core` tool harness (20–21 tools) |
+| Tool Runtime | ✅ | `@agency/tooling` ToolRegistry + `core` tool harness (21 tools) |
 | Event Bus | ✅ | `core` `EventBus` (singleton, in-memory journal + durable SQLite journal via `persistEvents`) |
 | State Manager | ◐ | `tui/sessions/store.ts` (session messages) + `core` checkpoints; **no first-class Goal/Plan/Step runtime state outside `/goal`** |
 | Memory System | ✅ | `@agency/memory` (SQLite episodic + vectors) + `MarkdownMemoryStore` + `remember` tool |

@@ -20,6 +20,8 @@ Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (Reac
 | [UI_DESIGN.md](./UI_DESIGN.md) | Complete TUI design: phase flow, component tree (42 components), layout system, themes, animation (152-line design system), input architecture, 13 overlays, 20+ slash commands, state architecture |
 | [CONFIG_AND_STATE.md](./CONFIG_AND_STATE.md) | All persistence backends: config files, 2 SQLite databases, in-memory state, 4 cache layers, session lifecycle, API key management |
 | [PACKAGES.md](./PACKAGES.md) | **Complete package reference** — every export, every module, every function across all 16 packages |
+| [AGENT_OS_BLUEPRINT.md](./AGENT_OS_BLUEPRINT.md) | Operating-environment blueprint: maturity model, competitor gap analysis, unified kernel, session hierarchy, supervisor, replay — the OS-level design (superset of EVENT_FIRST) |
+| [EVENT_FIRST_RUNTIME.md](./EVENT_FIRST_RUNTIME.md) | Event-first runtime migration (A→H): tool lifecycle on the bus, RuntimeState, Activity Timeline, invisible continuation — what's done vs. the real gaps |
 
 ### Operations
 
@@ -47,6 +49,7 @@ Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (Reac
 | Document | Role | Edit policy |
 |----------|------|-------------|
 | [SESSION_HANDOFF_PROMPT.md](./SESSION_HANDOFF_PROMPT.md) | The rulebook + paste-in onboarding prompt (read order, anti-dup, verify, flags, slice rhythm) | Living |
+| [COMPLETION_CONTRACT.md](./COMPLETION_CONTRACT.md) | Verified ground truth + source-of-truth map + 8 integrity guards + Definition of Done + completeness ledger — makes "complete & consistent" enforceable | Living — re-verify per slice |
 | [ROADMAP_HANDOFF.md](./ROADMAP_HANDOFF.md) | Live work map (`TRUTH → BUG → FIX`), §8 is current | Living — update in the same slice |
 | [NEXT_SESSION_PROMPT.md](./NEXT_SESSION_PROMPT.md) | Paste-in prompt: current frontier + next tasks | Living snapshot |
 | [HARDENING_HANDOFF.md](./HARDENING_HANDOFF.md) | Production-hardening campaign status + per-slice `cont'd N` log | Living (append) |
