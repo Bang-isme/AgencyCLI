@@ -290,9 +290,14 @@ commits, `pnpm verify` REAL_EXIT_CODE=0. Ordered by impact-on-the-screenshots ÷
   Conversation becomes prose-only. This is the "no tool spam in chat" win.
 - **Phase D — RuntimeState reducer + Task/Status panels.** Fold the journal into
   `RuntimeState`; surface plan/steps/modified-files.
-- **Phase E — Invisible continuation (flag `autoContinueOnExhaustion`).**
-  checkpoint→compress→resume on loop-exhaustion with cross-turn budget +
-  no-progress detector. Kills "send continue". **Live-validate (runaway risk).**
+- **Phase E — Invisible continuation (flag `autoContinueOnExhaustion`, default-on). ✅ DONE `411b2e2`.**
+  A productive iteration that would exhaust `maxLoops` extends the budget one
+  window instead of stopping with "send continue". Three guards prevent the old
+  6-min runaway: progress-gated (only while files-written keeps GROWING), hard
+  ceiling (`maxLoops × 4`), + the circuit breaker. Emits `continuation:started`.
+  **Still live-validate on a real big build.** (`timelineParts` also promoted
+  default-on `bc7503e`.) Phase H (reasoning-spam) deferred — system-prompt change,
+  validate on a real model run.
 - **Phase F — Checkpoint generalization + content-snapshot revert (TUI P5).**
 - **Phase G — Auto-handoff memory + ADR types (§5).**
 - **Phase H — Safety/blocked → events (§8), reasoning-spam suppression** (prompt:
