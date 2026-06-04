@@ -102,12 +102,29 @@ export interface BlinkCursorProps {
   active?: boolean;
 }
 
+/** Conventional terminal cursor blink half-period (ms): ~530ms on, ~530ms off. */
+const CURSOR_BLINK_MS = 530;
+
 /**
- * Input cursor — static block avoids ANSI blink (\x1b[5m) glitches on Windows Terminal.
+ * Block-cursor visibility for a given blink tick — even ticks show the block.
+ * Pure so the cadence is unit-testable without driving the frame clock.
+ */
+export function cursorBlinkOn(tick: number): boolean {
+  return tick % 2 === 0;
+}
+
+/**
+ * Input cursor — blinks by toggling the block's *visibility* on the shared frame
+ * clock, NOT the ANSI blink attribute (\x1b[5m) which glitches on Windows
+ * Terminal. The off-frame renders a single space so the caret column never
+ * shifts width. When animations are disabled (AGENCY_TUI_ANIMATIONS=0 /
+ * reduced-motion / non-TTY) {@link useTick} is a constant 0, so the block stays
+ * solid — byte-identical to the previous static cursor.
  */
 export function BlinkCursor({ active = true }: BlinkCursorProps) {
+  const tick = useTick(active, CURSOR_BLINK_MS);
   if (!active) return <Text> </Text>;
-  return <Text>▌</Text>;
+  return <Text>{cursorBlinkOn(tick) ? "▌" : " "}</Text>;
 }
 
 export interface WaveTextProps {
