@@ -40,6 +40,8 @@ const { baseRoute, compactSpy } = vi.hoisted(() => ({
 // the other helpers are stubbed just enough to let the turn reach its loop.
 vi.mock("../chat/turn-helpers.js", () => ({
   resolveSessionId: (explicit?: string) => explicit ?? "sess-test",
+  resolveMaxLoops: (budget: string, explicit?: number) =>
+    explicit ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3),
   resolveRoute: vi.fn(async () => ({ route: baseRoute, fromCache: false })),
   providerHasKey: () => true,
   repackContextAndSystemPrompt: () => "system",

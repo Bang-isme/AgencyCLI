@@ -31,7 +31,7 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import {
@@ -321,7 +321,7 @@ export async function runChatTurnWithStream(
       ? createTurnCircuitBreaker()
       : null;
     if (!turnBreaker) resetToolCircuitBreaker();
-    const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
+    const maxLoops = resolveMaxLoops(budget, input.maxLoops);
 
     while (loopCount < maxLoops) {
       await compactIfEnabled();

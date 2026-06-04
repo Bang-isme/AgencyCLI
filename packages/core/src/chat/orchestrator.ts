@@ -29,7 +29,7 @@ import { type RouteResult } from "../router/model-router.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall } from "../skill/tool-harness.js";
@@ -251,7 +251,7 @@ export async function runChatTurn(
       ? createTurnCircuitBreaker()
       : null;
     if (!turnBreaker) resetToolCircuitBreaker();
-    const maxLoops = input.maxLoops ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3);
+    const maxLoops = resolveMaxLoops(budget, input.maxLoops);
 
     while (loopCount < maxLoops) {
       await compactIfEnabled();

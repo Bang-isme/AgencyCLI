@@ -52,6 +52,28 @@ export function resolveSessionId(explicit?: string): string {
   return cliSessionFallback;
 }
 
+/** Per-budget default tool/continuation iteration cap for a turn. */
+export function defaultMaxLoops(budget: string): number {
+  return budget === "deep" ? 15 : budget === "normal" ? 8 : 3;
+}
+
+/**
+ * Resolve the per-turn tool/continuation iteration cap (deduped from the two turn
+ * engines — stream + orchestrator). Order: an explicit `input.maxLoops` (e.g. a
+ * subagent's own cap) wins, then a global `AGENCY_MAX_LOOPS` env override (a
+ * positive integer — lets a big scaffolding task run past the default wall
+ * without the user having to type "continue"; the circuit breaker still halts
+ * genuine churn at 3 consecutive failures, so raising it can't reintroduce a
+ * runaway), then the per-budget default. With the env unset and no explicit cap
+ * this returns the exact previous default → byte-identical.
+ */
+export function resolveMaxLoops(budget: string, explicit?: number): number {
+  if (typeof explicit === "number" && explicit > 0) return explicit;
+  const env = Number(process.env.AGENCY_MAX_LOOPS);
+  if (Number.isFinite(env) && env > 0) return Math.floor(env);
+  return defaultMaxLoops(budget);
+}
+
 /** Resolve the route for a turn, honouring the per-plan route cache. */
 export async function resolveRoute(
   input: ChatTurnInput,
