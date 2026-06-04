@@ -59,6 +59,28 @@ describe("Workers panel lifecycle (AGENCY_WORKER_LIFECYCLE)", () => {
     expect(frame).toContain("worker.frontend-specialist");
   });
 
+  it("flag ON: a running worker's collapsed row shows its current action (phase)", () => {
+    process.env.AGENCY_WORKER_LIFECYCLE = "1";
+    process.env.AGENCY_TUI_ANIMATIONS = "0";
+    const frame = frameFor(
+      [{ agentId: "frontend-specialist", task: "ui", status: "running", elapsedMs: 5000, phase: "Edit dashboard.tsx" }],
+      true
+    );
+    expect(frame).toContain("worker.frontend-specialist");
+    expect(frame).toContain("Edit dashboard.tsx"); // the live action is visible at a glance
+  });
+
+  it("flag OFF: the collapsed row does NOT show the phase (legacy byte-identical)", () => {
+    process.env.AGENCY_WORKER_LIFECYCLE = "0";
+    process.env.AGENCY_TUI_ANIMATIONS = "0";
+    const frame = frameFor(
+      [{ agentId: "frontend-specialist", task: "ui", status: "running", elapsedMs: 5000, phase: "Edit dashboard.tsx" }],
+      true
+    );
+    expect(frame).toContain("worker.frontend-specialist");
+    expect(frame).not.toContain("Edit dashboard.tsx");
+  });
+
   it("flag ON, idle + all terminal: collapses to one terse summary line (no per-worker rows)", () => {
     process.env.AGENCY_WORKER_LIFECYCLE = "1";
     process.env.AGENCY_TUI_ANIMATIONS = "0";

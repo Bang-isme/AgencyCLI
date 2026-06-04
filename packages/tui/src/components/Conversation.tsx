@@ -1778,6 +1778,20 @@ export function calculateFormattedLines(
       const statusWord = agent.status === "interrupted" ? "stopped" : agent.status;
       const statusLabel = `[${statusWord}${timingInfo}]`;
 
+      // Smart runtime view: show WHAT a running worker is doing right now on its
+      // collapsed row (current action / phase, already sentence-case), so the
+      // operator reads progress at a glance without expanding. Capped to keep the
+      // row from blowing out the layout (same guard ToolActivity uses). Only for
+      // running workers — a terminal row stays terse on just its status. Gated by
+      // workerPanelLifecycle; legacy row is byte-identical when off.
+      const rawPhase = isActive ? (agent.phase ?? "").trim() : "";
+      const phaseText =
+        workerLifecycle && rawPhase
+          ? rawPhase.length > 40
+            ? `${rawPhase.slice(0, 39)}…`
+            : rawPhase
+          : "";
+
       if (!expandedTui) {
         // Collapsed Workers
         lines.push(linePool.acquire(
@@ -1791,6 +1805,11 @@ export function calculateFormattedLines(
               <Text color={statusColor} bold={isActive}>
                 {statusLabel}{" "}
               </Text>
+              {phaseText ? (
+                <Text color={theme.muted} wrap="truncate">
+                  → {phaseText}{" "}
+                </Text>
+              ) : null}
               <Text color={theme.muted} dimColor>
                 [ctrl+o]
               </Text>
