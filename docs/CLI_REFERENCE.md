@@ -467,6 +467,56 @@ Full §2.5 follow-up: re-executing the live agent against a baseline (needs reco
 
 ---
 
+### `agency status`
+Inspect runtime state: resolved feature flags, recent events, task checkpoints, and any resumable work. Read-only.
+
+```
+agency status
+agency status --json
+agency status --project-root .
+```
+
+**Options:**
+- `--project-root <path>` — Project root directory
+- `--json` — Emit machine-readable JSON
+
+---
+
+### `agency eval`
+Run the task-eval suite and gate the task success rate against a saved baseline. Without `--agent` it scores the routing/corpus offline; with `--agent` it attaches the real agent runtime (needs provider keys).
+
+```
+agency eval                                  # offline corpus, gate vs baseline
+agency eval --agent --suite hard             # run the real agent on the hard corpus
+agency eval --update-baseline                # save the current report as the new baseline
+```
+
+**Options:**
+- `--agent` — Attach the real agent runtime to the corpus tasks (needs provider keys)
+- `--suite <name>` — Agent corpus to run: `easy` \| `hard` \| `all` (default: `easy`)
+- `--baseline <path>` — Baseline report file (default: `.agency/eval-baseline.json`)
+- `--update-baseline` — Write the current report as the new baseline (no gating)
+- `--tolerance <frac>` — Allowed success-rate drop, `0..1` (default: `0`)
+- `--budget <amount>` — Max spend budget in USD per task (default: `5.0`)
+- `--provider <id>` — Provider to use for `--agent` runs
+- `--json` — Output the report (and gate result) as JSON
+
+---
+
+### `agency handover`
+Generate `.agency/handover.md` so a new session can resume with minimal context loss (current branch, recent work, open tasks).
+
+```
+agency handover
+agency handover --print
+```
+
+**Options:**
+- `--project-root <path>` — Project root directory
+- `--print` — Print the handover to stdout instead of only writing the file
+
+---
+
 ## TUI Slash Commands (Interactive Mode Only)
 
 | Command | Action |

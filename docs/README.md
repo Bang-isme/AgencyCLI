@@ -25,7 +25,7 @@ Agency CLI is a monorepo AI agent CLI tool with an interactive terminal UI (Reac
 
 | Document | Description |
 |----------|-------------|
-| [CLI_REFERENCE.md](./CLI_REFERENCE.md) | Complete command reference: 21 headless commands and 20+ TUI slash commands with all options |
+| [CLI_REFERENCE.md](./CLI_REFERENCE.md) | Complete command reference: 26 headless commands and 20+ TUI slash commands with all options |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Development guide: build system, conventions, adding packages/commands/components/providers, CI/CD scripts |
 | [TESTING.md](./TESTING.md) | Test infrastructure: patterns per package, coverage gaps (run `pnpm verify` for live test counts) |
 
@@ -105,7 +105,7 @@ pnpm -r test
 - **Transactional files**: Lock → stage → verify (`pnpm build`) → commit or rollback
 - **Checkpoint-driven tasks**: Crash recovery via persisted task state
 - **DAG planner**: Dependency resolution, retries, deadlock detection, cascade rollback
-- **Cognition streaming**: Real-time thought events via pub/sub EventBus
+- **Event bus + journal**: Pub/sub `EventBus` (SHA-256 dedup) for subagent lifecycle, plan, and system/security events; mirrored into a durable SQLite journal for deterministic replay
 - **6 LLM providers**: OpenAI, Anthropic, Google, OpenRouter, NVIDIA, local (Ollama)
 - **Deterministic replay**: Full session recording + replay for regression detection
 - **Defense-in-depth**: 3-layer security (approval → escalation → sandbox)

@@ -37,7 +37,7 @@ AgencyCLI/
 │  ENTRY LAYER                                         │
 │  packages/cli/                                       │
 │  • Binary entry (agency, acg)                        │
-│  • 21 Commander subcommands                          │
+│  • 26 Commander subcommands                          │
 │  • TUI vs headless dispatch (tui-launch.ts)           │
 ├──────────────────────────────────────────────────────┤
 │  PRESENTATION LAYER                                  │
@@ -165,7 +165,7 @@ acg <path>      → luôn TUI mode
 - Phase flow: Splash → Welcome → Main
 
 ### Headless Mode
-- `registerCommands(program)` → 21 Commander subcommands
+- `registerCommands(program)` → 26 Commander subcommands
 - Mỗi subcommand map đến handler trong `packages/cli/src/commands/`
 
 ## Build System

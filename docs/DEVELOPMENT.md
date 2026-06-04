@@ -28,7 +28,7 @@ AgencyCLI/
 │   ├── tui/               # React/Ink terminal UI
 │   ├── browser/           # Playwright/CDP automation
 │   ├── benchmark/         # Isolated benchmark runner
-│   └── cli/               # Entry point + 21 Commander commands
+│   └── cli/               # Entry point + 26 Commander commands
 ├── docs/                  # System documentation
 ├── scripts/               # PowerShell CI scripts
 ├── tests/                 # Test fixtures

@@ -86,9 +86,6 @@ Pure math, no React rendering:
 └─────────────────────────────────────┘
 ```
 
-### `ComposerStack.tsx`
-Fixed-width bottom stack wrapper for the input area.
-
 ### `TerminalViewport.tsx`
 Full-height Box using `shellWidth` × `shellHeight`.
 
@@ -302,8 +299,8 @@ Virtual-line scrolling message list:
 - `scrollOffset` windows into the line array
 - Auto-scroll to bottom on new messages
 - User scrolls up → `userHasScrolledUpRef` holds position
-- Message types: user, assistant (with chips/suggestions), system (with icons), structured cards
-- Runtime cards: `ReplaceMethodBody`, `InsertFunction`, `DeleteNode`, diff blocks
+- Message types: user, assistant (with chips/suggestions), system (with icons)
+- Per-message file-change summary (extracted from the turn's raw tool calls) rendered inline
 
 #### `SystemNotice.tsx`
 Formats system messages with context-aware icons:
@@ -321,11 +318,8 @@ Dashboard panel shown when conversation is empty:
 - System context summary (project, model, skills)
 - Responsive layout
 
-#### `RouteChips.tsx` **[DEAD — always returns null]**
-Hidden per user request. Route chips now rendered inline via `Chip` component.
-
-#### `Chip.tsx`
-Single `<label>:<value>` display pair for routing metadata.
+> Routing metadata (intent / workflow / skills) is rendered inline by `Conversation.tsx` as
+> `<label>:<value>` chips — there is no separate chip component.
 
 ---
 
@@ -383,7 +377,7 @@ Multi-step autonomous goal display:
 - Elapsed time
 - Max 4 visible steps, sliding window for more
 
-#### `IndexProgressPanel.tsx`
+#### `IndexProgress.tsx`
 Workspace index scan indicator:
 - Phase: "Scanning...", "Indexing..."
 - `scanBar()` indeterminate progress + `AGENCY_SPINNER` (shared primitives — no bespoke spinner)
@@ -422,18 +416,16 @@ Pixel-art "AGENCYCLI" logo:
 
 **Location:** `packages/tui/src/screens/`
 
-`ScreenId` type: `"home" | "chat" | "skills" | "taskRunner" | "approval" | "graph"`
+`ScreenId` type (`types.ts`): `"home" | "chat" | "skills" | "taskRunner" | "approval" | "graph"`
 
 | Screen | Status |
 |--------|--------|
 | `Approval.tsx` | **Active** — y/n approval prompt overlay |
-| `Sidebar.tsx` | **Scaffold** — layout component for screen tabs, not wired to App |
-| `Home.tsx` | **Scaffold** — placeholder, not used |
-| `TaskRunner.tsx` | **Scaffold** — placeholder, not used |
-| `Graph.tsx` | **Scaffold** — placeholder, not used |
-| `Skills.tsx` | **Scaffold** — placeholder, not used |
 
-The screens-as-tabs concept was scaffolded but abandoned in favor of the overlay+single-view model used in App.tsx.
+`Approval.tsx` is the only screen module left. The screens-as-tabs concept was scaffolded but
+abandoned in favor of the overlay + single-view model in `App.tsx`; the unused scaffold screens
+(`Home`, `Sidebar`, `TaskRunner`, `Graph`, `Skills`, `Chat`) have been removed, though the
+`ScreenId` union still names the originally-planned set.
 
 ---
 
@@ -519,7 +511,6 @@ Overlay States (single `overlays: OverlayStates` object, 13 keys):
 
 Context:
   contextUsage { percent, estimatedTokens, contextWindow }
-  thoughts: RuntimeThoughtEvent[]
 ```
 
 ### Derived State (useMemos)

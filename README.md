@@ -59,6 +59,11 @@
   - [`agency browser`](#agency-browser)
   - [`agency team`](#agency-team)
   - [`agency benchmark`](#agency-benchmark)
+  - [`agency status`](#agency-status)
+  - [`agency eval`](#agency-eval)
+  - [`agency replay`](#agency-replay)
+  - [`agency replay-regression`](#agency-replay-regression)
+  - [`agency handover`](#agency-handover)
 - [LLM Provider Configuration](#llm-provider-configuration)
 - [Token Budget Policy](#token-budget-policy)
 - [Output Surfaces](#output-surfaces)
@@ -601,6 +606,73 @@ agency benchmark --json                 # JSON output
 
 ---
 
+### `agency status`
+
+Inspect runtime state: resolved feature flags, recent events, task checkpoints, and any resumable work. Read-only.
+
+```powershell
+agency status                           # Human-readable runtime snapshot
+agency status --json                    # Machine-readable
+```
+
+---
+
+### `agency eval`
+
+Run the task-eval suite and gate the task success rate against a saved baseline. Offline by default; `--agent` attaches the real agent runtime (needs provider keys).
+
+```powershell
+agency eval                             # Offline corpus, gate vs baseline
+agency eval --agent --suite hard        # Real agent on the hard corpus
+agency eval --update-baseline           # Save current report as the new baseline
+```
+
+| Option | Description |
+|:---|:---|
+| `--agent` | Attach the real agent runtime (needs provider keys) |
+| `--suite <name>` | Corpus: `easy` (default), `hard`, `all` |
+| `--baseline <path>` | Baseline report (default `.agency/eval-baseline.json`) |
+| `--update-baseline` | Write current report as baseline (no gating) |
+| `--tolerance <frac>` | Allowed success-rate drop, `0..1` (default `0`) |
+| `--budget <amount>` | Max spend per task in USD (default `5.0`) |
+| `--provider <id>` | Provider for `--agent` runs |
+
+---
+
+### `agency replay`
+
+Replay the recorded durable event journal (`.agency/events/journal.db`) and verify it has not diverged or been corrupted — each event's payload must still hash to its stored `payloadHash`. Exits non-zero on divergence.
+
+```powershell
+agency replay
+agency replay --json
+```
+
+---
+
+### `agency replay-regression`
+
+Drive the behaviour-trace regression engine over a recorded trace from `.agency/traces/` (produced when `AGENCY_TRACE_RECORD` is set). Validates a trace is replay-ready, or — with `--baseline` — checks a candidate trace reproduces the baseline's tool behaviour.
+
+```powershell
+agency replay-regression --list                         # List recorded traces
+agency replay-regression <trace>                         # Validate a trace is replay-ready
+agency replay-regression <candidate> --baseline <ref>    # Regression: candidate vs baseline
+```
+
+---
+
+### `agency handover`
+
+Generate `.agency/handover.md` so a new session can resume with minimal context loss (current branch, recent work, open tasks).
+
+```powershell
+agency handover                         # Write .agency/handover.md
+agency handover --print                 # Also print to stdout
+```
+
+---
+
 ## LLM Provider Configuration
 
 All provider settings live in `~/.agency/config.json`. Keys support `${ENV_VAR}` expansion at runtime.
@@ -770,7 +842,7 @@ agency-cli/
         browser/         # Browser MCP status checker
         chat/            # Chat turn runner, prompt builder, circuit breaker
         context/         # Context file assembly
-        events/          # Cognition event stream
+        events/          # Event bus + durable journal + replay engine
         git/             # Git summary, PR helper
         graph/           # Knowledge graph builder (generates HTML dashboard)
         index/           # Workspace file indexer
@@ -778,15 +850,14 @@ agency-cli/
         memory/          # Memory script bridge
         mcp/             # MCP client connector
         output/          # OutputEngine (human/JSON/meta/stream)
-        planner/         # Plan file parser
         router/          # Prompt router with weights
+        runtime/         # Feature flags + session handover digest
         scheduler/       # Cron schedule runner
         skill/           # Skill registry, tool harness, context delivery
         task/            # Task checkpoint runner, convergence engine
         team/            # Team config loader
         terminal/        # Terminal helpers
         utils/           # Package manager detection, misc
-        validation/      # Input validation
         workflow/        # Workflow definition + runner
     providers/           # @agency/providers  - LLM adapters
     skills-bridge/       # @agency/skills-bridge - Plugin tools execution

@@ -42,18 +42,13 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `ApprovalScopeType` | `"session" \| "branch" \| "temporary"` |
 | `ContinuationPolicy` | `"proceed_autonomous" \| "readonly_fallback" \| "reject"` |
 
-**Cognition:**
-| Export | Purpose |
-|---|---|
-| `RuntimeThoughtEvent` | Event emitted to bus: `source` (routing/retrieval/editing/...), `phase`, `severity`, `message`, `metadata` |
-
 ---
 
 ## 2. `@agency/core` — Central Orchestration Hub
 
 **Dependencies:** `@agency/contracts`, `@agency/providers`, `@agency/tooling`, `@agency/workspace`, `@agency/context`, `@agency/heuristics`, `@agency/governance`, `@agency/security`, `better-sqlite3`, `execa`, `zod`
 
-### Complete Module Inventory (82 modules, 333-line barrel)
+### Module Inventory (by subsystem)
 
 | Module | Purpose |
 |--------|---------|
@@ -70,7 +65,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `prompt.ts` | `buildSystemPrompt()` — assembles the agent system prompt |
 | `memory-integration.ts` | `loadHistoricalMemories()` (curated markdown recall via `loadFileMemoryBlock` + auto SQLite episode recall), `safeAddEpisode()` — wires chat to `@agency/memory` |
 | `circuit-breaker.ts` | `createCircuitBreaker()`, `checkCircuitBreaker()`, `recordToolFailure/Success()` — tool-failure circuit breaker |
-| `turn-helpers.ts` | `resolveRoute()`, `providerHasKey()`, `repackContextAndSystemPrompt()`, `compactTurnHistory()`, **`reduceHistoryToFit()`** (§8.1 — reactive last-resort body reducer on a context-limit retry: repack system + summarize middle + trim/drop large turns until the estimate fits `newLimit*safety`), **`buildIncompleteTurnNotice()`** (§8.10 — resume notice when a turn exhausts `maxLoops`: one `[SYSTEM:]` resume-instruction line + per-file on-disk size; appended to `llmText` in BOTH turn paths so the next "continue" reads+appends instead of restarting; gated by `resumeContinuation`), **`describeToolActivity()`** (§8.10-A — map a main-turn tool call → a cognition narration {source,phase,message} from the structured tool name + step label, NOT regex; fed to `emitThought` in BOTH turn paths so the status line reflects read→Reading/edit→Editing/exec→Running realtime; category-level, deliberately distinct from the TUI's richer per-tool/MCP `SemanticTranslator`), `recordTurnTokenCost()` — logic shared by orchestrator.ts + stream.ts (single source) |
+| `turn-helpers.ts` | `resolveRoute()`, `providerHasKey()`, `repackContextAndSystemPrompt()`, `compactTurnHistory()`, **`reduceHistoryToFit()`** (§8.1 — reactive last-resort body reducer on a context-limit retry: repack system + summarize middle + trim/drop large turns until the estimate fits `newLimit*safety`), **`buildIncompleteTurnNotice()`** (§8.10 — resume notice when a turn exhausts `maxLoops`: one `[SYSTEM:]` resume-instruction line + per-file on-disk size; appended to `llmText` in BOTH turn paths so the next "continue" reads+appends instead of restarting; gated by `resumeContinuation`), `recordTurnTokenCost()` — logic shared by orchestrator.ts + stream.ts (single source) |
 | `trace-recorder.ts` | `SessionTraceRecorder`, `createTraceRecorder()` — §2.5 behaviour-trace recording to `.agency/traces/` (flag `AGENCY_TRACE_RECORD`) |
 
 **`router/` — Prompt Routing:**
@@ -139,7 +134,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `events/event-bus.ts` | `EventBus` (singleton pub/sub, SHA-256 dedup) |
 | `events/event-journal.ts` | `EventJournal` — SQLite-backed replay |
 | `events/replay-engine.ts` | `ReplayEngine`, `verifyJournalReplay()`, `replaySessionJournal()` — replay-verify the durable journal (powers `agency replay`) |
-| `events/cognition.ts` | `emitThought()` — structured cognition events |
 | `index/workspace-indexer.ts` | `buildIndex()`, `incrementalUpdateAsync()`, `writeIndex()` |
 | `index/incremental-indexer.ts` | `extractSymbolsAndImports()` — AST-level symbols |
 | `index/gitignore-parser.ts` | `IgnoreFilter` — respects `.gitignore` |
@@ -168,7 +162,7 @@ This document provides a **module-level** reference for every one of the 16 pack
 
 **Dependencies:** `@agency/core`, `@agency/providers`, `ink`, `react`
 
-### File Inventory (41 components in `components/`, 50 `.tsx` total, 24 tests)
+### File Inventory (run `ls packages/tui/src/components` for the live set)
 
 **Entry & Layout:**
 | File | Purpose |
@@ -179,7 +173,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `layout/terminal-layout.ts` | `measureTerminal()`, `panelWidth()`, `contentWidth()` |
 | `layout/Shell.tsx` | Header / Body / Composer / StatusBar chrome |
 | `layout/TerminalViewport.tsx` | Full-viewport wrapper |
-| `layout/ComposerStack.tsx` | Fixed-width bottom input stack |
 | `layout/Header.tsx` | Version + project path header |
 | `layout/StatusBar.tsx` | Bottom bar: mode, spinner, model, context% |
 
@@ -197,8 +190,6 @@ This document provides a **module-level** reference for every one of the 16 pack
 | `components/Conversation.tsx` | Virtual-line scrolling message list (memo) |
 | `components/EmptyChat.tsx` | Dashboard when conversation empty |
 | `components/SystemNotice.tsx` | Context-aware system message formatting |
-| `components/Chip.tsx` | Single `<label>:<value>` chip |
-| `components/LoadingIndicator.tsx` | Simple spinner |
 
 **Overlays (12 modals):**
 | File | Key Binding | Purpose |
@@ -273,18 +264,11 @@ This document provides a **module-level** reference for every one of the 16 pack
 |------|---------|
 | `components/OverlayFooter.tsx` | Shared "↑↓ navigate · Enter select · Esc close" footer |
 | `components/OverlayBox.tsx` | `Box borderStyle="round" borderColor={accent}` wrapper |
-| `components/ListWindow.tsx` | Generic sliding-window list renderer |
 
-**Screens (Scaffold):**
+**Screens:**
 | File | Status |
 |------|--------|
-| `screens/Approval.tsx` | **Active** — full approval prompt |
-| `screens/Sidebar.tsx` | Scaffold — not wired |
-| `screens/Home.tsx` | Scaffold — not used |
-| `screens/TaskRunner.tsx` | Scaffold — not used |
-| `screens/Graph.tsx` | Scaffold — not used |
-| `screens/Skills.tsx` | Scaffold — not used |
-| `screens/Chat.tsx` | Scaffold — not used |
+| `screens/Approval.tsx` | **Active** — full approval prompt (the only screen module; the rest of the app is the overlay + single-view model in `App.tsx`) |
 
 ---
 
@@ -678,7 +662,6 @@ or couple unrelated packages.
 |------------------|-------------------|
 | `ReplayEngine` — `core/src/events/replay-engine.ts` vs `telemetry/src/replay.ts` | Different domains: core verifies journaled events by hash; telemetry replays a `DeterministicExecutionTrace`, overriding live tool/clock outputs. Different packages. |
 | `truncateText` — TUI vs core | TUI is terminal-width-aware; core is plain char-count. Different semantics. |
-| tool→label mapping — `core/chat/turn-helpers.describeToolActivity` vs `tui/.../SemanticTranslator` + `tui/utils/conversation/tool-labels.ts` | Different layers + scope: core's is a small category-level narration (5 buckets → {source,phase,message}) feeding `emitThought` (status/cognition); the TUI's is a richer presentation-layer mapper (per-tool aliases, MCP tools, subagent step labels) that **cannot** move to core (layering — core is below tui). §8.10-D/E will consolidate the TUI's own 3 render impls; the core↔tui split stays. |
 | `~len/4` token estimate — `providers/*` (`ceil`, rate-limiter), `memory/retriever.ts` (`ceil`, retrieval budget), `providers/error-parser.ts` (`round`), chat turn (`round + 200`) | Different formulas and domains; merging across packages would change behaviour and add cross-package deps. Only the orchestrator↔stream copy was byte-identical and now lives in `turn-helpers.recordTurnTokenCost`. |
 | `handover.ts` — `core/runtime/handover.ts` vs `cli/commands/handover.ts` | Layer split: core builds the digest (`generateHandover`); cli is the thin command wrapper. |
 | `grep_file` vs `grep_search` built-in tools (`skill/tool-harness.ts`) | Different scope: `grep_file` searches one file (the model passes a file path); `grep_search` walks the workspace recursively, honours the ignore filter, skips binaries, and supports `limit`/`case_sensitive`/`is_regex`. Complementary, not redundant — `grep_search` can't search a single file (it `readdirSync`s a directory). |
