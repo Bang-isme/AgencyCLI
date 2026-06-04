@@ -346,6 +346,19 @@ export interface RuntimeFlags {
    * TUI-render only.
    */
   workerPanelLifecycle: boolean;
+  /**
+   * Enable terminal mouse interaction (SGR mouse reporting: ?1000h button +
+   * ?1002h drag + ?1006h extended coords). The TUI historically ran with mouse
+   * tracking OFF and relied on ?1007h to translate the wheel into ↑/↓ arrows;
+   * with full tracking on that translation stops, so the runtime OWNS the wheel
+   * (button 64/65 → scroll) and parses click/drag/move events. This unlocks:
+   * click a message → actions menu, hover highlight, and a grabbable scrollbar.
+   * On by default in BOTH profiles (user request); set AGENCY_MOUSE=0 to restore
+   * the legacy keyboard-only / native-wheel behaviour byte-identical. The layer
+   * is purely additive (it never touches the keyboard/render path) and swallows
+   * all parse errors, so the worst case is "clicks do nothing", never a broken TUI.
+   */
+  mouseSupport: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -540,5 +553,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // never clearing). Opt out with AGENCY_WORKER_LIFECYCLE=0 to restore the legacy
     // always-on verbatim panel.
     workerPanelLifecycle: parseBool(env.AGENCY_WORKER_LIFECYCLE, true),
+    // TUI-interaction: enable SGR mouse (click/drag/move + own the wheel) → on by
+    // default in BOTH profiles (user request). Additive + error-swallowing. Opt out
+    // with AGENCY_MOUSE=0 to restore the legacy keyboard-only / native-wheel TUI.
+    mouseSupport: parseBool(env.AGENCY_MOUSE, true),
   };
 }

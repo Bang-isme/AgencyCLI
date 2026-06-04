@@ -125,6 +125,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Runtime state", value: f.runtimeState ? "on (journal-derived runtime summary in status)" : "off", keys: ["runtimeState"] },
     { label: "Auto-expand thinking", value: f.autoExpandThinking ? "on (expand live thought while streaming, collapse when done)" : "off (manual ctrl+o only)", keys: ["autoExpandThinking"] },
     { label: "Worker panel lifecycle", value: f.workerPanelLifecycle ? "on (finalize orphans, reset between turns, collapse when idle)" : "off (verbatim always-on panel)", keys: ["workerPanelLifecycle"] },
+    { label: "Mouse support", value: f.mouseSupport ? "on (click/drag/hover + owned wheel)" : "off (keyboard-only, native wheel)", keys: ["mouseSupport"] },
   ];
 }
 

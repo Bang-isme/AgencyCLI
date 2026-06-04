@@ -1,5 +1,12 @@
 /** Alternate screen buffer — keeps scrollback of the main shell session intact. */
 import { appendFileSync, mkdirSync } from "node:fs";
+import {
+  mouseEnabled,
+  MOUSE_ENABLE_SEQ,
+  MOUSE_DISABLE_SEQ,
+  attachMouseListener,
+  detachMouseListener,
+} from "./mouse.js";
 
 let active = false;
 let originalWrite: (typeof process.stdout.write) | null = null;
@@ -289,14 +296,17 @@ function registerEmergencyExitListeners(): void {
 export function enterAlternateScreen(): void {
   if (!process.stdout.isTTY || active) return;
   registerEmergencyExitListeners();
-  // ?1049h alt screen · ?25l hide cursor · ?7l no-autowrap · ?1007h alternate
-  // scroll mode. We intentionally do NOT enable mouse tracking (?1000h/?1006h):
-  // in the alternate screen, ?1007h makes Windows Terminal / xterm translate the
-  // scroll wheel into Up/Down arrow keys (which the app already scrolls on), so
-  // the wheel works like it does in less/vim/htop. Mouse tracking would instead
-  // capture the wheel as button events and break native wheel scrolling.
-  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l\x1b[?7l\x1b[?1007h");
+  // ?1049h alt screen · ?25l hide cursor · ?7l no-autowrap. The wheel handling
+  // depends on the mouse layer (flag `mouseSupport`):
+  //  - OFF (legacy): ?1007h alternate-scroll makes Windows Terminal / xterm
+  //    translate the wheel into Up/Down arrows the app already scrolls on.
+  //  - ON: enable SGR mouse tracking (click/drag/move) and OWN the wheel — we
+  //    translate button 64/65 to scroll ourselves, so ?1007h must NOT be set.
+  const mouseOn = mouseEnabled();
+  const wheelSeq = mouseOn ? MOUSE_ENABLE_SEQ : "\x1b[?1007h";
+  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l\x1b[?7l" + wheelSeq);
   process.stderr.write("\x1b[?25l");
+  if (mouseOn) attachMouseListener();
   active = true;
 
   originalWrite = process.stdout.write;
@@ -405,7 +415,10 @@ export function leaveAlternateScreen(): void {
     process.stderr.write = originalErrWrite;
     originalErrWrite = null;
   }
-  process.stdout.write("\x1b[?2026l\x1b[?25h\x1b[?1007l\x1b[?1049l\x1b[?7h");
+  // Disable mouse tracking unconditionally (harmless if it was never enabled) so
+  // the modes never leak into the user's shell, then detach the stdin listener.
+  detachMouseListener();
+  process.stdout.write("\x1b[?2026l\x1b[?25h\x1b[?1007l" + MOUSE_DISABLE_SEQ + "\x1b[?1049l\x1b[?7h");
   process.stderr.write("\x1b[?25h");
 
   // Force clean up of lag monitor interval to release loop handle

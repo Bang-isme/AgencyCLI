@@ -4,6 +4,8 @@ import type { ThemeTokens } from "../themes/registry.js";
 import type { SubagentStatus } from "../state/subagent-status.js";
 import { calculateFormattedLines, getMaxScrollOffset } from "../components/Conversation.js";
 import { getDegradationTier } from "../terminal/screen.js";
+import { isMouseResidue } from "../terminal/mouse.js";
+import { useMouseEvents } from "./useMouseEvents.js";
 import type { SessionMessage } from "../state/messages.js";
 import { applyTextInput } from "./useTextInput.js";
 import {
@@ -125,6 +127,10 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
   // Main Ink useInput key interceptor
   useInput(
     useCallback((input, key) => {
+      // Mouse SGR sequences also reach Ink's input parser; drop their residue so
+      // a click can never inject "[<0;10;5M"-style junk into the composer. The
+      // pattern is mouse-specific, so it can never match legitimate typing.
+      if (isMouseResidue(input)) return;
       const {
         expandedTui: _expandedTui,
         setExpandedTui,
@@ -525,5 +531,51 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
 
     if (applyTextInput(input, key, setBuffer)) return;
   }, [])
+  );
+
+  // ── Mouse wheel → transcript scroll ──
+  // When the mouse layer is on we OWN the wheel (?1007h's wheel→arrow translation
+  // is disabled), so this is what makes the wheel scroll at all. Mirrors the
+  // keyboard up/down-arrow scroll semantics with a larger step so the wheel feels
+  // faster than line-by-line. Inert when `mouseSupport` is off.
+  useMouseEvents(
+    useCallback((ev) => {
+      if (ev.type !== "wheel-up" && ev.type !== "wheel-down") return;
+      const {
+        setScrollOffset,
+        conversationHeight,
+        virtualLinesCount,
+        messagesToProcess,
+        userHasScrolledUpRef,
+        pendingApproval,
+        slashActive,
+        slashSuggestions,
+        atActive,
+        atSuggestions,
+      } = optionsRef.current;
+      const pickerActive =
+        (slashActive && slashSuggestions.length > 0) ||
+        (atActive && atSuggestions.length > 0);
+      if (pendingApproval || pickerActive) return;
+      const STEP = 3;
+      if (ev.type === "wheel-up") {
+        setScrollOffset((offset) => {
+          const next = Math.max(0, offset - STEP);
+          if (next < offset) userHasScrolledUpRef.current = true;
+          return next;
+        });
+      } else {
+        setScrollOffset((offset) => {
+          const maxOffset = getMaxScrollOffset(
+            virtualLinesCount,
+            conversationHeight,
+            getDegradationTier(messagesToProcess.length) === 3
+          );
+          const next = Math.min(maxOffset, offset + STEP);
+          if (next >= maxOffset) userHasScrolledUpRef.current = false;
+          return next;
+        });
+      }
+    }, [])
   );
 }
