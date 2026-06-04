@@ -1,4 +1,5 @@
 import { Box, Text, useInput } from "ink";
+import { getRuntimeFlags } from "@agency/core";
 import type { ThemeTokens } from "../themes/registry.js";
 import { SLASH_MENU } from "../presentation/slash-menu.js";
 import {
@@ -117,6 +118,14 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
       { keys: "Ctrl+Q", desc: "Quit application" },
       { keys: "Ctrl+C", desc: "Force exit" },
     ]},
+    // Only shown when transcript navigation is enabled (flag transcriptNav) —
+    // otherwise these keys keep their legacy meaning.
+    ...(getRuntimeFlags().transcriptNav ? [{ category: "Transcript focus", items: [
+      { keys: "Ctrl+T", desc: "Focus the latest turn (Ctrl+T / Esc to exit)" },
+      { keys: "↑ / ↓", desc: "Move focus between turns" },
+      { keys: "c / y", desc: "Copy the focused turn to clipboard" },
+      { keys: "f", desc: "Fork a new session at the focused turn" },
+    ]}] : []),
   ];
 
   const renderShortcuts = () => {
