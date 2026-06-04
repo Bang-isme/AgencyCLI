@@ -452,6 +452,27 @@ interface FormattedLinesCacheEntry {
 
 const formattedLinesCache = new Map<string, FormattedLinesCacheEntry>();
 
+/**
+ * Whether the model's thought block should render fully expanded.
+ *
+ * Two independent triggers, OR'd:
+ * - Manual `ctrl+o` (`expandedTui`) pins the LAST message's thought open and keeps
+ *   it open after the turn ends (history inspection).
+ * - `autoExpandThinking` (flag) expands ANY message WHILE it is streaming and
+ *   collapses it the instant the stream ends — the live-detail / idle-digest
+ *   behaviour. The formatted-lines cache keys on `streaming`, so the true→false
+ *   flip recomputes the (now collapsed) lines automatically; a new turn's stream
+ *   re-expands. No new panel — this reuses the existing thought render path.
+ */
+export function resolveThoughtExpansion(
+  expandedTui: boolean,
+  isLastMessage: boolean,
+  streaming: boolean,
+  autoExpandThinking: boolean
+): boolean {
+  return (expandedTui && isLastMessage) || (autoExpandThinking && streaming);
+}
+
 interface ThoughtHeaderProps {
   showSpinner: boolean;
   shouldExpandThought: boolean;
@@ -656,6 +677,10 @@ export function calculateFormattedLines(
   completed?: boolean;
   lastIndex?: number;
 } {
+  // Live-detail / idle-digest: expand the streaming message's thought while it is
+  // thinking, collapse it when the stream ends (flag-gated; manual ctrl+o still
+  // pins history open). One env read per render call, not per line.
+  const autoExpandThinking = getRuntimeFlags().autoExpandThinking;
   if (cols !== lastColsValue || theme.bg !== lastThemeBg || theme.text !== lastThemeText) {
     formattedLinesCache.clear();
     streamingCache.clear();
@@ -976,7 +1001,7 @@ export function calculateFormattedLines(
       // Render Thought block if present
       if (m.thought) {
         const showSpinner = !!(isLastMessage && loading);
-        const shouldExpandThought = !!(expandedTui && isLastMessage);
+        const shouldExpandThought = resolveThoughtExpansion(!!expandedTui, isLastMessage, !!m.streaming, autoExpandThinking);
 
         pushBodyLine(
           (
@@ -1293,7 +1318,7 @@ export function calculateFormattedLines(
           | { type: "action"; blockIdx: number; block: AssistantBlock }
         )[] = [];
 
-        const shouldExpandThought = !!(expandedTui && isLastMessage);
+        const shouldExpandThought = resolveThoughtExpansion(!!expandedTui, isLastMessage, !!m.streaming, autoExpandThinking);
         if (m.thought && !shouldExpandThought) {
           traceItems.push({ type: "thought" });
         }

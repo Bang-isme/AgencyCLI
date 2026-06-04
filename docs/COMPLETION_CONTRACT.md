@@ -17,20 +17,20 @@
 
 ## 1. Verified ground truth (re-run to refresh; do not trust without re-running)
 
-**Measured 2026-06-05 (post docs-consistency guard + K1 RuntimeState), `master`,
-clean tree. `pnpm verify` (= `pnpm -r build && pnpm -r test`) → build 16/16,
-REAL_EXIT_CODE=0.**
+**Measured 2026-06-05 (post docs-consistency guard + K1 RuntimeState +
+auto-expand-thinking), `master`, clean tree. `pnpm verify` (= `pnpm -r build &&
+pnpm -r test`) → build 16/16, REAL_EXIT_CODE=0.**
 
 | Package | tests | Package | tests | Package | tests |
 |---|---:|---|---:|---|---:|
-| core | 504 | cli | 588 | tui | 208 |
+| core | 504 | cli | 588 | tui | 214 |
 | providers | 855 | memory | 48 | security | 39 |
 | benchmark | 18 | tooling | 14 | workspace | 11 |
 | telemetry | 9 | governance | 7 | context | 6 |
 | heuristics | 6 | browser | 5 | skills-bridge | 18 (+1 skip) |
 
-**Totals: ≈ 2336 passing · 16 packages · 21 built-in tools · 8 agents · 28 skills ·
-8 workflows · 42 runtime flags (43 `getRuntimeFlags()` keys incl. `profile`).**
+**Totals: ≈ 2342 passing · 16 packages · 21 built-in tools · 8 agents · 28 skills ·
+8 workflows · 43 runtime flags (44 `getRuntimeFlags()` keys incl. `profile`).**
 
 > These numbers are a **dated snapshot**. The live source is always `pnpm verify`
 > (test totals, flag count) + `agency status` (flags) + the guard in §3 (structural

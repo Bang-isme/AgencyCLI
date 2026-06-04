@@ -123,6 +123,7 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Composer cursor editing", value: f.composerCursorEdit ? "on (caret nav + insert/delete + undo)" : "off (append-only)", keys: ["composerCursorEdit"] },
     { label: "Workflow skill loads", value: f.workflowSkillLoads ? "on (selected workflow activates its declared skill chain)" : "off (router skills only)", keys: ["workflowSkillLoads"] },
     { label: "Runtime state", value: f.runtimeState ? "on (journal-derived runtime summary in status)" : "off", keys: ["runtimeState"] },
+    { label: "Auto-expand thinking", value: f.autoExpandThinking ? "on (expand live thought while streaming, collapse when done)" : "off (manual ctrl+o only)", keys: ["autoExpandThinking"] },
   ];
 }
 

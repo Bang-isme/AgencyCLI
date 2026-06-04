@@ -318,6 +318,18 @@ export interface RuntimeFlags {
    * Roadmap: docs/AGENT_OS_BLUEPRINT.md K1 / EVENT_FIRST_RUNTIME.md §3.
    */
   runtimeState: boolean;
+  /**
+   * Auto-expand the model's live "thinking" (the `→ Thinking` thought block) WHILE
+   * a message is streaming, and auto-collapse it back to the one-line
+   * `→ Thinking [ctrl+o to view]` summary the moment the stream ends — so the
+   * operator watches the reasoning unfold in real time without a finished
+   * transcript staying bloated. Resuming a new turn re-expands automatically. This
+   * reuses the existing `expandedTui`/`shouldExpandThought` mechanism (per-message,
+   * keyed on `streaming`) — it does NOT add a panel. The manual `ctrl+o` expand
+   * still works and still pins history open. Off in legacy (manual-expand only,
+   * render byte-identical), on in hardened. TUI-render only.
+   */
+  autoExpandThinking: boolean;
 }
 
 function parseBool(raw: string | undefined, fallback: boolean): boolean {
@@ -504,5 +516,8 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Additive read-only (folds the durable journal into a status section) → off
     // in legacy (status byte-identical apart from the flag row), on in hardened.
     runtimeState: parseBool(env.AGENCY_RUNTIME_STATE, hardened),
+    // TUI-render only: auto-expand the live thought while streaming, auto-collapse
+    // when it ends → off in legacy (manual ctrl+o only, byte-identical), on in hardened.
+    autoExpandThinking: parseBool(env.AGENCY_AUTO_EXPAND_THINKING, hardened),
   };
 }
