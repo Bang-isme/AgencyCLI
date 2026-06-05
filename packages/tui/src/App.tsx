@@ -31,6 +31,7 @@ import { globalWorkerTracker, SemanticTranslator, type WorkerState } from "./sta
 
 
 import { Conversation, calculateFormattedLines, getMaxScrollOffset } from "./components/Conversation.js";
+import { Scrollbar } from "./components/Scrollbar.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
 import { ToolActivity } from "./components/ToolActivity.js";
 import { ErrorBanner, type ErrorNotification } from "./components/ErrorBanner.js";
@@ -391,6 +392,9 @@ export function App({
   // Worker-panel lifecycle flag. On → finalize orphaned workers when the turn ends,
   // reset the tracker on a new prompt. Off → legacy always-on verbatim panel.
   const workerPanelLifecycle = useMemo(() => getRuntimeFlags().workerPanelLifecycle, []);
+  // Mouse layer flag. On → draw the in-app right-edge scrollbar (and own the
+  // wheel/click/drag). Off → no scrollbar, legacy render is byte-identical.
+  const mouseSupport = useMemo(() => getRuntimeFlags().mouseSupport, []);
   const [cursorPos, setCursorPos] = useState(0);
   // Authoritative editing state, read+written synchronously by the keystroke
   // handler so rapid typing/paste bursts never read a batched-stale caret. The
@@ -2817,27 +2821,45 @@ ${taskDesc}`;
               const activeScrollOffset = userHasScrolledUpRef.current
                 ? scrollOffset
                 : getMaxScrollOffset(virtualLinesCount, conversationHeight, survivalModeActive);
+              // In-app scrollbar (flag `mouseSupport`): the alt screen has no
+              // native scrollback, so we draw a 1-col indicator at the right edge
+              // ONLY when the transcript actually overflows. We then hand the
+              // conversation 1 fewer column so the row total stays at
+              // composerWidth — overrunning it by 1 retriggers the Windows
+              // Terminal scrollbar flicker the layout module guards against.
+              const scrollActive = !survivalModeActive && virtualLinesCount > conversationHeight;
+              const showScrollbar = mouseSupport && scrollActive;
               return (
                 <>
-                  <MemoConversation
-                    theme={theme}
-                    messages={session.messages}
-                    loading={loading}
-                    viewportHeight={conversationHeight}
-                    scrollOffset={activeScrollOffset}
-                    cols={composerWidth}
-                    project={project}
-                    modelName={displayModelName}
-                    agentMode={agentMode}
-                    indexing={indexing}
-                    indexReady={indexReady}
-                    themeId={themeId}
-                    noProvider={!providerStatuses.some((p) => p.configured)}
-                    subagents={subagents}
-                    expandedTui={expandedTui}
-                    goalActive={goalActive}
-                    focusedMessageId={focusedMessageId}
-                  />
+                  <Box flexDirection="row" width={composerWidth}>
+                    <MemoConversation
+                      theme={theme}
+                      messages={session.messages}
+                      loading={loading}
+                      viewportHeight={conversationHeight}
+                      scrollOffset={activeScrollOffset}
+                      cols={showScrollbar ? composerWidth - 1 : composerWidth}
+                      project={project}
+                      modelName={displayModelName}
+                      agentMode={agentMode}
+                      indexing={indexing}
+                      indexReady={indexReady}
+                      themeId={themeId}
+                      noProvider={!providerStatuses.some((p) => p.configured)}
+                      subagents={subagents}
+                      expandedTui={expandedTui}
+                      goalActive={goalActive}
+                      focusedMessageId={focusedMessageId}
+                    />
+                    {showScrollbar ? (
+                      <Scrollbar
+                        theme={theme}
+                        total={virtualLinesCount}
+                        offset={activeScrollOffset}
+                        height={conversationHeight}
+                      />
+                    ) : null}
+                  </Box>
                   <ErrorBanner
                     theme={theme}
                     errors={errorNotifications}
