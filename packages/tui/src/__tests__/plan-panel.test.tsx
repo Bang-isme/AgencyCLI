@@ -1,11 +1,55 @@
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { getTheme, DEFAULT_THEME_ID } from "../themes/registry.js";
-import { PlanPanel } from "../components/PlanPanel.js";
+import { PlanPanel, cleanPlanStep } from "../components/PlanPanel.js";
 
 const theme = getTheme(DEFAULT_THEME_ID);
 
+describe("cleanPlanStep", () => {
+  it("strips a leading emoji prefix the model added to the title", () => {
+    expect(cleanPlanStep("🎨 Subagent 1: Enhance Color System")).toBe("Subagent 1: Enhance Color System");
+    expect(cleanPlanStep("✅ Final build & test verification")).toBe("Final build & test verification");
+    expect(cleanPlanStep("🔧 Update globals.css")).toBe("Update globals.css");
+    expect(cleanPlanStep("✨ Improve Hero Section")).toBe("Improve Hero Section");
+  });
+
+  it("strips a run of multiple leading emoji", () => {
+    expect(cleanPlanStep("🎨✨ Title")).toBe("Title");
+  });
+
+  it("leaves a plain title untouched", () => {
+    expect(cleanPlanStep("Run tests to verify changes")).toBe("Run tests to verify changes");
+    expect(cleanPlanStep("Update globals.css with new design tokens")).toBe("Update globals.css with new design tokens");
+  });
+
+  it("does not touch emoji in the middle of the title", () => {
+    expect(cleanPlanStep("Improve Hero 🎨 Section")).toBe("Improve Hero 🎨 Section");
+  });
+
+  it("handles empty / non-string input", () => {
+    expect(cleanPlanStep("")).toBe("");
+    expect(cleanPlanStep(undefined as unknown as string)).toBe("");
+  });
+});
+
 describe("PlanPanel", () => {
+  it("renders plan titles without the model's leading emoji clutter", () => {
+    const { lastFrame } = render(
+      <PlanPanel
+        theme={theme}
+        todos={[
+          { step: "🎨 Enhance Color System & Tailwind Theme", status: "in_progress" },
+          { step: "✅ Final build & test verification", status: "pending" },
+        ]}
+      />
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Enhance Color System & Tailwind Theme");
+    expect(frame).toContain("Final build & test verification");
+    expect(frame).not.toContain("🎨");
+    expect(frame).not.toContain("✅");
+  });
+
   it("renders each todo with its own per-item status glyph and a progress count", () => {
     const { lastFrame } = render(
       <PlanPanel

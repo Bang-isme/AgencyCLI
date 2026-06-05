@@ -14,6 +14,16 @@ function statusGlyph(status: string): string {
   return "□";
 }
 
+// The panel renders its own status glyph (✓/▶/□), so a model-authored emoji
+// prefix on the step text ("🎨 Subagent 1: …", "✅ Final build…") is pure noise
+// that reads as clutter. Strip a leading run of pictographs (with an optional
+// variation selector) and the following space. Mid-text content is untouched;
+// a plain title passes through unchanged.
+const LEADING_EMOJI_RE = /^(?:\p{Extended_Pictographic}️?\s*)+/u;
+export function cleanPlanStep(step: string): string {
+  return typeof step === "string" ? step.replace(LEADING_EMOJI_RE, "").trimStart() : "";
+}
+
 function statusColor(status: string, theme: ThemeTokens): string {
   if (status === "completed") return theme.success;
   if (status === "in_progress") return theme.accent;
@@ -86,7 +96,7 @@ export const PlanPanel = memo(function PlanPanel({
               dimColor={t.status === "pending"}
               wrap="truncate-end"
             >
-              {t.step}
+              {cleanPlanStep(t.step)}
             </Text>
           </Box>
         </Box>
