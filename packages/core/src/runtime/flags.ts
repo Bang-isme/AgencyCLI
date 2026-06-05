@@ -553,9 +553,13 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // never clearing). Opt out with AGENCY_WORKER_LIFECYCLE=0 to restore the legacy
     // always-on verbatim panel.
     workerPanelLifecycle: parseBool(env.AGENCY_WORKER_LIFECYCLE, true),
-    // TUI-interaction: enable SGR mouse (click/drag/move + own the wheel) → on by
-    // default in BOTH profiles (user request). Additive + error-swallowing. Opt out
-    // with AGENCY_MOUSE=0 to restore the legacy keyboard-only / native-wheel TUI.
-    mouseSupport: parseBool(env.AGENCY_MOUSE, true),
+    // TUI-interaction: SGR mouse tracking (click/drag/move + own the wheel) → OFF
+    // by default in BOTH profiles. Default-on regressed wheel scrolling: enabling
+    // SGR tracking makes the terminal report the wheel as button events, so the
+    // native ?1007h alternate-scroll (wheel→↑/↓ the TUI already scrolls on) stops
+    // working — and the SGR wheel path didn't reliably fire on Windows Terminal.
+    // Off restores native-wheel scrolling. Opt in with AGENCY_MOUSE=1 for future
+    // click features (a message menu); additive + error-swallowing when on.
+    mouseSupport: parseBool(env.AGENCY_MOUSE, false),
   };
 }
