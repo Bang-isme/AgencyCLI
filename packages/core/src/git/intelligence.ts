@@ -52,7 +52,7 @@ function parseRecentCommits(
 }
 
 export async function getGitSummary(projectRoot: string): Promise<GitSummary> {
-  const gitOpts = { cwd: projectRoot, reject: false } as const;
+  const gitOpts = { cwd: projectRoot, reject: false, timeout: 3000 } as const;
 
   const [branchResult, statusResult, logResult, ghResult] = await Promise.all([
     // `symbolic-ref` resolves the branch even on an unborn HEAD (a freshly
@@ -61,7 +61,7 @@ export async function getGitSummary(projectRoot: string): Promise<GitSummary> {
     execa("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], gitOpts),
     execa("git", ["status", "--porcelain"], gitOpts),
     execa("git", ["log", "-5", "--oneline"], gitOpts),
-    execa("gh", ["--version"], { reject: false }),
+    execa("gh", ["--version"], { reject: false, timeout: 2000 }),
   ]);
 
   let branch: string;
