@@ -279,8 +279,8 @@ export function editFromInput(
   if (input.includes("\x1b")) return null; // raw escape sequence (arrows/home/…)
 
   const isCtrlH = !!key.ctrl && (input === "h" || key.name === "h");
-  if (key.backspace || isCtrlH) return { buffer: backspace(b), kind: "delete", boundary: false };
-  if (key.delete) return { buffer: deleteForward(b), kind: "delete", boundary: false };
+  const isBackspace = !!key.backspace || !!key.delete || key.name === "backspace" || key.name === "delete" || input === "\b" || input === "\x08" || input === "\x7f";
+  if (isBackspace || isCtrlH) return { buffer: backspace(b), kind: "delete", boundary: false };
 
   const isControlShortcut =
     (!!key.ctrl || !!key.meta) &&

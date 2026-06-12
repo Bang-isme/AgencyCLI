@@ -16,7 +16,9 @@ export function applyTextInput(
   if (input.includes("\x1b")) return false;
 
   const isCtrlH = key.ctrl && (input === "h" || key.name === "h");
-  const isBackspaceOrDelete = key.backspace || key.delete || isCtrlH;
+  const isBackspace = key.backspace || key.name === "backspace" || input === "\b" || input === "\x08" || input === "\x7f";
+  const isDelete = key.delete || key.name === "delete";
+  const isBackspaceOrDelete = isBackspace || isDelete || isCtrlH;
 
   if (isBackspaceOrDelete) {
     setter((b) => deleteLastGrapheme(b));

@@ -173,7 +173,8 @@ export function ConnectOverlay({
       }
       // Handle physical backspace/delete/Ctrl+H explicitly first
       const isCtrlH = key.ctrl && (input === "h" || (key as any).name === "h");
-      const isBackspaceOrDelete = key.backspace || key.delete || isCtrlH;
+      const isBackspace = key.backspace || (key as any).name === "backspace" || input === "\b" || input === "\x08" || input === "\x7f";
+      const isBackspaceOrDelete = isBackspace || key.delete || (key as any).name === "delete" || isCtrlH;
 
       if (isBackspaceOrDelete) {
         setKeyBuffer((b) => deleteLastGrapheme(b));

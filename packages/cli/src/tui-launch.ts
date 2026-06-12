@@ -51,7 +51,7 @@ function isProjectPathArg(arg: string): boolean {
 export function resolveTuiLaunch(argv: string[]): TuiLaunchPlan {
   const args = argv.slice(2);
   const bin = basename(argv[1] ?? "").replace(/\.(js|cjs|mjs)$/i, "");
-  const isAcg = bin === "acg";
+  const isAcg = bin === "acg" || process.env.AGENCY_TUI === "true";
 
   if (args.length === 0) {
     return { launch: true };
