@@ -937,27 +937,6 @@ See [PUBLISH.md](PUBLISH.md) for detailed publishing workflow.
 
 ---
 
-## Extended Documentation
-
-The `docs/` directory contains 12 in-depth technical guides:
-
-| Document | Topic |
-|:---|:---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture overview |
-| [CORE_ENGINE.md](docs/CORE_ENGINE.md) | Core engine internals: routing, workflows, approvals |
-| [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) | Complete CLI command reference |
-| [PACKAGES.md](docs/PACKAGES.md) | Detailed package-by-package documentation |
-| [CONFIG_AND_STATE.md](docs/CONFIG_AND_STATE.md) | Configuration files and state management |
-| [SECURITY_MODEL.md](docs/SECURITY_MODEL.md) | Security model: sandboxing, egress, approvals |
-| [UI_DESIGN.md](docs/UI_DESIGN.md) | TUI design specifications and component library |
-| [SKILLS_PACK.md](docs/SKILLS_PACK.md) | CodexAI skills pack integration guide |
-| [TESTING.md](docs/TESTING.md) | Testing strategy and guidelines |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development setup and contribution guide |
-| [TELEMETRY_BENCHMARK.md](docs/TELEMETRY_BENCHMARK.md) | Telemetry, profiling, and benchmarks |
-| [docs/README.md](docs/README.md) | Documentation index |
-
----
-
 ## License
 
 [MIT](LICENSE) -- Copyright (c) 2026 Agency CLI contributors
