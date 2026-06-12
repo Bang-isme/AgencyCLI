@@ -62,7 +62,8 @@ export function RouteOverlay({
 
     // Step 1: Type custom prompt
     if (step === 1) {
-      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || _input === "\b" || _input === "\x08" || _input === "\x7f";
+      const isCtrlH = key.ctrl && (_input === "h" || (key as any).name === "h");
+      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || _input === "\b" || _input === "\x08" || _input === "\x7f" || isCtrlH;
       if (key.return) {
         const trimmed = typedPrompt.trim();
         if (trimmed) {
@@ -78,7 +79,8 @@ export function RouteOverlay({
 
     // Step 2: Custom intent input
     if (customActive) {
-      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || _input === "\b" || _input === "\x08" || _input === "\x7f";
+      const isCtrlH = key.ctrl && (_input === "h" || (key as any).name === "h");
+      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || _input === "\b" || _input === "\x08" || _input === "\x7f" || isCtrlH;
       if (key.return) {
         const trimmed = customIntent.trim().toLowerCase();
         if (trimmed && activePrompt) {

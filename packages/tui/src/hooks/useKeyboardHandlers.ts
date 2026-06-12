@@ -318,7 +318,7 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
     }
 
     // ── Help overlay toggle ──
-    if (((key.ctrl && input === "h") || (input === "?" && buffer.length === 0))) {
+    if (input === "?" && buffer.length === 0) {
       closeAllOverlays();
       setOverlayOpen("help", true);
       return;

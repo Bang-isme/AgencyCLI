@@ -198,7 +198,7 @@ The TUI is designed as a **unified conversational workspace** that runs in an al
 
 | Trigger / Command | Overlay Panel | Description |
 |:---|:---|:---|
-| `?` or `Ctrl+H` | **Help & Shortcuts** | View all keyboard navigation keys and slash command aliases |
+| `?` | **Help & Shortcuts** | View all keyboard navigation keys and slash command aliases |
 | `/sessions` | **Sessions Manager** | Browse, search, restore, or delete previous conversation histories |
 | `/connect` | **Connections Manager** | Dynamically configure LLM providers and save your API keys securely |
 | `/models` | **Model Selector** | Switch between configured models and active AI providers on the fly |
