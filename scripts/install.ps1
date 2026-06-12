@@ -20,8 +20,8 @@ if (Get-Command "node" -ErrorAction SilentlyContinue) {
     Write-Host "Detected System Node.js: $version" -ForegroundColor Green
     
     # Restrict Node version due to SQLite binary compatibility on Windows
-    if ($version -notmatch "^v(20|22)\.") {
-        Write-Error "Node.js version v20 or v22 LTS is required (detected $version). Node v24+ lacks prebuilt binaries for better-sqlite3 on Windows. Please install Node.js v22 LTS (https://nodejs.org/) and run this installer again."
+    if ($version -notmatch "^v(20|22|24|25|26)\.") {
+        Write-Error "Node.js version v20, v22, v24, v25, or v26 is required (detected $version). Please install a supported Node.js LTS version (https://nodejs.org/) and run this installer again."
         exit 1
     }
 }
@@ -34,7 +34,19 @@ if (-not $nodeFound) {
 
 # 2. Check for pnpm
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Write-Host "pnpm is not detected. Attempting to install pnpm globally via npm..." -ForegroundColor Yellow
+    Write-Host "pnpm is not detected. Attempting to enable corepack..." -ForegroundColor Yellow
+    try {
+        & corepack enable pnpm
+        if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+            Write-Host "pnpm enabled successfully via corepack!" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "Failed to enable corepack: $_. Trying fallback npm installation..." -ForegroundColor Yellow
+    }
+}
+
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    Write-Host "pnpm is still not detected. Attempting to install pnpm globally via npm..." -ForegroundColor Yellow
     if (Get-Command npm -ErrorAction SilentlyContinue) {
         try {
             & npm install -g pnpm --silent
@@ -80,15 +92,21 @@ if (-not (Test-Path $pnpmBin)) {
 pnpm setup | Out-Null
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$currentUserPaths = $userPath -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') }
+$currentPaths = $env:Path -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') }
+
 $pathsToAdd = @($env:PNPM_HOME, $pnpmBin)
 foreach ($p in $pathsToAdd) {
-    if ($userPath -notlike "*$p*") {
+    $normalizedP = $p.Trim().TrimEnd('\')
+    if ($currentUserPaths -notcontains $normalizedP) {
         [Environment]::SetEnvironmentVariable("Path", "$p;$userPath", "User")
         $userPath = "$p;$userPath"
+        $currentUserPaths = $userPath -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') }
         Write-Host "Added to user PATH: $p" -ForegroundColor Green
     }
-    if ($env:Path -notlike "*$p*") {
+    if ($currentPaths -notcontains $normalizedP) {
         $env:Path = "$p;$env:Path"
+        $currentPaths = $env:Path -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') }
     }
 }
 
@@ -100,7 +118,13 @@ $legacyWrappers = @(
     (Join-Path $env:APPDATA "Antigravity\bin\agency.cmd"),
     (Join-Path $env:APPDATA "Antigravity\bin\acg.cmd"),
     (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\agency.cmd"),
-    (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\acg.cmd")
+    (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\acg.cmd"),
+    (Join-Path $env:PNPM_HOME "agency"),
+    (Join-Path $env:PNPM_HOME "agency.cmd"),
+    (Join-Path $env:PNPM_HOME "agency.ps1"),
+    (Join-Path $env:PNPM_HOME "acg"),
+    (Join-Path $env:PNPM_HOME "acg.cmd"),
+    (Join-Path $env:PNPM_HOME "acg.ps1")
 )
 
 foreach ($path in $legacyWrappers) {
@@ -134,6 +158,10 @@ if (-not (Test-Path $globalConfigPath)) {
 # 5. Build monorepo
 Push-Location $Root
 try {
+    Write-Host "Cleaning stale build artifacts for a clean build..." -ForegroundColor Cyan
+    Get-ChildItem -Path $Root -Filter "tsconfig.tsbuildinfo" -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "*node_modules*" } | Remove-Item -Force
+    Get-ChildItem -Path $Root -Include "dist" -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "*node_modules*" } | Remove-Item -Recurse -Force
+
     Write-Host "Installing monorepo dependencies..." -ForegroundColor Cyan
     pnpm install
     if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
@@ -147,8 +175,13 @@ try {
         Push-Location $betterSqliteDir
         try {
             $currentNodeVersion = & node -v
-            $targetVer = $currentNodeVersion.Substring(1) # Remove 'v' prefix
-            Write-Host "  Running prebuild-install for target Node version $targetVer..." -ForegroundColor Gray
+            if ($currentNodeVersion -match '^v(\d+)\.') {
+                $majorVer = $Matches[1]
+                $targetVer = "$majorVer.0.0"
+            } else {
+                $targetVer = $currentNodeVersion.Substring(1)
+            }
+            Write-Host "  Running prebuild-install for target Node version $targetVer (resolved from $currentNodeVersion)..." -ForegroundColor Gray
             & node $prebuildInstallBin --target=$targetVer
             Write-Host "  Successfully resolved native SQLite binary for Node $currentNodeVersion!" -ForegroundColor Green
         } catch {
@@ -162,12 +195,16 @@ try {
     pnpm build
     if ($LASTEXITCODE -ne 0) { throw "pnpm build failed" }
 
+    # Regenerate local bin shims now that dist folders are built
+    Write-Host "Regenerating local workspace bin shims..." -ForegroundColor Cyan
+    pnpm install --prefer-offline --silent
+
     # Link packages/cli globally
     Write-Host "Linking @agency/cli globally..." -ForegroundColor Cyan
     Push-Location (Join-Path $Root "packages\cli")
     try {
-        pnpm install -g .
-        if ($LASTEXITCODE -ne 0) { throw "pnpm install -g . failed" }
+        npm link
+        if ($LASTEXITCODE -ne 0) { throw "npm link failed" }
     } finally {
         Pop-Location
     }
@@ -190,59 +227,68 @@ try {
         # Ignore any errors in legacy fallback
     }
 
-    # 6. Configure PowerShell Profile
-    Write-Host "Configuring PowerShell profile..." -ForegroundColor Cyan
-    $ProfileDir = Split-Path -Parent $PROFILE
-    if (-not (Test-Path $ProfileDir)) {
-        New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
-    }
+    # 6. Configure PowerShell Profile (only if PROFILE is defined)
+    if ($PROFILE) {
+        Write-Host "Configuring PowerShell profile..." -ForegroundColor Cyan
+        $ProfileDir = Split-Path -Parent $PROFILE
+        if (-not (Test-Path $ProfileDir)) {
+            New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
+        }
 
-    $ProfileContent = ""
-    if (Test-Path $PROFILE) {
-        $ProfileContent = Get-Content $PROFILE -Raw
-    }
+        $ProfileContent = ""
+        if (Test-Path $PROFILE) {
+            $ProfileContent = Get-Content $PROFILE -Raw
+        }
 
-    $SetupBlock = @"
+        $SetupBlock = @'
 # region AgencyCLI-Setup
 function acg {
-    `$env:AGENCY_TUI = "true"
-    agency `@args
+    $env:AGENCY_TUI = "true"
+    agency @args
     Remove-Item env:\AGENCY_TUI -ErrorAction SilentlyContinue
 }
 # endregion AgencyCLI-Setup
-"@
+'@
 
-    if ($ProfileContent -match '(?s)# region AgencyCLI-Setup.*?# endregion AgencyCLI-Setup') {
-        $NewContent = $ProfileContent -replace '(?s)# region AgencyCLI-Setup.*?# endregion AgencyCLI-Setup', $SetupBlock
-    } else {
-        if ($ProfileContent.Length -gt 0 -and -not $ProfileContent.EndsWith("`n")) {
-            $NewContent = $ProfileContent + "`r`n" + $SetupBlock
+        if ($ProfileContent -match '(?s)# region AgencyCLI-Setup.*?# endregion AgencyCLI-Setup') {
+            $NewContent = $ProfileContent -replace '(?s)# region AgencyCLI-Setup.*?# endregion AgencyCLI-Setup', $SetupBlock
         } else {
-            $NewContent = $ProfileContent + $SetupBlock
+            if ($ProfileContent.Length -gt 0 -and -not $ProfileContent.EndsWith("`n")) {
+                $NewContent = $ProfileContent + "`r`n" + $SetupBlock
+            } else {
+                $NewContent = $ProfileContent + $SetupBlock
+            }
         }
-    }
 
-    Set-Content -Path $PROFILE -Value $NewContent -Encoding utf8
-    Write-Host "Updated PowerShell profile at: $PROFILE" -ForegroundColor Green
+        Set-Content -Path $PROFILE -Value $NewContent -Encoding utf8
+        Write-Host "Updated PowerShell profile at: $PROFILE" -ForegroundColor Green
 
-    # If dot-sourced, clean up memory cache of old functions and reload profile immediately
-    if ($MyInvocation.InvocationName -eq '.') {
-        Remove-Item function:agency -ErrorAction SilentlyContinue
-        Remove-Item function:acg -ErrorAction SilentlyContinue
-        . $PROFILE
-        Write-Host "Reloaded profile functions in active session!" -ForegroundColor Green
+        # If dot-sourced, clean up memory cache of old functions and reload profile immediately
+        if ($MyInvocation.InvocationName -eq '.') {
+            Remove-Item function:agency -ErrorAction SilentlyContinue
+            Remove-Item function:acg -ErrorAction SilentlyContinue
+            . $PROFILE
+            Write-Host "Reloaded profile functions in active session!" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "PowerShell PROFILE is not defined. Skipping profile configuration." -ForegroundColor Yellow
     }
 
 
 
     # 7. Install Playwright browser dependencies
     Write-Host "Installing Playwright Chromium browser binary..." -ForegroundColor Cyan
-    pnpm dlx playwright install chromium
-    if ($LASTEXITCODE -ne 0) { throw "Playwright installation failed" }
+    try {
+        pnpm dlx playwright install chromium
+        if ($LASTEXITCODE -ne 0) { throw "Playwright installation returned non-zero exit code" }
+    } catch {
+        Write-Host "  Warning: Playwright browser installation failed: $_" -ForegroundColor Yellow
+        Write-Host "  You can manually install it later by running: pnpm dlx playwright install chromium" -ForegroundColor Yellow
+    }
 
     # 8. Bootstrap setup command (verifies SQLite native bindings compatibility)
     Write-Host "Verifying SQLite native bindings & running initial setup..." -ForegroundColor Cyan
-    pnpm exec agency setup --project-root $Root
+    node packages/cli/dist/index.js setup --project-root $Root
 
     Write-Host ""
     Write-Host "==============================================" -ForegroundColor Green
