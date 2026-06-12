@@ -66,9 +66,13 @@ describe("Sandbox Suite", () => {
 
   describe("isDockerAvailable", () => {
     it("should return true when docker info exits with 0", async () => {
+      const stdoutStream = new Readable({ read() {} });
       const mockProcess = {
+        stdout: stdoutStream,
         on: vi.fn((event: string, cb: any) => {
           if (event === "close") {
+            stdoutStream.push("linux\n");
+            stdoutStream.push(null);
             setTimeout(() => cb(0), 10);
           }
           return mockProcess;
@@ -78,7 +82,7 @@ describe("Sandbox Suite", () => {
 
       const available = await isDockerAvailable();
       expect(available).toBe(true);
-      expect(mockSpawn).toHaveBeenCalledWith("docker", ["info"], expect.any(Object));
+      expect(mockSpawn).toHaveBeenCalledWith("docker", ["info", "--format", "{{.OSType}}"], expect.any(Object));
     });
 
     it("should return false when docker info exits with non-zero code", async () => {
@@ -318,10 +322,14 @@ describe("Sandbox Suite", () => {
       let callCount = 0;
       const stdoutStream = new Readable({ read() {} });
       const stderrStream = new Readable({ read() {} });
+      const infoStdoutStream = new Readable({ read() {} });
 
       const mockProcessDockerInfo = {
+        stdout: infoStdoutStream,
         on: vi.fn((event: string, cb: any) => {
           if (event === "close") {
+            infoStdoutStream.push("linux\n");
+            infoStdoutStream.push(null);
             setTimeout(() => cb(0), 5);
           }
           return mockProcessDockerInfo;
@@ -400,9 +408,15 @@ describe("Sandbox Suite", () => {
       let callCount = 0;
       const stdoutStream = new Readable({ read() {} });
       const stderrStream = new Readable({ read() {} });
+      const infoStdoutStream = new Readable({ read() {} });
       const dockerInfo = {
+        stdout: infoStdoutStream,
         on: vi.fn((event: string, cb: any) => {
-          if (event === "close") setTimeout(() => cb(0), 5);
+          if (event === "close") {
+            infoStdoutStream.push("linux\n");
+            infoStdoutStream.push(null);
+            setTimeout(() => cb(0), 5);
+          }
           return dockerInfo;
         }),
       };
@@ -436,9 +450,15 @@ describe("Sandbox Suite", () => {
       let callCount = 0;
       const stdoutStream = new Readable({ read() {} });
       const stderrStream = new Readable({ read() {} });
+      const infoStdoutStream = new Readable({ read() {} });
       const dockerInfo = {
+        stdout: infoStdoutStream,
         on: vi.fn((event: string, cb: any) => {
-          if (event === "close") setTimeout(() => cb(0), 5);
+          if (event === "close") {
+            infoStdoutStream.push("linux\n");
+            infoStdoutStream.push(null);
+            setTimeout(() => cb(0), 5);
+          }
           return dockerInfo;
         }),
       };

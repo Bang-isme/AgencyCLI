@@ -137,10 +137,17 @@ export function getDockerImage(projectRoot: string, overrideImage?: string): str
 
 export async function isDockerAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
-    // Using shell: true so it works across platforms (Windows/Linux/macOS)
-    const child = spawn("docker", ["info"], { stdio: "ignore", shell: true });
+    // Check if docker is available and running Linux containers
+    const child = spawn("docker", ["info", "--format", "{{.OSType}}"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      shell: true,
+    });
+    let output = "";
+    child.stdout?.on("data", (chunk) => {
+      output += chunk.toString();
+    });
     child.on("close", (code) => {
-      resolve(code === 0);
+      resolve(code === 0 && output.trim().toLowerCase() === "linux");
     });
     child.on("error", () => {
       resolve(false);
