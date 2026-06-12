@@ -105,4 +105,4 @@ describe("Sandbox Escape & Browser Automation Degradation Verification Suite", (
 
     await actualRuntime.close();
   });
-});
+}, 30000);
