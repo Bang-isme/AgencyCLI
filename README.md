@@ -18,9 +18,7 @@
 
 ---
 
-[img-hero-screenshot]
-
-<!-- Replace [img-hero-screenshot] with a screenshot of the TUI running in your terminal -->
+<img width="1920" height="1080" alt="Video Project 2" src="https://github.com/user-attachments/assets/816d9ebf-358f-483e-af0b-179f75895279" />
 
 ---
 
