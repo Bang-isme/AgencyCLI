@@ -142,14 +142,24 @@ export async function isDockerAvailable(): Promise<boolean> {
       stdio: ["ignore", "pipe", "ignore"],
       shell: true,
     });
+    
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {}
+      resolve(false);
+    }, 3000);
+
     let output = "";
     child.stdout?.on("data", (chunk) => {
       output += chunk.toString();
     });
     child.on("close", (code) => {
+      clearTimeout(timer);
       resolve(code === 0 && output.trim().toLowerCase() === "linux");
     });
     child.on("error", () => {
+      clearTimeout(timer);
       resolve(false);
     });
   });

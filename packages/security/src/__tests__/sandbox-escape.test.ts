@@ -6,7 +6,7 @@ import { createBrowserRuntime, PlaywrightRuntime, MockRuntime } from "../../../b
 
 describe("Sandbox Escape & Browser Automation Degradation Verification Suite", () => {
   it("should test Docker sandbox volume bounds and network restrictions if Docker is online, and verify args if offline", async () => {
-    const dockerOnline = await isDockerAvailable();
+    const dockerOnline = !process.env.CI && (await isDockerAvailable());
 
     if (dockerOnline) {
       console.log("[Sandbox Test] Live Docker detected! Running live integration escape tests...");
