@@ -1,6 +1,14 @@
-<p align="center">
-  <strong>⚡ Agency CLI</strong>
-</p>
+<div align="center">
+<pre>
+ ████   ████  ██████ █    █  ████  █    █  ████  █      ██████
+█    █ █      █      ██   █ █    █ █    █ █    █ █        ██  
+█    █ █      █      █ █  █ █       █  █  █      █        ██  
+██████ █  ███ █████  █ █  █ █        ██   █      █        ██  
+█    █ █    █ █      █  █ █ █        ██   █      █        ██  
+█    █ █    █ █      █   ██ █    █   ██   █    █ █        ██  
+█    █  ████  ██████ █    █  ████    ██    ████  ██████ ██████
+</pre>
+</div>
 
 <p align="center">
   Terminal-native CLI + interactive TUI for local AI agent orchestration.<br/>
@@ -18,9 +26,7 @@
 
 ---
 
-[img-hero-screenshot]
-
-<!-- Replace [img-hero-screenshot] with a screenshot of the TUI running in your terminal -->
+<img width="1920" height="1080" alt="Video Project 2" src="https://github.com/user-attachments/assets/816d9ebf-358f-483e-af0b-179f75895279" />
 
 ---
 
@@ -110,7 +116,8 @@ The CLI binary is `agency`. The TUI binary is `acg`. Both point to the same entr
 ### Option A: Automated Setup (Recommended)
 
 ```powershell
-.\scripts\install.ps1
+# Run the installation script (if script execution is blocked, use the bypass flag):
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
 This script performs the following steps in order:
@@ -197,7 +204,7 @@ The TUI is designed as a **unified conversational workspace** that runs in an al
 
 | Trigger / Command | Overlay Panel | Description |
 |:---|:---|:---|
-| `?` or `Ctrl+H` | **Help & Shortcuts** | View all keyboard navigation keys and slash command aliases |
+| `?` | **Help & Shortcuts** | View all keyboard navigation keys and slash command aliases |
 | `/sessions` | **Sessions Manager** | Browse, search, restore, or delete previous conversation histories |
 | `/connect` | **Connections Manager** | Dynamically configure LLM providers and save your API keys securely |
 | `/models` | **Model Selector** | Switch between configured models and active AI providers on the fly |
@@ -934,27 +941,6 @@ pnpm publish:release          # Publish + tag + push
 ```
 
 See [PUBLISH.md](PUBLISH.md) for detailed publishing workflow.
-
----
-
-## Extended Documentation
-
-The `docs/` directory contains 12 in-depth technical guides:
-
-| Document | Topic |
-|:---|:---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture overview |
-| [CORE_ENGINE.md](docs/CORE_ENGINE.md) | Core engine internals: routing, workflows, approvals |
-| [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) | Complete CLI command reference |
-| [PACKAGES.md](docs/PACKAGES.md) | Detailed package-by-package documentation |
-| [CONFIG_AND_STATE.md](docs/CONFIG_AND_STATE.md) | Configuration files and state management |
-| [SECURITY_MODEL.md](docs/SECURITY_MODEL.md) | Security model: sandboxing, egress, approvals |
-| [UI_DESIGN.md](docs/UI_DESIGN.md) | TUI design specifications and component library |
-| [SKILLS_PACK.md](docs/SKILLS_PACK.md) | CodexAI skills pack integration guide |
-| [TESTING.md](docs/TESTING.md) | Testing strategy and guidelines |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development setup and contribution guide |
-| [TELEMETRY_BENCHMARK.md](docs/TELEMETRY_BENCHMARK.md) | Telemetry, profiling, and benchmarks |
-| [docs/README.md](docs/README.md) | Documentation index |
 
 ---
 

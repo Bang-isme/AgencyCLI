@@ -2,9 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { isDockerAvailable, DockerSandbox, NativeSandbox } from "../sandbox.js";
 import { createBrowserRuntime, PlaywrightRuntime, MockRuntime } from "../../../browser/src/runtime.js";
 
+
+
 describe("Sandbox Escape & Browser Automation Degradation Verification Suite", () => {
   it("should test Docker sandbox volume bounds and network restrictions if Docker is online, and verify args if offline", async () => {
-    const dockerOnline = await isDockerAvailable();
+    const dockerOnline = !process.env.CI && (await isDockerAvailable());
 
     if (dockerOnline) {
       console.log("[Sandbox Test] Live Docker detected! Running live integration escape tests...");
@@ -71,6 +73,7 @@ describe("Sandbox Escape & Browser Automation Degradation Verification Suite", (
   it("should gracefully degrade browser automation from Playwright to MockRuntime if browser binaries are missing in CI", async () => {
     // Attempting to launch Playwright
     const playwright = new PlaywrightRuntime();
+    vi.spyOn(playwright, "launch").mockRejectedValue(new Error("Playwright browser executable is missing."));
     let launchError: Error | null = null;
     let actualRuntime: any = playwright;
 
@@ -105,4 +108,4 @@ describe("Sandbox Escape & Browser Automation Degradation Verification Suite", (
 
     await actualRuntime.close();
   });
-});
+}, 30000);

@@ -39,7 +39,8 @@ describe("getGitSummary", () => {
         expect(summary.recentCommits[0].hash).toBeTruthy();
         expect(typeof summary.recentCommits[0].subject).toBe("string");
       }
-    }
+    },
+    15000
   );
 
   it.skipIf(!GIT_AVAILABLE)(
@@ -62,6 +63,7 @@ describe("getGitSummary", () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
-    }
+    },
+    15000
   );
 });

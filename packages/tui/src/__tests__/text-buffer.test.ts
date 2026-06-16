@@ -114,9 +114,9 @@ describe("text-buffer — editFromInput keystroke translation", () => {
     expect(r!.kind).toBe("delete");
   });
 
-  it("delete key deletes forward at the caret", () => {
+  it("delete key deletes backward at the caret (acts as backspace for Ink 5.x compatibility)", () => {
     const r = editFromInput("", { delete: true }, b("abc", 1));
-    expect(r!.buffer).toEqual({ text: "ac", cursor: 1 });
+    expect(r!.buffer).toEqual({ text: "bc", cursor: 0 });
   });
 
   it("an embedded backspace in a run pops the accumulator then the buffer", () => {

@@ -38,7 +38,7 @@ const SHORT_DESCS: Record<string, string> = {
 
 export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
   useInput((input, key) => {
-    if (key.escape || input === "?" || (key.ctrl && input === "h")) {
+    if (key.escape || input === "?") {
       onClose();
     }
   });
@@ -109,7 +109,7 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
       { keys: "!", desc: "Execute shell command" },
     ]},
     { category: "Overlays & menus", items: [
-      { keys: "? / Ctrl+H", desc: "Toggle this help overlay" },
+      { keys: "?", desc: "Toggle this help overlay" },
       { keys: "/", desc: "Open slash command menu" },
       { keys: "@", desc: "Open file picker" },
       { keys: "Ctrl+X", desc: "Focus subagent detail view" },

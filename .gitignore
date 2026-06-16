@@ -11,3 +11,13 @@ __pycache__/
 .codex/state/
 **/.codex/quality/
 **/.codex/state/
+
+# Exclude docs directory (private documentation)
+docs/
+
+# Installers and logs
+node-v22.msi
+*.msi
+*.log
+.env
+

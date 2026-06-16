@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBrowserRuntime, MockRuntime, PlaywrightRuntime, CdpRuntime } from "../runtime.js";
+
+vi.mock("playwright", () => {
+  return {
+    chromium: {
+      launch: vi.fn().mockRejectedValue(new Error("Executable doesn't exist")),
+    },
+  };
+});
 
 describe("packages/browser", () => {
   describe("createBrowserRuntime", () => {
