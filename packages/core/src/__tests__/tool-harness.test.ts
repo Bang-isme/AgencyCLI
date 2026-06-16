@@ -1,13 +1,20 @@
-import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach } from "vitest";
 import { z } from "zod";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker, createTurnCircuitBreaker, consumeCircuitBreakerTrip } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker, createTurnCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
 import { consumeBreakerTrip } from "../chat/circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 
 describe("Tool Harness Subsystem", () => {
+  beforeAll(() => {
+    process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD = "3";
+  });
+
+  afterAll(() => {
+    delete process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD;
+  });
   describe("parseToolCalls", () => {
     it("should parse simple XML tool calls", () => {
       const text = `
@@ -125,6 +132,26 @@ Here is my decision:
       `;
       expect(() => parseToolCalls(text)).not.toThrow();
       expect(parseToolCalls(text)).toHaveLength(0);
+    });
+
+    it("parses minimax:tool_call tags correctly", () => {
+      const text = `
+<minimax:tool_call name="write_file">
+  <path>e.ts</path>
+  <content>hello minimax</content>
+</minimax:tool_call>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.name).toBe("write_file");
+      expect(calls[0]!.arguments).toEqual({ path: "e.ts", content: "hello minimax" });
+    });
+
+    it("detects unclosed minimax:tool_call correctly", () => {
+      const open = "<minimax:tool_call name=\"write_file\"><path>e.ts</path>";
+      const closed = "<minimax:tool_call name=\"write_file\"><path>e.ts</path></minimax:tool_call>";
+      expect(hasUnclosedToolCall(open)).toBe(true);
+      expect(hasUnclosedToolCall(closed)).toBe(false);
     });
   });
 

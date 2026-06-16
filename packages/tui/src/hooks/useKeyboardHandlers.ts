@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
-import { useInput } from "ink";
+import { useInput, useStdin } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { SubagentStatus } from "../state/subagent-status.js";
 import { calculateFormattedLines, getMaxScrollOffset } from "../components/Conversation.js";
@@ -124,13 +124,48 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
     optionsRef.current = options;
   });
 
+  const { internal_eventEmitter } = useStdin() as any;
+  const lastRawInputRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!internal_eventEmitter) return;
+    const handleRawData = (data: unknown) => {
+      if (typeof data === "string") {
+        lastRawInputRef.current = data;
+      } else if (Buffer.isBuffer(data)) {
+        lastRawInputRef.current = data.toString();
+      }
+    };
+    internal_eventEmitter.on("input", handleRawData);
+    return () => {
+      internal_eventEmitter.off("input", handleRawData);
+    };
+  }, [internal_eventEmitter]);
+
   // Main Ink useInput key interceptor
   useInput(
-    useCallback((input, key) => {
+    useCallback((input, rawKey) => {
       // Mouse SGR sequences also reach Ink's input parser; drop their residue so
       // a click can never inject "[<0;10;5M"-style junk into the composer. The
       // pattern is mouse-specific, so it can never match legitimate typing.
       if (isMouseResidue(input)) return;
+
+      const key = { ...rawKey };
+      const raw = lastRawInputRef.current;
+      if (
+        rawKey.delete &&
+        (raw === "\x7f" ||
+         raw === "\x08" ||
+         raw === "\b" ||
+         raw === "\x1b\x7f" ||
+         raw === "\x1b\x08")
+      ) {
+        key.delete = false;
+        key.backspace = true;
+      }
+
+
+
       const {
         expandedTui: _expandedTui,
         setExpandedTui,

@@ -164,4 +164,22 @@ describe("createOpenAiCompatibleProvider", () => {
     const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
     expect(body.max_completion_tokens).toBeDefined();
   });
+
+  it("handles minimax effort-based models mapping to native thinking levels", async () => {
+    const fetchImpl = mockFetch({
+      json: { choices: [{ message: { content: "ok" } }] },
+    });
+
+    const provider = createOpenAiCompatibleProvider({
+      id: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      defaultModel: "minimax-m3",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await provider.complete([{ role: "user", content: "x" }]);
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
+    expect(body.thinking).toBeUndefined(); // 'high' maps to 'enabled', which is omitted for compatibility
+  });
 });

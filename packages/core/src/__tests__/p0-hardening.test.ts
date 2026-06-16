@@ -24,6 +24,7 @@ const FLAG_KEYS = [
   "AGENCY_EXECUTION_BUDGET_MS",
   "AGENCY_MAX_PARALLEL_AGENTS",
   "AGENCY_MEMORY_GC",
+  "AGENCY_CIRCUIT_BREAKER_THRESHOLD",
 ];
 
 function clearFlagEnv() {
@@ -47,6 +48,7 @@ describe("runtime flags", () => {
     expect(f.executionBudgetMs).toBe(0); // wall-clock deadline off in legacy
     expect(f.maxParallelAgents).toBe(3);
     expect(f.memoryGc).toBe(false);
+    expect(f.circuitBreakerThreshold).toBe(6);
   });
 
   it("hardened profile flips behaviour-changing defaults on", () => {
@@ -71,9 +73,11 @@ describe("runtime flags", () => {
     process.env.AGENCY_PROFILE = "hardened";
     process.env.AGENCY_APPROVAL_IN_TOOLPATH = "off";
     process.env.AGENCY_MAX_DEPTH = "3";
+    process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD = "5";
     const f = getRuntimeFlags();
     expect(f.approvalInToolPath).toBe("off");
     expect(f.maxDepth).toBe(3);
+    expect(f.circuitBreakerThreshold).toBe(5);
   });
 });
 

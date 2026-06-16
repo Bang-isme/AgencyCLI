@@ -169,6 +169,41 @@ describe("getModelThinkingConfig", () => {
     expect(config.variants).toHaveLength(0);
   });
 
+  it("MiniMax: effort-based with native string values", () => {
+    const config = getModelThinkingConfig("nvidia", "minimax-m3");
+    expect(config.supported).toBe(true);
+    expect(config.variants).toHaveLength(3);
+    expect(config.variants[0]!.name).toBe("disabled");
+    expect(config.variants[0]!.value).toBe("disabled");
+    expect(config.variants[0]!.desc).toContain("Prioritizes");
+    expect(config.variants[1]!.name).toBe("adaptive");
+    expect(config.variants[1]!.value).toBe("adaptive");
+    expect(config.variants[1]!.desc).toContain("Automatically");
+    expect(config.variants[2]!.name).toBe("enabled");
+    expect(config.variants[2]!.value).toBe("enabled");
+    expect(config.variants[2]!.desc).toContain("Full chain");
+  });
+
+  it("Frontier models: effort-based with correct levels", () => {
+    // 1. Gemini 3.1 Pro / 3.5 Flash: low, medium, high
+    const geminiSpec = getModelThinkingConfig("google", "gemini-3.1-pro-preview");
+    expect(geminiSpec.supported).toBe(true);
+    expect(geminiSpec.variants).toHaveLength(3);
+    expect(geminiSpec.variants.map(v => v.name)).toEqual(["low", "medium", "high"]);
+
+    // 2. GPT 5.5: low, medium, high, xhigh
+    const gptSpec = getModelThinkingConfig("openai", "gpt-5.5");
+    expect(gptSpec.supported).toBe(true);
+    expect(gptSpec.variants).toHaveLength(4);
+    expect(gptSpec.variants.map(v => v.name)).toEqual(["low", "medium", "high", "xhigh"]);
+
+    // 3. DeepSeek V4: low, medium, high, max
+    const dsSpec = getModelThinkingConfig("openrouter", "deepseek/deepseek-v4-pro");
+    expect(dsSpec.supported).toBe(true);
+    expect(dsSpec.variants).toHaveLength(4);
+    expect(dsSpec.variants.map(v => v.name)).toEqual(["low", "medium", "high", "max"]);
+  });
+
   describe("exhaustive MODEL_REGISTRY validation", () => {
     it.each(Object.entries(MODEL_REGISTRY))("verifies %s has valid context, output tokens, and thinking type", (modelId, spec) => {
       expect(spec.contextWindow).toBeGreaterThan(0);

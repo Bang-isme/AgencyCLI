@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 /**
  * Model catalog — reads the repository's `models.json` (the models.dev-style
@@ -199,6 +200,30 @@ function ensureLoaded(): void {
   } catch {
     /* best-effort: empty catalog → runtime falls back to legacy specs */
   }
+
+  // Load online model specifications cache
+  try {
+    const cacheDir = join(homedir(), ".agency");
+    const cachePath = join(cacheDir, "online-model-cache.json");
+    if (existsSync(cachePath)) {
+      const cached = JSON.parse(readFileSync(cachePath, "utf8")) as Record<string, CatalogSpec>;
+      for (const [key, spec] of Object.entries(cached)) {
+        const lowerKey = key.toLowerCase();
+        if (!index.has(lowerKey)) {
+          index.set(lowerKey, spec);
+        }
+        const bare = lowerKey.split("/").pop() ?? lowerKey;
+        if (typeof spec.contextWindow === "number") {
+          const arr = groups.get(bare);
+          if (arr) arr.push(spec.contextWindow);
+          else groups.set(bare, [spec.contextWindow]);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   catalogIndex = index;
   catalogKeys = Array.from(index.keys());
   bareIdContexts = groups;
@@ -262,6 +287,103 @@ function resolveAgnostic(model: string): CatalogSpec | null {
  * Without `providerId` it is the legacy provider-agnostic resolution, byte for
  * byte, so callers that don't opt in are unaffected.
  */
+const queuedFetches = new Set<string>();
+
+function triggerBackgroundFetch(model: string): void {
+  const modelId = model.trim();
+  const lowerId = modelId.toLowerCase();
+  const bareId = lowerId.split("/").pop() ?? lowerId;
+
+  if (queuedFetches.has(lowerId)) return;
+  queuedFetches.add(lowerId);
+
+  // Non-blocking fetch from OpenRouter public API to dynamically discover model specifications
+  globalThis.fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(4000) })
+    .then((r) => {
+      if (!r.ok) throw new Error(`Status ${r.status}`);
+      return r.json();
+    })
+    .then((json: any) => {
+      if (!json || !Array.isArray(json.data)) return;
+
+      const matched = json.data.find((m: any) => {
+        const mId = m.id.toLowerCase();
+        return (
+          mId === lowerId ||
+          mId === bareId ||
+          mId.endsWith(`/${lowerId}`) ||
+          mId.endsWith(`/${bareId}`)
+        );
+      });
+
+      if (matched) {
+        const spec: CatalogSpec = {
+          contextWindow: matched.context_length ?? 128000,
+          maxOutputTokens: Math.min(
+            matched.top_provider?.max_completion_tokens ??
+              matched.max_completion_tokens ??
+              8192,
+            16384
+          ),
+          cost: matched.pricing
+            ? {
+                input: parseFloat(matched.pricing.prompt ?? "0") * 1000000,
+                output: parseFloat(matched.pricing.completion ?? "0") * 1000000,
+              }
+            : undefined,
+          capabilities: {
+            toolCall: matched.supported_parameters?.includes("tools") ?? false,
+            temperature: matched.supported_parameters?.includes("temperature") ?? true,
+            reasoning: matched.supported_parameters?.includes("reasoning") ?? false,
+            vision: matched.architecture?.input_modalities?.includes("image") ?? false,
+          },
+        };
+
+        const cacheDir = join(homedir(), ".agency");
+        const cachePath = join(cacheDir, "online-model-cache.json");
+        let cacheData: Record<string, CatalogSpec> = {};
+        try {
+          if (existsSync(cachePath)) {
+            cacheData = JSON.parse(readFileSync(cachePath, "utf8"));
+          }
+        } catch {
+          // ignore
+        }
+
+        cacheData[modelId] = spec;
+        cacheData[lowerId] = spec;
+        cacheData[bareId] = spec;
+
+        try {
+          mkdirSync(cacheDir, { recursive: true });
+          writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), "utf8");
+
+          // Inject into mapping immediately so it works on next lookup without restart
+          if (catalogIndex) {
+            catalogIndex.set(modelId.toLowerCase(), spec);
+            catalogIndex.set(lowerId, spec);
+            catalogIndex.set(bareId, spec);
+
+            if (typeof spec.contextWindow === "number") {
+              const arr = bareIdContexts.get(bareId);
+              if (arr) arr.push(spec.contextWindow);
+              else bareIdContexts.set(bareId, [spec.contextWindow]);
+            }
+
+            catalogKeys = Array.from(catalogIndex.keys());
+            lookupCache.clear();
+          }
+        } catch {
+          // ignore
+        }
+      }
+    })
+    .catch(() => {
+      // Retry allowed later
+      queuedFetches.delete(lowerId);
+    });
+}
+
 export function getCatalogSpec(model: string, providerId?: string): CatalogSpec | null {
   if (!model || typeof model !== "string") return null;
   const cacheId = providerId ? `${providerId.toLowerCase()}::${model}` : model;
@@ -274,6 +396,10 @@ export function getCatalogSpec(model: string, providerId?: string): CatalogSpec 
   }
 
   let base = resolveAgnostic(model);
+
+  if (!base) {
+    triggerBackgroundFetch(model);
+  }
 
   if (providerId) {
     const lower = model.toLowerCase();

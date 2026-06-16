@@ -124,5 +124,17 @@ describe("SmartRateLimiter", () => {
     });
     expect(result3).toBe("done-3");
     expect(calls).toBe(2);
+
+    // Test 4: error with "stream stalled" or "timeout" text
+    calls = 0;
+    const result4 = await limiter.retryWithBackoff(async () => {
+      calls++;
+      if (calls === 1) {
+        throw new Error("nvidia stream stalled (no token for 90000ms) at https://integrate.api.nvidia.com/v1");
+      }
+      return "done-4";
+    });
+    expect(result4).toBe("done-4");
+    expect(calls).toBe(2);
   });
 });

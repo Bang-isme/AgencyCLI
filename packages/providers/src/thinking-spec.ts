@@ -21,6 +21,7 @@ export interface ModelSpec {
   thinkingType: "budget" | "effort" | "none";
   /** Only for effort-based models (OpenAI o-series). */
   effortLevels?: string[];
+  effortDescriptions?: string[];
   /** Known free-tier rate limits. */
   freeRateLimit?: { rpm: number; tpm: number };
   specSource?: "override" | "registry" | "api" | "heuristics" | "default" | "catalog";
@@ -41,6 +42,8 @@ function getOverrideSpec(model: string): ModelSpec | null {
           contextWindow: o.contextWindow ?? 128_000,
           maxOutputTokens: o.maxOutputTokens ?? 4096,
           thinkingType: o.thinkingType ?? "none",
+          effortLevels: o.effortLevels,
+          effortDescriptions: o.effortDescriptions,
           specSource: "override",
         };
       }
@@ -52,6 +55,8 @@ function getOverrideSpec(model: string): ModelSpec | null {
           contextWindow: o.contextWindow ?? 128_000,
           maxOutputTokens: o.maxOutputTokens ?? 4096,
           thinkingType: o.thinkingType ?? "none",
+          effortLevels: o.effortLevels,
+          effortDescriptions: o.effortDescriptions,
           specSource: "override",
         };
       }
@@ -66,6 +71,8 @@ function getOverrideSpec(model: string): ModelSpec | null {
             contextWindow: o.contextWindow ?? 128_000,
             maxOutputTokens: o.maxOutputTokens ?? 4096,
             thinkingType: o.thinkingType ?? "none",
+            effortLevels: o.effortLevels,
+            effortDescriptions: o.effortDescriptions,
             specSource: "override",
           };
         }
@@ -164,51 +171,70 @@ function getHeuristicsSpec(model: string): ModelSpec | null {
   // 2. Reasoning / Thinking capability detection using robust regex
   let thinkingType: "budget" | "effort" | "none" = "none";
   let maxOutputTokens = 4096;
+  let effortLevels: string[] | undefined = undefined;
+  let effortDescriptions: string[] | undefined = undefined;
 
-  // Matches if model name contains any reasoning indicators like r1, k1, o1, o3, o4, reasoning, thinking, thought, etc.
-  const isReasoning = /(?:^|[-_/])(r1|reasoner|reasoning|thinking|thought|o1|o3|o4|k1)(?:[-_]|$)/i.test(id) 
-    || /\b(r1|reasoner|reasoning|thinking|thought|k1)\b/i.test(id);
-
-  if (isReasoning) {
-    // OpenAI o-series uses effort-based scaling
-    if (/(?:^|[-_/])(o1|o3|o4)(?:[-_]|$)/i.test(id)) {
-      thinkingType = "effort";
-      maxOutputTokens = 100_000;
-    } else {
-      thinkingType = "budget";
-      if (id.includes("gemini-3") || id.includes("gemini-2.5") || id.includes("gemini-2.0") || id.includes("gemini")) {
-        maxOutputTokens = id.includes("flash") && !id.includes("thinking") ? 8192 : 65536;
-      } else if (id.includes("claude-3-7") || id.includes("claude-sonnet-4")) {
-        maxOutputTokens = 128000;
-      } else if (id.includes("deepseek") || id.includes("r1") || id.includes("reasoner")) {
-        maxOutputTokens = 64000;
-      } else {
-        maxOutputTokens = 8192;
-      }
-    }
+  if (id.includes("gemini-3.1-pro") || id.includes("gemini-3.5-flash")) {
+    thinkingType = "effort";
+    maxOutputTokens = 65536;
+    effortLevels = ["low", "medium", "high"];
+    effortDescriptions = ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"];
+  } else if (id.includes("gpt-5.5")) {
+    thinkingType = "effort";
+    maxOutputTokens = 128000;
+    effortLevels = ["low", "medium", "high", "xhigh"];
+    effortDescriptions = ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Extra high reasoning effort"];
+  } else if (id.includes("deepseek-v4-pro") || id.includes("deepseek-v4-flash")) {
+    thinkingType = "effort";
+    maxOutputTokens = id.includes("pro") ? 384000 : 16384;
+    effortLevels = ["low", "medium", "high", "max"];
+    effortDescriptions = ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"];
   } else {
-    // Non-reasoning models
-    thinkingType = "none";
-    if (id.includes("gpt-5")) {
-      maxOutputTokens = 128000;
-    } else if (id.includes("gpt-4.1") || id.includes("gpt-4.5")) {
-      maxOutputTokens = 32768;
-    } else if (id.includes("gpt-4o")) {
-      maxOutputTokens = 16384;
-    } else if (id.includes("claude-3-5") || id.includes("claude-3-5") || id.includes("claude-3") || id.includes("claude-sonnet")) {
-      maxOutputTokens = 8192;
-    } else if (id.includes("gemini-3") || id.includes("gemini-2.5")) {
-      maxOutputTokens = 65536;
-    } else if (id.includes("gemini")) {
-      maxOutputTokens = 8192;
-    } else if (id.includes("kimi-2.6") || id.includes("k2.6")) {
-      maxOutputTokens = 262142;
-    } else if (id.includes("minimax-2.7") || id.includes("minimax-m2.7")) {
-      maxOutputTokens = 131072;
-    } else if (id.includes("qwen3")) {
-      maxOutputTokens = 65536;
-    } else if (id.includes("glm-5")) {
-      maxOutputTokens = 131072;
+    // Matches if model name contains any reasoning indicators like r1, k1, o1, o3, o4, reasoning, thinking, thought, etc.
+    const isReasoning = /(?:^|[-_/])(r1|reasoner|reasoning|thinking|thought|o1|o3|o4|k1)(?:[-_]|$)/i.test(id) 
+      || /\b(r1|reasoner|reasoning|thinking|thought|k1)\b/i.test(id);
+
+    if (isReasoning) {
+      // OpenAI o-series uses effort-based scaling
+      if (/(?:^|[-_/])(o1|o3|o4)(?:[-_]|$)/i.test(id)) {
+        thinkingType = "effort";
+        maxOutputTokens = 100_000;
+      } else {
+        thinkingType = "budget";
+        if (id.includes("gemini-3") || id.includes("gemini-2.5") || id.includes("gemini-2.0") || id.includes("gemini")) {
+          maxOutputTokens = id.includes("flash") && !id.includes("thinking") ? 8192 : 65536;
+        } else if (id.includes("claude-3-7") || id.includes("claude-sonnet-4")) {
+          maxOutputTokens = 128000;
+        } else if (id.includes("deepseek") || id.includes("r1") || id.includes("reasoner")) {
+          maxOutputTokens = 64000;
+        } else {
+          maxOutputTokens = 8192;
+        }
+      }
+    } else {
+      // Non-reasoning models
+      thinkingType = "none";
+      if (id.includes("gpt-5")) {
+        maxOutputTokens = 128000;
+      } else if (id.includes("gpt-4.1") || id.includes("gpt-4.5")) {
+        maxOutputTokens = 32768;
+      } else if (id.includes("gpt-4o")) {
+        maxOutputTokens = 16384;
+      } else if (id.includes("claude-3-5") || id.includes("claude-3-5") || id.includes("claude-3") || id.includes("claude-sonnet")) {
+        maxOutputTokens = 8192;
+      } else if (id.includes("gemini-3") || id.includes("gemini-2.5")) {
+        maxOutputTokens = 65536;
+      } else if (id.includes("gemini")) {
+        maxOutputTokens = 8192;
+      } else if (id.includes("kimi-2.6") || id.includes("k2.6")) {
+        maxOutputTokens = 262142;
+      } else if (id.includes("minimax-2.7") || id.includes("minimax-m2.7")) {
+        maxOutputTokens = 131072;
+      } else if (id.includes("qwen3")) {
+        maxOutputTokens = 65536;
+      } else if (id.includes("glm-5")) {
+        maxOutputTokens = 131072;
+      }
     }
   }
 
@@ -216,6 +242,8 @@ function getHeuristicsSpec(model: string): ModelSpec | null {
     contextWindow,
     maxOutputTokens,
     thinkingType,
+    effortLevels,
+    effortDescriptions,
     specSource: "heuristics",
   };
 }
@@ -359,9 +387,27 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "deepseek/deepseek-v3.2": { maxOutputTokens: 65536, contextWindow: 131072, thinkingType: "none" },
   "deepseek/deepseek-v3.2-exp": { maxOutputTokens: 65536, contextWindow: 163840, thinkingType: "none" },
   "deepseek/deepseek-v3.2-speciale": { maxOutputTokens: 163840, contextWindow: 163840, thinkingType: "none" },
-  "deepseek/deepseek-v4-flash": { maxOutputTokens: 16384, contextWindow: 1048576, thinkingType: "none" },
-  "deepseek/deepseek-v4-flash:free": { maxOutputTokens: 384000, contextWindow: 1048576, thinkingType: "none" },
-  "deepseek/deepseek-v4-pro": { maxOutputTokens: 384000, contextWindow: 1048576, thinkingType: "none" },
+  "deepseek/deepseek-v4-flash": {
+    maxOutputTokens: 16384,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"]
+  },
+  "deepseek/deepseek-v4-flash:free": {
+    maxOutputTokens: 384000,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"]
+  },
+  "deepseek/deepseek-v4-pro": {
+    maxOutputTokens: 384000,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"]
+  },
   "devstral-2512": { maxOutputTokens: 4096, contextWindow: 262144, thinkingType: "none" },
   "devstral-medium": { maxOutputTokens: 4096, contextWindow: 131072, thinkingType: "none" },
   "devstral-small": { maxOutputTokens: 4096, contextWindow: 131072, thinkingType: "none" },
@@ -393,9 +439,27 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "gemini-3.1-flash-image-preview": { maxOutputTokens: 65536, contextWindow: 131072, thinkingType: "budget" },
   "gemini-3.1-flash-lite": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
   "gemini-3.1-flash-lite-preview": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
-  "gemini-3.1-pro-preview": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
-  "gemini-3.1-pro-preview-customtools": { maxOutputTokens: 65536, contextWindow: 1048756, thinkingType: "budget" },
-  "gemini-3.5-flash": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
+  "gemini-3.1-pro-preview": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"]
+  },
+  "gemini-3.1-pro-preview-customtools": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048756,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"]
+  },
+  "gemini-3.5-flash": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"]
+  },
   "gemini-flash-latest": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "none" },
   "gemini-pro-latest": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "none" },
   "gemma-2-27b-it": { maxOutputTokens: 2048, contextWindow: 8192, thinkingType: "none" },
@@ -442,9 +506,27 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "google/gemini-3.1-flash-image-preview": { maxOutputTokens: 65536, contextWindow: 131072, thinkingType: "budget" },
   "google/gemini-3.1-flash-lite": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
   "google/gemini-3.1-flash-lite-preview": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
-  "google/gemini-3.1-pro-preview": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
-  "google/gemini-3.1-pro-preview-customtools": { maxOutputTokens: 65536, contextWindow: 1048756, thinkingType: "budget" },
-  "google/gemini-3.5-flash": { maxOutputTokens: 65536, contextWindow: 1048576, thinkingType: "budget" },
+  "google/gemini-3.1-pro-preview": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"]
+  },
+  "google/gemini-3.1-pro-preview-customtools": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048756,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"]
+  },
+  "google/gemini-3.5-flash": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"]
+  },
   "google/gemma-2-27b-it": { maxOutputTokens: 2048, contextWindow: 8192, thinkingType: "none" },
   "google/gemma-3-12b-it": { maxOutputTokens: 16384, contextWindow: 131072, thinkingType: "none" },
   "google/gemma-3-27b-it": { maxOutputTokens: 16384, contextWindow: 131072, thinkingType: "none" },
@@ -503,8 +585,20 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "gpt-5.4-mini": { maxOutputTokens: 128000, contextWindow: 400000, thinkingType: "none" },
   "gpt-5.4-nano": { maxOutputTokens: 128000, contextWindow: 400000, thinkingType: "none" },
   "gpt-5.4-pro": { maxOutputTokens: 128000, contextWindow: 1050000, thinkingType: "none" },
-  "gpt-5.5": { maxOutputTokens: 128000, contextWindow: 1050000, thinkingType: "none" },
-  "gpt-5.5-pro": { maxOutputTokens: 128000, contextWindow: 1050000, thinkingType: "none" },
+  "gpt-5.5": {
+    maxOutputTokens: 128000,
+    contextWindow: 1050000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "xhigh"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Extra high reasoning effort"]
+  },
+  "gpt-5.5-pro": {
+    maxOutputTokens: 128000,
+    contextWindow: 1050000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "xhigh"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Extra high reasoning effort"]
+  },
   "gpt-audio": { maxOutputTokens: 16384, contextWindow: 128000, thinkingType: "none" },
   "gpt-audio-mini": { maxOutputTokens: 16384, contextWindow: 128000, thinkingType: "none" },
   "gpt-chat-latest": { maxOutputTokens: 128000, contextWindow: 400000, thinkingType: "none" },
@@ -612,6 +706,28 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "mimo-v2.5": { maxOutputTokens: 131072, contextWindow: 1048576, thinkingType: "none" },
   "mimo-v2.5-pro": { maxOutputTokens: 131072, contextWindow: 1048576, thinkingType: "none" },
   "minimax-01": { maxOutputTokens: 1000192, contextWindow: 1000192, thinkingType: "none" },
+  "minimax-m3": {
+    maxOutputTokens: 8192,
+    contextWindow: 1_000_000,
+    thinkingType: "effort",
+    effortLevels: ["disabled", "adaptive", "enabled"],
+    effortDescriptions: [
+      "Prioritizes lower latency and higher throughput",
+      "Automatically determines when to use reasoning",
+      "Full chain-of-thought for complex coding/agentic tasks"
+    ]
+  },
+  "minimax/minimax-m3": {
+    maxOutputTokens: 8192,
+    contextWindow: 1_000_000,
+    thinkingType: "effort",
+    effortLevels: ["disabled", "adaptive", "enabled"],
+    effortDescriptions: [
+      "Prioritizes lower latency and higher throughput",
+      "Automatically determines when to use reasoning",
+      "Full chain-of-thought for complex coding/agentic tasks"
+    ]
+  },
   "minimax-2.7": { maxOutputTokens: 131072, contextWindow: 204800, thinkingType: "none" },
   "minimax-m1": { maxOutputTokens: 80000, contextWindow: 1000000, thinkingType: "none" },
   "minimax-m2": { maxOutputTokens: 196608, contextWindow: 204800, thinkingType: "none" },
@@ -774,8 +890,20 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "openai/gpt-5.4-mini": { maxOutputTokens: 128000, contextWindow: 400000, thinkingType: "none" },
   "openai/gpt-5.4-nano": { maxOutputTokens: 128000, contextWindow: 400000, thinkingType: "none" },
   "openai/gpt-5.4-pro": { maxOutputTokens: 128000, contextWindow: 1050000, thinkingType: "none" },
-  "openai/gpt-5.5": { maxOutputTokens: 128000, contextWindow: 1050000, thinkingType: "none" },
-  "openai/gpt-5.5-pro": { maxOutputTokens: 128000, contextWindow: 1050000, thinkingType: "none" },
+  "openai/gpt-5.5": {
+    maxOutputTokens: 128000,
+    contextWindow: 1050000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "xhigh"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Extra high reasoning effort"]
+  },
+  "openai/gpt-5.5-pro": {
+    maxOutputTokens: 128000,
+    contextWindow: 1050000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "xhigh"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Extra high reasoning effort"]
+  },
   "openai/gpt-audio": { maxOutputTokens: 16384, contextWindow: 128000, thinkingType: "none" },
   "openai/gpt-audio-mini": { maxOutputTokens: 16384, contextWindow: 128000, thinkingType: "none" },
   "openai/gpt-chat-latest": { maxOutputTokens: 128000, contextWindow: 400000, thinkingType: "none" },
@@ -1090,6 +1218,18 @@ export function getModelSpec(model: string, providerId?: string): ModelSpec {
         copy.freeRateLimit = { rpm: 5, tpm: 200_000 };
       }
     }
+    if (model.toLowerCase().includes("minimax") && copy.thinkingType === "effort") {
+      if (!copy.effortLevels) {
+        copy.effortLevels = ["disabled", "adaptive", "enabled"];
+      }
+      if (!copy.effortDescriptions) {
+        copy.effortDescriptions = [
+          "Prioritizes lower latency and higher throughput",
+          "Automatically determines when to use reasoning",
+          "Full chain-of-thought for complex coding/agentic tasks"
+        ];
+      }
+    }
     return enrichWithCatalog(copy, model, providerId);
   }
 
@@ -1098,37 +1238,55 @@ export function getModelSpec(model: string, providerId?: string): ModelSpec {
   if (heur) {
     const isNvidia = model.toLowerCase().includes("nvidia") || model.toLowerCase().includes("nim");
     const isGemini = model.toLowerCase().includes("gemini");
-    return enrichWithCatalog(
-      {
-        ...heur,
-        freeRateLimit: isNvidia
-          ? { rpm: 5, tpm: 200_000 }
-          : isGemini
-            ? { rpm: 15, tpm: 1_000_000 }
-            : undefined,
-      },
-      model,
-      providerId
-    );
-  }
-
-  const isNvidia = model.toLowerCase().includes("nvidia") || model.toLowerCase().includes("nim");
-  const isGemini = model.toLowerCase().includes("gemini");
-  return enrichWithCatalog(
-    {
-      maxOutputTokens: 4096,
-      contextWindow: 128_000,
-      thinkingType: "none",
-      specSource: "default",
+    const copy = {
+      ...heur,
       freeRateLimit: isNvidia
         ? { rpm: 5, tpm: 200_000 }
         : isGemini
           ? { rpm: 15, tpm: 1_000_000 }
           : undefined,
-    },
-    model,
-    providerId
-  );
+    };
+    if (model.toLowerCase().includes("minimax") && copy.thinkingType === "effort") {
+      if (!copy.effortLevels) {
+        copy.effortLevels = ["disabled", "adaptive", "enabled"];
+      }
+      if (!copy.effortDescriptions) {
+        copy.effortDescriptions = [
+          "Prioritizes lower latency and higher throughput",
+          "Automatically determines when to use reasoning",
+          "Full chain-of-thought for complex coding/agentic tasks"
+        ];
+      }
+    }
+    return enrichWithCatalog(copy, model, providerId);
+  }
+
+  const isNvidia = model.toLowerCase().includes("nvidia") || model.toLowerCase().includes("nim");
+  const isGemini = model.toLowerCase().includes("gemini");
+  const copy: ModelSpec = {
+    maxOutputTokens: 4096,
+    contextWindow: 128_000,
+    thinkingType: "none",
+    specSource: "default",
+    freeRateLimit: isNvidia
+      ? { rpm: 5, tpm: 200_000 }
+      : isGemini
+        ? { rpm: 15, tpm: 1_000_000 }
+        : undefined,
+  };
+  if (model.toLowerCase().includes("minimax") && copy.thinkingType === "effort") {
+    if (!copy.effortLevels) {
+      copy.effortLevels = ["disabled", "adaptive", "enabled"];
+    }
+    if (!copy.effortDescriptions) {
+      copy.effortDescriptions = [
+        "Prioritizes lower latency and higher throughput",
+        "Automatically determines when to use reasoning",
+        "Full chain-of-thought for complex coding/agentic tasks"
+      ];
+    }
+  }
+  return enrichWithCatalog(copy, model, providerId);
 }
 
 // ---- Dynamic Variant Generation ---------------------------------------------
@@ -1163,10 +1321,11 @@ function generateBudgetVariants(spec: ModelSpec): ThinkingVariant[] {
 }
 
 function generateEffortVariants(spec: ModelSpec): ThinkingVariant[] {
-  return (spec.effortLevels ?? ["low", "medium", "high"]).map((level) => ({
+  const levels = spec.effortLevels ?? ["low", "medium", "high"];
+  return levels.map((level, idx) => ({
     name: level,
     value: level,
-    desc: `${level.charAt(0).toUpperCase() + level.slice(1)} reasoning effort`,
+    desc: spec.effortDescriptions?.[idx] ?? `${level.charAt(0).toUpperCase() + level.slice(1)} reasoning effort`,
   }));
 }
 

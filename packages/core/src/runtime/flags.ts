@@ -247,6 +247,12 @@ export interface RuntimeFlags {
    */
   scopedCircuitBreaker: boolean;
   /**
+   * The number of consecutive failed tool executions or identical tool calls
+   * that will trigger the circuit breaker. Defaults to 6 for production resilience,
+   * allowing self-healing to fully complete tasks.
+   */
+  circuitBreakerThreshold: number;
+  /**
    * Confine the mutating file tools (write/append/edit/batch_edit/ast_edit/
    * delete/move/create_directory) to the project root: a `path` that resolves
    * outside projectRoot (via `../` traversal or an absolute path) is refused
@@ -451,9 +457,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // everywhere (off by default even in hardened).
     verifyLint: parseBool(env.AGENCY_VERIFY_LINT, hardened),
     verifyTests: parseBool(env.AGENCY_VERIFY_TESTS, false),
-    // Additive accuracy (better limits/cost/caps for any BYOK model) → on in
-    // hardened; off in legacy to preserve the exact current spec resolution.
-    modelCatalog: parseBool(env.AGENCY_MODEL_CATALOG, hardened),
+    // Additive accuracy (better limits/cost/caps for any BYOK model) → on by default
+    // to ensure precise spec resolution across both legacy and hardened profiles.
+    modelCatalog: parseBool(env.AGENCY_MODEL_CATALOG, true),
     // Behaviour-changing (rewrites the prompt history with a summary; costs one
     // extra summarisation call when it triggers) → off in legacy (verbatim
     // history), on in hardened.
@@ -524,6 +530,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // shared module singleton a dispatched subagent would wipe. Opt out with
     // AGENCY_SCOPED_BREAKER=0 to restore the shared-singleton behaviour.
     scopedCircuitBreaker: parseBool(env.AGENCY_SCOPED_BREAKER, true),
+    // The number of consecutive failed tool executions or identical tool calls
+    // that will trigger the circuit breaker. Defaults to 6 for production resilience,
+    // allowing self-healing to fully complete tasks.
+    circuitBreakerThreshold: parseInt10(env.AGENCY_CIRCUIT_BREAKER_THRESHOLD, 6),
     // Behaviour-changing (refuses a write/delete whose path escapes projectRoot)
     // → off in legacy (no confinement, byte-identical), on in hardened.
     pathConfinement: parseBool(env.AGENCY_PATH_CONFINEMENT, hardened),

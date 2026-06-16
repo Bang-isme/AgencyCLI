@@ -1,80 +1,263 @@
 # Agency CLI -- one-shot install (dev / linked global)
-# Usage: irm https://raw.githubusercontent.com/.../install.ps1 | iex
-#   or:  .\scripts\install.ps1
+# Usage: .\scripts\install.ps1
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
-Write-Host "Agency CLI install" -ForegroundColor Cyan
-Write-Host "  Root: $Root"
+Write-Host "==============================================" -ForegroundColor Cyan
+Write-Host "           Agency CLI Installer" -ForegroundColor Cyan
+Write-Host "==============================================" -ForegroundColor Cyan
+Write-Host "  Root Path: $Root" -ForegroundColor Gray
 
+# 1. Detect initial Node.js
+$nodePath = "node"
+$nodeFound = $false
+
+if (Get-Command "node" -ErrorAction SilentlyContinue) {
+    $nodePath = "node"
+    $nodeFound = $true
+    $version = & $nodePath -v
+    Write-Host "Detected System Node.js: $version" -ForegroundColor Green
+    
+    # Restrict Node version due to SQLite binary compatibility on Windows
+    if ($version -notmatch "^v(20|22)\.") {
+        Write-Error "Node.js version v20 or v22 LTS is required (detected $version). Node v24+ lacks prebuilt binaries for better-sqlite3 on Windows. Please install Node.js v22 LTS (https://nodejs.org/) and run this installer again."
+        exit 1
+    }
+}
+
+if (-not $nodeFound) {
+    Write-Error "Node.js (v20 or v22 LTS) is required to install and run Agency CLI. Please install Node.js from https://nodejs.org/ and try again."
+    exit 1
+}
+
+
+# 2. Check for pnpm
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-  Write-Error "pnpm is required. Install: https://pnpm.io/installation"
+    Write-Host "pnpm is not detected. Attempting to install pnpm globally via npm..." -ForegroundColor Yellow
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+        try {
+            & npm install -g pnpm --silent
+            Write-Host "pnpm installed successfully!" -ForegroundColor Green
+            
+            $npmGlobalDir = Join-Path $env:APPDATA "npm"
+            if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+                $pnpmCmd = Join-Path $npmGlobalDir "pnpm.cmd"
+                if (Test-Path $pnpmCmd) {
+                    $env:Path = "$npmGlobalDir;$env:Path"
+                    Write-Host "Added $npmGlobalDir to active PATH." -ForegroundColor Gray
+                } else {
+                    throw "pnpm executable not found after installation."
+                }
+            }
+        } catch {
+            Write-Error "Failed to install pnpm automatically: $_. Please install it manually: npm install -g pnpm"
+            exit 1
+        }
+    } else {
+        Write-Error "pnpm is required, and npm is missing. Please make sure Node.js is installed correctly."
+        exit 1
+    }
 }
 
-# Global CLI bins live under PNPM_HOME; ensure it exists and is on PATH.
+# Ensure PNPM_HOME is configured and on PATH
 if (-not $env:PNPM_HOME) {
-  $env:PNPM_HOME = Join-Path $env:LOCALAPPDATA "pnpm"
+    $env:PNPM_HOME = Join-Path $env:LOCALAPPDATA "pnpm"
 }
+$pnpmBin = Join-Path $env:PNPM_HOME "bin"
+
+# Explicitly create directories on disk to avoid pnpm warnings
 if (-not (Test-Path $env:PNPM_HOME)) {
-  pnpm setup | Out-Null
-  Write-Host "Ran pnpm setup. Open a NEW terminal after install so PATH includes PNPM_HOME." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $env:PNPM_HOME -Force | Out-Null
+    Write-Host "Created pnpm home directory." -ForegroundColor Gray
+}
+if (-not (Test-Path $pnpmBin)) {
+    New-Item -ItemType Directory -Path $pnpmBin -Force | Out-Null
+    Write-Host "Created pnpm global bin directory." -ForegroundColor Gray
 }
 
+# Run setup to initialize shell config
+pnpm setup | Out-Null
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$pathsToAdd = @($env:PNPM_HOME, $pnpmBin)
+foreach ($p in $pathsToAdd) {
+    if ($userPath -notlike "*$p*") {
+        [Environment]::SetEnvironmentVariable("Path", "$p;$userPath", "User")
+        $userPath = "$p;$userPath"
+        Write-Host "Added to user PATH: $p" -ForegroundColor Green
+    }
+    if ($env:Path -notlike "*$p*") {
+        $env:Path = "$p;$env:Path"
+    }
+}
+
+# 3. Clean up legacy wrappers
+Write-Host "Cleaning up legacy wrappers to prevent conflicts..." -ForegroundColor Cyan
+$legacyWrappers = @(
+    (Join-Path $env:USERPROFILE ".gemini\antigravity\bin\agency.cmd"),
+    (Join-Path $env:USERPROFILE ".gemini\antigravity\bin\acg.cmd"),
+    (Join-Path $env:APPDATA "Antigravity\bin\agency.cmd"),
+    (Join-Path $env:APPDATA "Antigravity\bin\acg.cmd"),
+    (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\agency.cmd"),
+    (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\acg.cmd")
+)
+
+foreach ($path in $legacyWrappers) {
+    if (Test-Path $path) {
+        try {
+            Remove-Item $path -Force
+            Write-Host "  Deleted: $path" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "  Failed to delete: $path (Permission denied or in use)" -ForegroundColor Yellow
+        }
+    }
+}
+
+# 4. Global configurations folder (~/.agency)
+$globalAgencyDir = Join-Path $env:USERPROFILE ".agency"
+if (-not (Test-Path $globalAgencyDir)) {
+    New-Item -ItemType Directory -Path $globalAgencyDir -Force | Out-Null
+    Write-Host "Created global config folder: $globalAgencyDir" -ForegroundColor Green
+}
+$globalConfigPath = Join-Path $globalAgencyDir "config.json"
+if (-not (Test-Path $globalConfigPath)) {
+    $exampleConfig = Join-Path $Root "scripts\config.example.json"
+    if (Test-Path $exampleConfig) {
+        Copy-Item $exampleConfig $globalConfigPath
+        Write-Host "Initialized global config template: $globalConfigPath" -ForegroundColor Green
+    }
+} else {
+    Write-Host "Retained existing global config: $globalConfigPath" -ForegroundColor Green
+}
+
+# 5. Build monorepo
 Push-Location $Root
 try {
-  pnpm install
-  pnpm build
+    Write-Host "Installing monorepo dependencies..." -ForegroundColor Cyan
+    pnpm install
+    if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
 
-  # Link @agency/cli (not the private root package -- root has no bin entries).
-  Push-Location (Join-Path $Root "packages\cli")
-  try {
-    pnpm install -g .
-    if ($LASTEXITCODE -ne 0) { throw "pnpm install -g @agency/cli failed" }
-  } catch {
-    throw $_
-  } finally {
-    Pop-Location
-  }
-
-  $globalBin = Join-Path (pnpm root -g) ".bin"
-  if (Test-Path $globalBin) {
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($userPath -notlike "*$globalBin*") {
-      [Environment]::SetEnvironmentVariable("Path", "$globalBin;$userPath", "User")
-      $env:Path = "$globalBin;$env:Path"
-      Write-Host "Added global bin to user PATH: $globalBin" -ForegroundColor DarkGray
+    # Download prebuilt SQLite binary if needed
+    Write-Host "Configuring native SQLite binary compatibility..." -ForegroundColor Cyan
+    $prebuildInstallBin = Get-ChildItem -Path (Join-Path $Root "node_modules\.pnpm") -Filter "bin.js" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*prebuild-install*" } | Select-Object -First 1 -ExpandProperty FullName
+    $betterSqliteDir = Get-ChildItem -Path (Join-Path $Root "node_modules\.pnpm") -Filter "better-sqlite3" -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*better-sqlite3@*" -and $_.FullName -notlike "*@types*" } | Select-Object -First 1 -ExpandProperty FullName
+    
+    if ($prebuildInstallBin -and $betterSqliteDir) {
+        Push-Location $betterSqliteDir
+        try {
+            $currentNodeVersion = & node -v
+            $targetVer = $currentNodeVersion.Substring(1) # Remove 'v' prefix
+            Write-Host "  Running prebuild-install for target Node version $targetVer..." -ForegroundColor Gray
+            & node $prebuildInstallBin --target=$targetVer
+            Write-Host "  Successfully resolved native SQLite binary for Node $currentNodeVersion!" -ForegroundColor Green
+        } catch {
+            Write-Host "  Failed to run prebuild-install: $_" -ForegroundColor Yellow
+        } finally {
+            Pop-Location
+        }
     }
-  }
-  Write-Host ""
-  $skills = Join-Path $env:USERPROFILE ".cursor\skills-cursor"
-  if (Test-Path $skills) {
-    $env:AGENCY_SKILLS_ROOT = $skills
-    Write-Host "AGENCY_SKILLS_ROOT=$skills (this session)" -ForegroundColor DarkGray
-    Write-Host "Persist: [Environment]::SetEnvironmentVariable('AGENCY_SKILLS_ROOT', '$skills', 'User')" -ForegroundColor DarkGray
-  } else {
-    $repoMockSkills = Join-Path $Root "tests\fixtures\mock-skills"
-    if (Test-Path $repoMockSkills) {
-      $env:AGENCY_SKILLS_ROOT = $repoMockSkills
-      Write-Host "AGENCY_SKILLS_ROOT not found. Falling back to repository mock-skills: $repoMockSkills" -ForegroundColor Yellow
+
+    Write-Host "Building monorepo packages..." -ForegroundColor Cyan
+    pnpm build
+    if ($LASTEXITCODE -ne 0) { throw "pnpm build failed" }
+
+    # Link packages/cli globally
+    Write-Host "Linking @agency/cli globally..." -ForegroundColor Cyan
+    Push-Location (Join-Path $Root "packages\cli")
+    try {
+        pnpm install -g .
+        if ($LASTEXITCODE -ne 0) { throw "pnpm install -g . failed" }
+    } finally {
+        Pop-Location
     }
-  }
 
-  Write-Host ""
-  Write-Host "Installing Playwright Chromium browser binaries for agent browser capability..." -ForegroundColor Cyan
-  npx playwright install chromium
+    # Verify and add pnpm global bin to user PATH (legacy fallback check)
+    try {
+        $pnpmGlobalRoot = pnpm root -g 2>$null | Select-Object -Last 1
+        if ($pnpmGlobalRoot) {
+            $globalBin = Join-Path $pnpmGlobalRoot ".bin"
+            if (Test-Path $globalBin) {
+                $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+                if ($userPath -notlike "*$globalBin*") {
+                    [Environment]::SetEnvironmentVariable("Path", "$globalBin;$userPath", "User")
+                    $env:Path = "$globalBin;$env:Path"
+                    Write-Host "Added global bin to user PATH: $globalBin" -ForegroundColor Green
+                }
+            }
+        }
+    } catch {
+        # Ignore any errors in legacy fallback
+    }
 
-  pnpm exec agency setup --project-root $Root
+    # 6. Configure PowerShell Profile
+    Write-Host "Configuring PowerShell profile..." -ForegroundColor Cyan
+    $ProfileDir = Split-Path -Parent $PROFILE
+    if (-not (Test-Path $ProfileDir)) {
+        New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
+    }
 
-  Write-Host ""
-  Write-Host "Done. Daily use:" -ForegroundColor Green
-  Write-Host "  acg                              # TUI"
-  Write-Host "  agency setup --project-root .    # re-index + config check"
-  Write-Host "  .\scripts\smoke.ps1              # full smoke"
-  Write-Host ""
-  Write-Host "LLM: copy scripts\config.example.json -> $env:USERPROFILE\.agency\config.json"
+    $ProfileContent = ""
+    if (Test-Path $PROFILE) {
+        $ProfileContent = Get-Content $PROFILE -Raw
+    }
+
+    $SetupBlock = @"
+# region AgencyCLI-Setup
+function acg {
+    `$env:AGENCY_TUI = "true"
+    agency `@args
+    Remove-Item env:\AGENCY_TUI -ErrorAction SilentlyContinue
+}
+# endregion AgencyCLI-Setup
+"@
+
+    if ($ProfileContent -match '(?s)# region AgencyCLI-Setup.*?# endregion AgencyCLI-Setup') {
+        $NewContent = $ProfileContent -replace '(?s)# region AgencyCLI-Setup.*?# endregion AgencyCLI-Setup', $SetupBlock
+    } else {
+        if ($ProfileContent.Length -gt 0 -and -not $ProfileContent.EndsWith("`n")) {
+            $NewContent = $ProfileContent + "`r`n" + $SetupBlock
+        } else {
+            $NewContent = $ProfileContent + $SetupBlock
+        }
+    }
+
+    Set-Content -Path $PROFILE -Value $NewContent -Encoding utf8
+    Write-Host "Updated PowerShell profile at: $PROFILE" -ForegroundColor Green
+
+    # If dot-sourced, clean up memory cache of old functions and reload profile immediately
+    if ($MyInvocation.InvocationName -eq '.') {
+        Remove-Item function:agency -ErrorAction SilentlyContinue
+        Remove-Item function:acg -ErrorAction SilentlyContinue
+        . $PROFILE
+        Write-Host "Reloaded profile functions in active session!" -ForegroundColor Green
+    }
+
+
+
+    # 7. Install Playwright browser dependencies
+    Write-Host "Installing Playwright Chromium browser binary..." -ForegroundColor Cyan
+    pnpm dlx playwright install chromium
+    if ($LASTEXITCODE -ne 0) { throw "Playwright installation failed" }
+
+    # 8. Bootstrap setup command (verifies SQLite native bindings compatibility)
+    Write-Host "Verifying SQLite native bindings & running initial setup..." -ForegroundColor Cyan
+    pnpm exec agency setup --project-root $Root
+
+    Write-Host ""
+    Write-Host "==============================================" -ForegroundColor Green
+    Write-Host "  Agency CLI installation completed successfully!" -ForegroundColor Green
+    Write-Host "==============================================" -ForegroundColor Green
+    Write-Host "  Please RESTART your terminal (or run '. `$PROFILE') to apply the changes." -ForegroundColor Cyan
+    Write-Host "  Daily usage:" -ForegroundColor Cyan
+    Write-Host "    acg                              # Launches interactive TUI" -ForegroundColor Cyan
+    Write-Host "    agency doctor                    # Performs diagnostic checks" -ForegroundColor Cyan
+    Write-Host "    agency setup --project-root .    # Run index + check configurations" -ForegroundColor Cyan
+    Write-Host "==============================================" -ForegroundColor Green
+
 } catch {
-  throw $_
+    Write-Error "Installation failed: $_"
+    throw $_
 } finally {
-  Pop-Location
+    Pop-Location
 }

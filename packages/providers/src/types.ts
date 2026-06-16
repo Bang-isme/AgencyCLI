@@ -18,6 +18,8 @@ export interface ModelOverride {
   contextWindow?: number;
   maxOutputTokens?: number;
   thinkingType?: "budget" | "effort" | "none";
+  effortLevels?: string[];
+  effortDescriptions?: string[];
 }
 
 export interface AgencyConfig {

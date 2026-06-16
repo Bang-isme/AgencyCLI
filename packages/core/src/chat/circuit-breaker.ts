@@ -1,3 +1,5 @@
+import { getRuntimeFlags } from "../runtime/flags.js";
+
 /**
  * Circuit Breaker for tool execution loops
  * Prevents infinite loops and cascading failures
@@ -19,7 +21,6 @@ export interface CircuitBreakerResult {
   reason?: string;
 }
 
-const CIRCUIT_BREAKER_THRESHOLD = 3;
 // Cap the retained signatures so the (process-lifetime) state can't grow without
 // bound. Only the most recent calls matter for the consecutive-repeat check.
 const MAX_HISTORY = 50;
@@ -56,6 +57,8 @@ export function checkCircuitBreaker(
   state: CircuitBreakerState,
   toolCalls: { name: string; arguments: Record<string, any> }[]
 ): CircuitBreakerResult {
+  const threshold = getRuntimeFlags().circuitBreakerThreshold;
+
   // Check for repeated identical tool calls
   if (toolCalls.length > 0) {
     const signatures = toolCalls.map(getToolSignature);
@@ -71,7 +74,7 @@ export function checkCircuitBreaker(
       }
     }
     
-    if (repeatCount >= CIRCUIT_BREAKER_THRESHOLD) {
+    if (repeatCount >= threshold) {
       return {
         shouldBreak: true,
         reason: `Circuit breaker triggered: Tool "${toolCalls[0].name}" called ${repeatCount + 1} times with identical arguments. Possible infinite loop detected.`,
@@ -86,7 +89,7 @@ export function checkCircuitBreaker(
   }
 
   // Check for consecutive failures
-  if (state.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+  if (state.consecutiveFailures >= threshold) {
     return {
       shouldBreak: true,
       reason: `Circuit breaker triggered: ${state.consecutiveFailures} consecutive tool execution failures. Stopping to prevent cascading errors.`,

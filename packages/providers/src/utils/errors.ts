@@ -22,6 +22,9 @@ export function isTransientError(err: any): boolean {
     msg.includes("overloaded") ||
     msg.includes("service unavailable") ||
     msg.includes("bad gateway") ||
-    msg.includes("gateway timeout")
+    msg.includes("gateway timeout") ||
+    msg.includes("stalled") ||
+    msg.includes("timeout") ||
+    msg.includes("timed out")
   );
 }

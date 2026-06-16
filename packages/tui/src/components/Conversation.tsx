@@ -151,7 +151,7 @@ export function stripToolCalls(text: string): string {
   // render into the error-boundary recovery loop. Coerce defensively, exactly
   // like the sibling `parseAssistantContent` already does with `safeContent`.
   let result = typeof text === "string" ? text : "";
-  const tags = ["tool_call", "invoke", "invoke_call"];
+  const tags = ["tool_call", "invoke", "invoke_call", "minimax:tool_call"];
 
   while (true) {
     let firstStartIndex = -1;
@@ -185,6 +185,13 @@ export function stripToolCalls(text: string): string {
       break;
     }
   }
+
+  // Strip any stray closing tags (handles continuations where opening tag was in a previous message)
+  result = result.replace(/<\/\s*(tool_call|invoke|invoke_call|minimax:tool_call)\s*>/g, "");
+
+  // Clean up minimax tag lookalikes or repetition loop garbage like ]<]minimax[>[]
+  result = result.replace(/\]?<?\]?minimax\[>[\][]*/gi, "");
+
   return result;
 }
 

@@ -1627,13 +1627,19 @@ ${taskDesc}`;
         let accumulatedThought = "";
         let lastFlushMs = Date.now();
         let flushTimeout: NodeJS.Timeout | null = null;
-        let tokenCountIncrement = 0;
+        let completedTokens = 0;
+        let currentContentLength = 0;
+        let currentThoughtLength = 0;
+
+        const updateTokenCount = (contentLen: number, thoughtLen: number) => {
+          currentContentLength = contentLen;
+          currentThoughtLength = thoughtLen;
+          const estCurrent = Math.ceil((currentContentLength + currentThoughtLength) / 3.5);
+          setTokenCount(completedTokens + estCurrent);
+        };
 
         const flushStream = () => {
-          if (accumulatedContent || accumulatedThought || tokenCountIncrement > 0) {
-            setTokenCount((c) => c + tokenCountIncrement);
-            tokenCountIncrement = 0;
-
+          if (accumulatedContent || accumulatedThought) {
             const cDelta = accumulatedContent;
             const tDelta = accumulatedThought;
             accumulatedContent = "";
@@ -1741,12 +1747,19 @@ ${taskDesc}`;
                 setActivityPhase("writing");
               }
               accumulatedContent += delta;
-              tokenCountIncrement += 1;
+              updateTokenCount(accumulatedContent.length, accumulatedThought.length);
               triggerThrottledFlush();
             },
             onThought: (thoughtDelta) => {
               accumulatedThought += thoughtDelta;
+              updateTokenCount(accumulatedContent.length, accumulatedThought.length);
               triggerThrottledFlush();
+            },
+            onUsage: (usage) => {
+              completedTokens += usage.promptTokens + usage.completionTokens;
+              currentContentLength = 0;
+              currentThoughtLength = 0;
+              setTokenCount(completedTokens);
             },
           }
           );
@@ -1758,6 +1771,17 @@ ${taskDesc}`;
           clearTimeout(flushTimeout);
         }
         flushStream();
+
+        if (completedTokens === 0) {
+          const promptT = result?.completionMetadata?.promptTokens ?? 0;
+          const completionT = result?.completionMetadata?.completionTokens ?? 0;
+          if (promptT > 0 || completionT > 0) {
+            setTokenCount(promptT + completionT);
+          } else {
+            const finalEst = Math.ceil((result?.assistantText?.length ?? 0) / 3.5);
+            setTokenCount(finalEst);
+          }
+        }
 
         const turn = toPresentationTurn(result);
         patchMessage(assistantId, {

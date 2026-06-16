@@ -13,6 +13,22 @@
  * stays a thin wiring shell.
  */
 
+
+
+/**
+ * Pure, cursor-aware text-buffer model for the prompt composer.
+ *
+ * The legacy composer was append-only: `applyTextInput` only ever appended to
+ * the end and deleted the last grapheme, so the caret was pinned to the end of
+ * the buffer — you could not move into pasted text to fix it, and there was no
+ * undo. This module is the foundation for real editing: an immutable
+ * `{ text, cursor }` value plus grapheme-aware navigation, insert/delete at the
+ * caret, word operations, and a small undo/redo history.
+ *
+ * Everything here is a pure function over plain values — no React, no I/O — so
+ * the editing semantics can be unit-tested exhaustively and the React layer
+ * stays a thin wiring shell.
+ */
 export interface EditBuffer {
   /** The full buffer text. */
   text: string;
@@ -275,12 +291,17 @@ export function editFromInput(
   key: { return?: boolean; backspace?: boolean; delete?: boolean; ctrl?: boolean; meta?: boolean; name?: string; escape?: boolean },
   b: EditBuffer,
 ): EditResult | null {
+
+
   if (key.return && input.length === 1) return null; // submit handled by caller
   if (input.includes("\x1b")) return null; // raw escape sequence (arrows/home/…)
 
   const isCtrlH = !!key.ctrl && (input === "h" || key.name === "h");
-  if (key.backspace || isCtrlH) return { buffer: backspace(b), kind: "delete", boundary: false };
-  if (key.delete) return { buffer: deleteForward(b), kind: "delete", boundary: false };
+  const isBackspace = !!key.backspace || key.name === "backspace" || input === "\b" || input === "\x08" || input === "\x7f";
+  if (isBackspace || isCtrlH) return { buffer: backspace(b), kind: "delete", boundary: false };
+
+  const isDelete = !!key.delete || key.name === "delete";
+  if (isDelete) return { buffer: deleteForward(b), kind: "delete", boundary: false };
 
   const isControlShortcut =
     (!!key.ctrl || !!key.meta) &&

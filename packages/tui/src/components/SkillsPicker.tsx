@@ -201,7 +201,8 @@ export function SkillsPicker({
       }
 
       // Fast Search Typing Interceptor
-      if (key.backspace) {
+      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || input === "\b" || input === "\x08" || input === "\x7f";
+      if (isBackspace) {
         setSearchQuery((q) => q.slice(0, -1));
         setIndex(0);
         return;

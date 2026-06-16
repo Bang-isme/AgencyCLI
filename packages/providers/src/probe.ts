@@ -65,17 +65,28 @@ export async function probeModel(
   let maxTokensValidationMessage = "";
 
   // 1. API Metadata Query
-  if (providerId === "openrouter" || providerId === "nvidia" || providerId === "openai") {
-    traceLogs.push(`[Probe] Bước 1: Truy vấn danh sách models để lấy metadata...`);
+  traceLogs.push(`[Probe] Bước 1: Truy vấn danh sách models để lấy metadata...`);
+  let metadataResolved = false;
+
+  // Try provider's own models endpoint first
+  if (
+    providerId === "openrouter" ||
+    providerId === "nvidia" ||
+    providerId === "openai" ||
+    providerId === "tokenrouter"
+  ) {
     try {
-      const modelsUrl = providerId === "openrouter" ? "https://openrouter.ai/api/v1/models" : `${baseUrl}/models`;
+      const modelsUrl =
+        providerId === "openrouter" ? "https://openrouter.ai/api/v1/models" : `${baseUrl}/models`;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
       const res = await fetchImpl(modelsUrl, { headers, signal: AbortSignal.timeout(6000) });
       if (res.ok) {
-        const json = await res.json() as any;
-        const match = json.data?.find((m: any) => m.id === model || m.id.endsWith(model) || model.endsWith(m.id));
+        const json = (await res.json()) as any;
+        const match = json.data?.find(
+          (m: any) => m.id === model || m.id.endsWith(model) || model.endsWith(m.id)
+        );
         if (match) {
           const cw = match.context_length ?? match.context_window ?? match.max_position_embeddings;
           if (typeof cw === "number") {
@@ -85,16 +96,61 @@ export async function probeModel(
           const routerMax = match.top_provider?.max_completion_tokens ?? match.max_completion_tokens;
           if (typeof routerMax === "number") {
             maxOutputTokens = routerMax;
-            traceLogs.push(`  → Tìm thấy từ Metadata: maxOutputTokens = ${routerMax.toLocaleString()} tokens.`);
+            traceLogs.push(
+              `  → Tìm thấy từ Metadata: maxOutputTokens = ${routerMax.toLocaleString()} tokens.`
+            );
           }
+          metadataResolved = true;
         } else {
-          traceLogs.push(`  → Model không có trong danh sách metadata trả về từ endpoint. Sẽ tự suy luận.`);
+          traceLogs.push(`  → Model không có trong danh sách metadata từ provider.`);
         }
       } else {
-        traceLogs.push(`  → Endpoint trả về status ${res.status}. Bỏ qua metadata check.`);
+        traceLogs.push(`  → Endpoint provider trả về status ${res.status}.`);
       }
     } catch (err: any) {
-      traceLogs.push(`  → Thất bại khi lấy metadata: ${err.message}`);
+      traceLogs.push(`  → Thất bại khi lấy metadata từ provider: ${err.message}`);
+    }
+  }
+
+  // Fallback to OpenRouter public catalog if not resolved
+  if (!metadataResolved) {
+    traceLogs.push(`  → Thử tìm kiếm trong OpenRouter public catalog...`);
+    try {
+      const openRouterUrl = "https://openrouter.ai/api/v1/models";
+      const res = await fetchImpl(openRouterUrl, { signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const match = json.data?.find((m: any) => {
+          const mId = m.id.toLowerCase();
+          const target = model.toLowerCase();
+          const bare = target.split("/").pop() ?? target;
+          return (
+            mId === target ||
+            mId === bare ||
+            mId.endsWith(`/${target}`) ||
+            mId.endsWith(`/${bare}`)
+          );
+        });
+        if (match) {
+          const cw = match.context_length ?? match.context_window;
+          if (typeof cw === "number") {
+            contextWindow = cw;
+            traceLogs.push(`  → [Catalog Fallback] contextWindow = ${cw.toLocaleString()} tokens.`);
+          }
+          const routerMax = match.top_provider?.max_completion_tokens ?? match.max_completion_tokens;
+          if (typeof routerMax === "number") {
+            maxOutputTokens = Math.min(routerMax, 16384); // cap at 16k output standard
+            traceLogs.push(
+              `  → [Catalog Fallback] maxOutputTokens = ${maxOutputTokens.toLocaleString()} tokens.`
+            );
+          }
+          metadataResolved = true;
+        } else {
+          traceLogs.push(`  → Không tìm thấy model trong OpenRouter public catalog.`);
+        }
+      }
+    } catch (err: any) {
+      traceLogs.push(`  → Thất bại khi truy vấn OpenRouter catalog: ${err.message}`);
     }
   }
 
@@ -274,10 +330,16 @@ export async function probeModel(
   if (!resOverflow.ok) {
     maxTokensValidationMessage = resOverflow.text;
     traceLogs.push(`  → API từ chối thành công. Lỗi nhận được: "${resOverflow.text.slice(0, 120)}..."`);
-    // Try to extract exact number from error text using regex: find 4 to 8 digits, filter out input payload (10_000_000)
+    
+    // Find numbers that are likely metadata (preceded by id, code, status, port, date, year, version, etc.)
+    const excludedMatches = [...resOverflow.text.matchAll(/(?:request_id|req_id|id|code|status|port|date|year|version)[^\w]*\b(\d{4,8})\b/gi)];
+    const excludedNumbers = new Set(excludedMatches.map(m => parseInt(m[1], 10)));
+
+    // Try to extract exact number from error text using regex: find 4 to 8 digits, filter out input payload (10_000_000) and excluded metadata numbers
     const allNumbers = [...resOverflow.text.matchAll(/\b(\d{4,8})\b/g)]
       .map(m => parseInt(m[1], 10))
-      .filter(n => n >= 1024 && n <= 12000000 && n !== 10000000);
+      .filter(n => n >= 1024 && n <= 12000000 && n !== 10000000 && !excludedNumbers.has(n));
+      
     if (allNumbers.length > 0) {
       const extracted = Math.min(...allNumbers);
       maxOutputTokens = extracted;

@@ -67,6 +67,7 @@ describe("§8.8-A circuit-breaker hard-break (turn loop stops instead of churnin
   let root: string;
 
   beforeEach(() => {
+    process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD = "3";
     vi.clearAllMocks();
     root = mkdtempSync(join(tmpdir(), "agency-breaker-"));
     clearRouteCache(root);
@@ -78,6 +79,7 @@ describe("§8.8-A circuit-breaker hard-break (turn loop stops instead of churnin
   });
 
   afterEach(() => {
+    delete process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD;
     closeAllDbs();
     if (existsSync(root)) rmSync(root, { recursive: true, force: true });
   });

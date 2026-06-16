@@ -19,5 +19,5 @@ if (tuiPlan.launch) {
   // Likewise, only load the full command graph once we know we're headless.
   const { registerCommands } = await import("./register.js");
   registerCommands(program);
-  program.parse();
+  program.parse(process.argv, { from: "node" });
 }

@@ -36,6 +36,21 @@ describe("stripToolCalls", () => {
     expect(stripToolCalls(null as unknown as string)).toBe("");
     expect(stripToolCalls(42 as unknown as string)).toBe("");
   });
+
+  it("strips minimax:tool_call tags correctly", () => {
+    const input = "Start\n<minimax:tool_call name=\"write_file\">\n  <param name=\"path\">src/index.js</param>\n</minimax:tool_call>\nEnd";
+    expect(stripToolCalls(input)).toBe("Start\n\nEnd");
+  });
+
+  it("strips stray closing tags left by message continuations", () => {
+    const input = "Cập nhật plan:</tool_call></tool_call>";
+    expect(stripToolCalls(input)).toBe("Cập nhật plan:");
+  });
+
+  it("cleans up minimax tag lookalikes or repetition loop garbage", () => {
+    const input = "files:]<]minimax[>[]<]minimax[>[]";
+    expect(stripToolCalls(input)).toBe("files:");
+  });
 });
 
 describe("parseAssistantContent with stripped tool calls", () => {

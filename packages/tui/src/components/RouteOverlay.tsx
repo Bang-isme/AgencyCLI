@@ -62,12 +62,13 @@ export function RouteOverlay({
 
     // Step 1: Type custom prompt
     if (step === 1) {
+      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || _input === "\b" || _input === "\x08" || _input === "\x7f";
       if (key.return) {
         const trimmed = typedPrompt.trim();
         if (trimmed) {
           setStep(2);
         }
-      } else if (key.backspace) {
+      } else if (isBackspace) {
         setTypedPrompt((s) => s.slice(0, -1));
       } else if (_input && !key.ctrl && !key.meta) {
         setTypedPrompt((s) => s + _input);
@@ -77,12 +78,13 @@ export function RouteOverlay({
 
     // Step 2: Custom intent input
     if (customActive) {
+      const isBackspace = key.backspace || key.delete || (key as any).name === "backspace" || (key as any).name === "delete" || _input === "\b" || _input === "\x08" || _input === "\x7f";
       if (key.return) {
         const trimmed = customIntent.trim().toLowerCase();
         if (trimmed && activePrompt) {
           onSelect(activePrompt, trimmed);
         }
-      } else if (key.backspace) {
+      } else if (isBackspace) {
         setCustomIntent((s) => s.slice(0, -1));
       } else if (_input && !key.ctrl && !key.meta) {
         if (/^[a-zA-Z0-9_-]$/.test(_input)) {

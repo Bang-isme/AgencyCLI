@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   createCircuitBreaker,
   checkCircuitBreaker,
@@ -8,6 +8,13 @@ import {
 } from "../chat/circuit-breaker.js";
 
 describe("tool-loop circuit breaker", () => {
+  beforeAll(() => {
+    process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD = "3";
+  });
+
+  afterAll(() => {
+    delete process.env.AGENCY_CIRCUIT_BREAKER_THRESHOLD;
+  });
   it("trips after 3 consecutive identical tool calls (infinite-loop guard)", () => {
     const s = createCircuitBreaker();
     const call = [{ name: "read_file", arguments: { path: "a.ts" } }];

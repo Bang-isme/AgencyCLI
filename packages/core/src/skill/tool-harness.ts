@@ -46,7 +46,7 @@ export interface ToolCall {
  */
 export function parseToolCalls(text: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
-  const regex = /<(tool_call|invoke|invoke_call)\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/\s*(tool_call|invoke|invoke_call)\s*>/g;
+  const regex = /<(tool_call|invoke|invoke_call|minimax:tool_call)\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/\s*(tool_call|invoke|invoke_call|minimax:tool_call)\s*>/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     const name = match[2]!;
@@ -84,8 +84,8 @@ export function parseToolCalls(text: string): ToolCall[] {
  * length-continuations instead of silently losing the write.
  */
 export function hasUnclosedToolCall(text: string): boolean {
-  const opens = (text.match(/<(?:tool_call|invoke|invoke_call)\b/g) || []).length;
-  const closes = (text.match(/<\/\s*(?:tool_call|invoke|invoke_call)\s*>/g) || []).length;
+  const opens = (text.match(/<(?:tool_call|invoke|invoke_call|minimax:tool_call)\b/g) || []).length;
+  const closes = (text.match(/<\/\s*(?:tool_call|invoke|invoke_call|minimax:tool_call)\s*>/g) || []).length;
   return opens > closes;
 }
 

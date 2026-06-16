@@ -273,10 +273,44 @@ export function createOpenAiCompatibleProvider(
     if (temperature !== undefined) body.temperature = temperature;
 
     if (modelSpec.thinkingType === "effort") {
-      const effort = typeof thinkingVal === "string" && ["low", "medium", "high"].includes(thinkingVal)
-        ? thinkingVal
-        : "medium";
-      body.reasoning_effort = effort;
+      if (model.toLowerCase().includes("minimax")) {
+        let thinkingMode = "adaptive";
+        if (typeof thinkingVal === "string") {
+          const valLower = thinkingVal.toLowerCase();
+          if (["disabled", "adaptive", "enabled"].includes(valLower)) {
+            thinkingMode = valLower;
+          } else if (valLower === "low") {
+            thinkingMode = "disabled";
+          } else if (valLower === "medium") {
+            thinkingMode = "adaptive";
+          } else if (valLower === "high") {
+            thinkingMode = "enabled";
+          }
+        }
+        // MiniMax API only supports "disabled" and "adaptive". It rejects "enabled" with a 400 error.
+        // Nvidia NIM's validator strictly requires "enabled" or "disabled" and rejects "adaptive".
+        // Therefore, the only fully compatible way to handle this cross-provider is:
+        // - "disabled" maps to { type: "disabled" } (accepted by both)
+        // - "adaptive" and "enabled" are omitted from the payload (defaults to adaptive reasoning on the backend, passing both validators).
+        if (thinkingMode === "disabled") {
+          body.thinking = { type: "disabled" };
+        }
+      } else {
+        let effort = "medium";
+        if (typeof thinkingVal === "string") {
+          const valLower = thinkingVal.toLowerCase();
+          if (["low", "medium", "high", "xhigh", "max"].includes(valLower)) {
+            effort = valLower;
+          } else if (valLower === "disabled") {
+            effort = "low";
+          } else if (valLower === "adaptive") {
+            effort = "medium";
+          } else if (valLower === "enabled") {
+            effort = "high";
+          }
+        }
+        body.reasoning_effort = effort;
+      }
     } else if (modelSpec.thinkingType === "budget" && optimization.thinkingBudget !== null) {
       const budgetNum = optimization.thinkingBudget;
       if (budgetNum > 0) {
