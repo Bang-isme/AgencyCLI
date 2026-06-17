@@ -11,6 +11,7 @@ import {
   LIFECYCLE_GLYPHS,
 } from "../motion/design-system.js";
 import { formatTechnicalSubLine } from "./conversation/SubagentStepRow.js";
+import { formatTokenCount } from "../utils/text.js";
 
 export interface GoalTodo {
   id: string;
@@ -361,7 +362,7 @@ export const OrchestrationStepRow = memo(function OrchestrationStepRow({
               <Text color={theme.accent} bold>worker.{currentSubagent.agentId.slice(0, 8)} </Text>
               <Text color={theme.muted}>
                 ({formatElapsed(currentSubagent.elapsedMs ?? 0)}
-                {tokenCount > 0 ? ` · ${(tokenCount / 1000).toFixed(1)}k tokens` : ""}
+                {tokenCount > 0 ? ` · ${formatTokenCount(tokenCount)} tokens` : ""}
                 )
               </Text>
             </Box>

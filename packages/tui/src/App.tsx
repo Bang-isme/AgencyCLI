@@ -1627,15 +1627,13 @@ ${taskDesc}`;
         let accumulatedThought = "";
         let lastFlushMs = Date.now();
         let flushTimeout: NodeJS.Timeout | null = null;
-        let completedTokens = 0;
-        let currentContentLength = 0;
-        let currentThoughtLength = 0;
+        let completedOutputTokens = 0;
+        let currentTurnContentLength = 0;
+        let currentTurnThoughtLength = 0;
 
         const updateTokenCount = (contentLen: number, thoughtLen: number) => {
-          currentContentLength = contentLen;
-          currentThoughtLength = thoughtLen;
-          const estCurrent = Math.ceil((currentContentLength + currentThoughtLength) / 3.5);
-          setTokenCount(completedTokens + estCurrent);
+          const estCurrent = Math.ceil((contentLen + thoughtLen) / 3.5);
+          setTokenCount(completedOutputTokens + estCurrent);
         };
 
         const flushStream = () => {
@@ -1698,6 +1696,8 @@ ${taskDesc}`;
           const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
           accumulatedContent = "";
           accumulatedThought = "";
+          currentTurnContentLength = 0;
+          currentTurnThoughtLength = 0;
           if (flushTimeout) { clearTimeout(flushTimeout); flushTimeout = null; }
           patchMessage(assistantId, { content: "", thought: "" }, false);
           addSystemLines([`⚙ Verification failed — self-healing (round ${payload?.round ?? 2})…`]);
@@ -1747,19 +1747,21 @@ ${taskDesc}`;
                 setActivityPhase("writing");
               }
               accumulatedContent += delta;
-              updateTokenCount(accumulatedContent.length, accumulatedThought.length);
+              currentTurnContentLength += delta.length;
+              updateTokenCount(currentTurnContentLength, currentTurnThoughtLength);
               triggerThrottledFlush();
             },
             onThought: (thoughtDelta) => {
               accumulatedThought += thoughtDelta;
-              updateTokenCount(accumulatedContent.length, accumulatedThought.length);
+              currentTurnThoughtLength += thoughtDelta.length;
+              updateTokenCount(currentTurnContentLength, currentTurnThoughtLength);
               triggerThrottledFlush();
             },
             onUsage: (usage) => {
-              completedTokens += usage.promptTokens + usage.completionTokens;
-              currentContentLength = 0;
-              currentThoughtLength = 0;
-              setTokenCount(completedTokens);
+              completedOutputTokens += usage.completionTokens;
+              currentTurnContentLength = 0;
+              currentTurnThoughtLength = 0;
+              setTokenCount(completedOutputTokens);
             },
           }
           );
@@ -1772,11 +1774,10 @@ ${taskDesc}`;
         }
         flushStream();
 
-        if (completedTokens === 0) {
-          const promptT = result?.completionMetadata?.promptTokens ?? 0;
+        if (completedOutputTokens === 0) {
           const completionT = result?.completionMetadata?.completionTokens ?? 0;
-          if (promptT > 0 || completionT > 0) {
-            setTokenCount(promptT + completionT);
+          if (completionT > 0) {
+            setTokenCount(completionT);
           } else {
             const finalEst = Math.ceil((result?.assistantText?.length ?? 0) / 3.5);
             setTokenCount(finalEst);
