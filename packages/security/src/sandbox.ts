@@ -309,7 +309,9 @@ export class NativeSandbox implements Sandbox {
           this.options.signal.removeEventListener("abort", onAbort);
         }
         activeProcesses.delete(processRef);
-        jail.dispose();
+        if (!isDetached) {
+          jail.dispose();
+        }
         if (proxy) {
           proxy.stop().catch(() => {});
         }

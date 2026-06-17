@@ -12,7 +12,13 @@ export function isSelfKillingCommand(cmd: string): boolean {
   const normalized = cmd.trim();
   if (!normalized) return false;
 
-  // 1. Matches node-killing commands which would terminate the TUI process image
+  // 1. Matches any command containing both a process-killing verb and the word "node" in any order (e.g. "kill node", "gps node | spps")
+  const hasKillVerb = /\b(kill|taskkill|stop-process|spps|pkill|killall|terminate)\b/i.test(normalized);
+  const hasNode = /\bnode(\.exe)?\b/i.test(normalized);
+  if (hasKillVerb && hasNode) {
+    return true;
+  }
+
   const nodeKillPatterns = [
     /\btaskkill\b[^\n]*\bnode(\.exe)?\b/i,
     /\b(killall|pkill)\b[^\n]*\bnode\b/i,
@@ -26,13 +32,14 @@ export function isSelfKillingCommand(cmd: string): boolean {
     return true;
   }
 
-  // 2. Matches killing current process PID or parent PID dynamically
+  // 2. Matches killing current process PID or parent PID dynamically in any order
   const pid = process.pid;
   const ppid = process.ppid;
   if (pid || ppid) {
-    const targets = [pid, ppid].filter(Boolean).join("|");
-    const pidKillRegex = new RegExp(`\\b(kill|taskkill|stop-process|spps|pkill)\\b.*\\b(${targets})\\b`, "i");
-    if (pidKillRegex.test(normalized)) {
+    const targets = [pid, ppid].filter(Boolean);
+    const hasTargetPid = targets.some(t => new RegExp(`\\b${t}\\b`).test(normalized));
+    const hasKillVerb = /\b(kill|taskkill|stop-process|spps|pkill|killall|terminate)\b/i.test(normalized);
+    if (hasTargetPid && hasKillVerb) {
       return true;
     }
   }

@@ -214,6 +214,19 @@ describe("runShellCommand", () => {
     await expect(
       runShellCommand(projectRoot, "taskkill /F /IM node.exe 2>nul && npm run dev", { yes: true })
     ).rejects.toThrow(/self-termination/i);
+
+    // Test new robust matches
+    await expect(
+      runShellCommand(projectRoot, "kill node", { yes: true })
+    ).rejects.toThrow(/self-termination/i);
+
+    await expect(
+      runShellCommand(projectRoot, "Stop-Process -Name node -Force", { yes: true })
+    ).rejects.toThrow(/self-termination/i);
+
+    await expect(
+      runShellCommand(projectRoot, "Get-Process node | Stop-Process", { yes: true })
+    ).rejects.toThrow(/self-termination/i);
   });
 
   it("HARD-refuses killing the agent's own PID even with yes", async () => {
@@ -221,6 +234,10 @@ describe("runShellCommand", () => {
     dirs.push(projectRoot);
     await expect(
       runShellCommand(projectRoot, `kill -9 ${process.pid}`, { yes: true })
+    ).rejects.toThrow(/self-termination/i);
+
+    await expect(
+      runShellCommand(projectRoot, `Get-Process -Id ${process.pid} | Stop-Process`, { yes: true })
     ).rejects.toThrow(/self-termination/i);
   });
 
