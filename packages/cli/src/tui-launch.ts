@@ -25,6 +25,7 @@ const HEADLESS_COMMANDS = new Set([
   "config",
   "status",
   "handover",
+  "server",
   "help",
   "--help",
   "-h",

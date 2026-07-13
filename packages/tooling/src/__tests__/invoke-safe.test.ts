@@ -12,6 +12,14 @@ function makeRegistry() {
     category: "read",
     schema: z.object({ x: z.number() }),
     execute: async (args) => `got ${args.x}`,
+    metadata: {
+      semanticAction: "Run ok tool",
+      targetExtractor: (args) => String(args.x),
+      resultSummarizer: (_args, result) => String(result),
+      risk: "low",
+      prerequisite: "none",
+      recovery: "Try again",
+    },
   });
   r.register({
     name: "boom_tool",
@@ -20,6 +28,14 @@ function makeRegistry() {
     schema: z.object({}),
     execute: async () => {
       throw new Error("kaboom");
+    },
+    metadata: {
+      semanticAction: "Run boom tool",
+      targetExtractor: () => "none",
+      resultSummarizer: () => "failed",
+      risk: "low",
+      prerequisite: "none",
+      recovery: "Don't run this tool",
     },
   });
   return r;

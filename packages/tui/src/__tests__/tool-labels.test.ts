@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getGroundedTargetName,
   getSemanticToolOperation,
+  summarizeCommandLabel,
   toPastTense,
 } from "../utils/conversation/tool-labels.js";
 
@@ -62,6 +63,18 @@ describe("getSemanticToolOperation (plain, accurate verbs — no flowery phrasin
 
   it("shows the real command for execute_command (not 'validation suite via …')", () => {
     expect(getSemanticToolOperation("execute_command", '{"command":"npm run build"}')).toBe("Run npm run build");
+  });
+
+  it("summarizes long build verification commands instead of dumping shell redirections", () => {
+    const raw = "index.js > build-final-v2.log 2>&1 & echo BUILD_V2_STARTED && pnpm run build";
+    expect(summarizeCommandLabel(raw)).toBe("build verification");
+    expect(getSemanticToolOperation("execute_command", "", raw)).toBe("Run build verification");
+  });
+
+  it("truncates long non-build commands", () => {
+    const raw = "node scripts/dev-server.js --with many many many many arguments and flags";
+    expect(summarizeCommandLabel(raw)).toMatch(/…$/);
+    expect(summarizeCommandLabel(raw).length).toBeLessThanOrEqual(49);
   });
 });
 

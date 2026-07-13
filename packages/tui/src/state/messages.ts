@@ -18,6 +18,7 @@ export interface SessionMessage {
   /** Live LLM token stream in progress. */
   streaming?: boolean;
   thought?: string;
+  thoughtDurationMs?: number;
   timestamp: number;
 }
 

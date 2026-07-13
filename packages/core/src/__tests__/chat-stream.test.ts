@@ -119,6 +119,7 @@ describe("runChatTurnWithStream", () => {
 
     const started: any[] = [];
     const done: any[] = [];
+    const deltas: string[] = [];
     const bus = EventBus.getInstance();
     // Subscribers receive the ReplayEvent; the structured payload is event.payload
     // (a JSON string), per the App's own consumption pattern.
@@ -130,7 +131,7 @@ describe("runChatTurnWithStream", () => {
     bus.subscribe("tool:finished", onDone);
     bus.subscribe("tool:failed", onDone);
     try {
-      await runChatTurnWithStream(input, { onRoute: () => {}, onDelta: () => {} });
+      await runChatTurnWithStream(input, { onRoute: () => {}, onDelta: (delta) => deltas.push(delta) });
       // Delivery is async (scheduleDrain → setImmediate); flush before asserting.
       await new Promise((r) => setTimeout(r, 30));
     } finally {
@@ -145,6 +146,8 @@ describe("runChatTurnWithStream", () => {
     expect(typeof startedFind.seq).toBe("number");
     // A completion event (finished or failed) fires for the same tool.
     expect(done.some((e) => e.name === "find_files")).toBe(true);
+    expect(deltas.join("")).not.toContain("[SYSTEM: Executing tool");
+    expect(deltas.join("")).not.toContain("Tool \"find_files\" completed");
   });
 
   it("Phase E: extends the loop while NEW files are written, bounded by the ceiling", async () => {
@@ -256,12 +259,7 @@ describe("runChatTurnWithStream", () => {
     });
 
     expect(calls).toBe(2);
-    // §8.1: honour the provider's stated real limit (128000) and trim the body
-    // to fit it, instead of ratcheting the window down 20% on every retry (the
-    // old 102400 behaviour drove minimax-m2.7 from 196608 to 16887 on disk).
-    expect(mockedUpdateModelOverride).toHaveBeenCalledWith("gpt-4o-mini", {
-      contextWindow: 128000,
-    });
+    expect(mockedUpdateModelOverride).not.toHaveBeenCalled();
     expect(result.assistantText).toBe("Success after healing");
   });
 

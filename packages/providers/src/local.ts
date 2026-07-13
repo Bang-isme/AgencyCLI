@@ -1,19 +1,19 @@
 import { createOpenAiCompatibleProvider } from "./adapters/openai-compatible.js";
-import type { LlmProvider, ProviderProfile } from "./types.js";
+import type { LlmProvider, ProviderProfile, Transport } from "./types.js";
 
 const DEFAULT_BASE_URL = "http://localhost:11434/v1";
 const DEFAULT_MODEL = "llama3.2";
 
 export function createLocalProvider(
   profile: ProviderProfile = {},
-  fetchImpl?: typeof fetch
+  transport?: Transport
 ): LlmProvider {
   return createOpenAiCompatibleProvider({
     id: "local",
     apiKey: profile.apiKey,
     baseUrl: profile.baseUrl ?? DEFAULT_BASE_URL,
     defaultModel: profile.model ?? DEFAULT_MODEL,
-    fetchImpl,
+    transport,
     // Local-first tuning: local servers (Ollama/LM Studio/vLLM) have no quota,
     // so we never need short timeouts — but a cold model load can take minutes,
     // so we rely on an idle-timeout (silence between tokens) rather than a hard
@@ -24,3 +24,4 @@ export function createLocalProvider(
     autoDetectModel: true,
   });
 }
+

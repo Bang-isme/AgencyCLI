@@ -128,7 +128,7 @@ export function SkillsPicker({
 }: SkillsPickerProps) {
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 90, 55);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
   const [skills, setSkills] = useState<SkillItem[]>(() => loadSkills(skillsRoot));
   const maxAliasLen = skills.length > 0 ? Math.max(...skills.map((s) => s.alias.length)) : 10;
@@ -279,7 +279,7 @@ export function SkillsPicker({
           visibleSkills.map((item, vi) => {
             const realIdx = start + vi;
             const sel = realIdx === safe;
-            const arrowStr = sel ? "▸  " : "   ";
+            const arrowStr = sel ? ">  " : "   ";
             const iconStr = sel ? "■  " : "◇  ";
             const aliasStr = item.alias.padEnd(aliasColW);
 

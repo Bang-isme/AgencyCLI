@@ -35,7 +35,7 @@ export function VariantOverlay({
 }: VariantOverlayProps) {
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 72, 40);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   const [index, setIndex] = useState(() => {
@@ -192,7 +192,7 @@ export function VariantOverlay({
             <Box key={variant.name} flexDirection="row" alignItems="center" height={1} overflow="hidden">
               <Box width={3}>
                 <Text color={sel ? theme.accent : theme.muted}>
-                  {sel ? "▸" : " "}
+                  {sel ? ">" : " "}
                 </Text>
               </Box>
               <Box width={10}>

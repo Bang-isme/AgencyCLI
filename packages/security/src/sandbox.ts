@@ -52,6 +52,18 @@ export interface Sandbox {
   execute(command: string): Promise<SandboxResult>;
 }
 
+/**
+ * Determines whether a command corresponds to a web dev server process.
+ * 
+ * To prevent background servers from being terminated immediately when their launcher shells exit,
+ * the sandbox detects dev servers using three heuristics:
+ * 1. Standard dev command keywords matched alongside server start indicators (like `localhost` or `ready in`) in stdout/stderr.
+ * 2. Dev command keywords combined with file redirection (`>`), which would otherwise leave stdout/stderr empty.
+ * 3. Dev command keywords launched using explicit background methods (like `Start-Process`, `start /B`, or `wmic`).
+ * 
+ * If a dev server is identified, the sandbox detaches it and keeps the ProcessJail active, keeping the server running
+ * in the background until the main TUI/CLI process is closed.
+ */
 export function isDevServerPattern(command: string, stdout: string, stderr: string): boolean {
   const cmdLower = command.toLowerCase();
   const outputLower = (stdout + "\n" + stderr).toLowerCase();
@@ -85,7 +97,27 @@ export function isDevServerPattern(command: string, stdout: string, stderr: stri
     outputLower.includes("compiled successfully") ||
     outputLower.includes("server run");
 
-  return hasDevCommand && hasServerIndicators;
+  if (hasDevCommand && hasServerIndicators) {
+    return true;
+  }
+
+  // If it's a dev command and redirects output (which explains why stdout is empty of indicators),
+  // it is also highly likely to be a detached dev server.
+  const hasRedirection = cmdLower.includes(">") || cmdLower.includes("out-file") || cmdLower.includes("tee-object");
+  if (hasDevCommand && hasRedirection) {
+    return true;
+  }
+
+  // Also match explicit background/detach commands like Start-Process or start /B
+  const hasBackgroundLauncher = 
+    cmdLower.includes("start-process") || 
+    /\bstart\s+(\/b\b|""\s+\/b\b)/.test(cmdLower) ||
+    cmdLower.includes("wmic process call create");
+  if (hasDevCommand && hasBackgroundLauncher) {
+    return true;
+  }
+
+  return false;
 }
 
 export function normalizeDockerPath(p: string): string {

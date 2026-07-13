@@ -58,6 +58,9 @@ export interface SlashResult {
   showVariant?: boolean;
   /** Open route feedback selector overlay. */
   showRouteOverlay?: boolean;
+  /** Update thinking mode configuration */
+  thinkingMode?: "show" | "hide";
+  toggleThinkingMode?: boolean;
 }
 
 export function parseSlashCommand(input: string): {
@@ -167,6 +170,32 @@ export async function executeSlash(
     case "models":
     case "model": {
       const lowerArgs = args.toLowerCase().trim();
+      if (lowerArgs === "reset" || lowerArgs === "reset-override") {
+        const { loadAgencyConfig, getModelSpec, getBaselineModelSpec, clearModelOverrideField } = await import("@agency/providers");
+        const config = loadAgencyConfig();
+        const providerId = config.defaultProvider;
+        const profile = config.providers[providerId] ?? {};
+        const currentModel = profile.model ?? "";
+        if (!currentModel) {
+          return { handled: true, systemLines: ["[Error] No model configured."] };
+        }
+        const spec = getModelSpec(currentModel);
+        if (spec.specSource !== "override") {
+          return {
+            handled: true,
+            systemLines: [`No override on \`${currentModel}\` — catalog ${getBaselineModelSpec(currentModel).contextWindow.toLocaleString("en-US")} tokens.`],
+          };
+        }
+        clearModelOverrideField(currentModel, "contextWindow");
+        const after = getModelSpec(currentModel);
+        return {
+          handled: true,
+          systemLines: [
+            `✓ Cleared stale context override for \`${currentModel}\`.`,
+            `  • Context window: ${after.contextWindow.toLocaleString("en-US")} tokens (${after.specSource ?? "catalog"})`,
+          ],
+        };
+      }
       if (lowerArgs === "info" || lowerArgs === "spec" || lowerArgs === "specs") {
         const { loadAgencyConfig, getModelSpec } = await import("@agency/providers");
         const config = loadAgencyConfig();
@@ -292,11 +321,32 @@ export async function executeSlash(
           commit: "$git review the last commit — summarize changes, check quality, flag issues",
           branch: "$git review the current branch vs main — summarize all changes, identify risks",
           pr: "$git review this as a pull request — check for breaking changes, test coverage",
+          staged: "Review staged changes.",
+          unstaged: "Review unstaged changes.",
+          working_tree: "Review working tree changes.",
           ci: "$git check CI/CD pipeline status and recent build results",
           cd: "$git check CI/CD pipeline status and recent build results",
         };
         const prompt = subMap[args.toLowerCase()];
         if (prompt) {
+          const subModeMap: Record<string, "staged" | "unstaged" | "working_tree" | "commit" | "branch" | "pr"> = {
+            commit: "commit",
+            branch: "branch",
+            pr: "pr",
+            staged: "staged",
+            unstaged: "unstaged",
+            working_tree: "working_tree",
+          };
+          const mode = subModeMap[args.toLowerCase()];
+          if (mode) {
+            const { GitReviewService } = await import("@agency/core");
+            const reviewCtx = await GitReviewService.buildReviewContext({
+              projectRoot: ctx.projectRoot,
+              mode,
+            });
+            const formattedPrompt = GitReviewService.formatReviewPrompt(reviewCtx, prompt);
+            return { handled: true, injectPrompt: formattedPrompt };
+          }
           return { handled: true, injectPrompt: prompt };
         }
       }
@@ -580,6 +630,28 @@ export async function executeSlash(
           `✓ Thinking level for ${providerId}/${currentModel} set to: ${targetValue}`,
           ...warnLines,
         ],
+      };
+    }
+
+    case "thinking": {
+      const lower = args.toLowerCase().trim();
+      if (lower === "show" || lower === "hide") {
+        return {
+          handled: true,
+          thinkingMode: lower as "show" | "hide",
+          systemLines: [`Thinking mode set to ${lower}.`],
+        };
+      }
+      return {
+        handled: true,
+        systemLines: ["Usage: /thinking <show|hide>"],
+      };
+    }
+
+    case "toggle-thinking": {
+      return {
+        handled: true,
+        toggleThinkingMode: true,
       };
     }
 

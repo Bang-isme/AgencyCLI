@@ -1,8 +1,8 @@
-import { execa } from "execa";
 import { runChatTurnWithStream, type ChatStreamInput, type ChatStreamHandlers } from "./stream.js";
 import { runChatTurn, type ChatTurnInput } from "./orchestrator.js";
 import { runVerifyLoop } from "../task/verify-loop.js";
 import { buildAcceptanceCommandsStrict } from "../utils/package-manager.js";
+import { runVerification } from "../product/verification.js";
 import { snapshotWorkspace, workspaceChangedSince } from "../utils/workspace-snapshot.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { EventBus } from "../events/event-bus.js";
@@ -11,25 +11,6 @@ type ChatTurnResult = Awaited<ReturnType<typeof runChatTurnWithStream>>;
 
 const HEAL_SUFFIX =
   "\n\n[Your previous changes did not pass verification. Fix the following errors and re-apply the corrected edits:]\n";
-
-/** Run a project's acceptance commands; first non-zero exit fails with its output. */
-async function runAcceptance(
-  projectRoot: string,
-  commands: string[][]
-): Promise<{ passed: boolean; failures: string }> {
-  for (const cmd of commands) {
-    const [bin, ...args] = cmd;
-    if (!bin) continue;
-    const res = await execa(bin, args, { cwd: projectRoot, reject: false });
-    if (res.exitCode !== 0) {
-      return {
-        passed: false,
-        failures: (res.stderr || res.stdout || `${cmd.join(" ")} exited ${res.exitCode}`) as string,
-      };
-    }
-  }
-  return { passed: true, failures: "" };
-}
 
 /**
  * Engine-agnostic main-turn verify→self-correct core. `runTurn` performs one
@@ -52,12 +33,12 @@ async function runAcceptance(
  * with no acceptance scripts short-circuits to a single turn. Never throws on a
  * still-failing result — returns the best (last) attempt so the user sees it.
  */
-async function verifyAndHeal(
+export async function verifyAndHeal(
   input: ChatTurnInput,
   runTurn: (input: ChatTurnInput) => Promise<ChatTurnResult>
 ): Promise<ChatTurnResult> {
   const flags = getRuntimeFlags();
-  if (!flags.verifyLoop || !flags.verifyMainTurn) {
+  if (input.noVerify || !flags.verifyLoop || !flags.verifyMainTurn) {
     return runTurn(input);
   }
 
@@ -80,8 +61,14 @@ async function verifyAndHeal(
         lint: flags.verifyLint,
         test: flags.verifyTests,
       });
-      if (acceptance.length === 0) return { passed: true, failures: "" };
-      return runAcceptance(input.projectRoot, acceptance);
+      const verification = await runVerification(input.projectRoot, acceptance);
+      void EventBus.getInstance().publish("verification:completed", verification);
+      return {
+        // Projects with no configured gates are not "verified", but they also
+        // should not trigger a pointless repair loop.
+        passed: verification.state !== "failed",
+        failures: verification.summary,
+      };
     },
     {
       maxRounds: Math.max(1, flags.verifyMaxRounds),

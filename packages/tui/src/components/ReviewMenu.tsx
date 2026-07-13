@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
+import { getGitDiff, getGitSummary, type GitDiffResult, type GitSummary } from "@agency/core";
 
 export interface ReviewAction {
   id: string;
@@ -38,16 +39,30 @@ export const REVIEW_ACTIONS: ReviewAction[] = [
 
 export interface ReviewMenuProps {
   theme: ThemeTokens;
+  project: string;
   onSelect: (action: ReviewAction) => void;
   onClose: () => void;
 }
 
 export function ReviewMenu({
   theme,
+  project,
   onSelect,
   onClose,
 }: ReviewMenuProps) {
   const [index, setIndex] = useState(0);
+  const [summary, setSummary] = useState<GitSummary | null>(null);
+  const [diff, setDiff] = useState<GitDiffResult | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void Promise.all([getGitSummary(project), getGitDiff(project)]).then(([nextSummary, nextDiff]) => {
+      if (!live) return;
+      setSummary(nextSummary);
+      setDiff(nextDiff);
+    });
+    return () => { live = false; };
+  }, [project]);
 
   const safe = index % REVIEW_ACTIONS.length;
 
@@ -64,7 +79,7 @@ export function ReviewMenu({
       setIndex((i) => Math.min(REVIEW_ACTIONS.length - 1, i + 1));
       return;
     }
-    if (key.return) {
+    if (key.return && summary?.available) {
       const item = REVIEW_ACTIONS[safe];
       if (item) onSelect(item);
     }
@@ -82,15 +97,38 @@ export function ReviewMenu({
         Review
       </Text>
       <Text color={theme.muted} dimColor>
-        Code review powered by CodexAI Skills
+        Review the actual workspace state before asking the agent for analysis.
       </Text>
+      {!summary ? (
+        <Text color={theme.muted}>Checking repository…</Text>
+      ) : !summary.available ? (
+        <Text color={theme.warning}>Git is unavailable here. Initialize a repository to review changes.</Text>
+      ) : (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={summary.isClean ? theme.success : theme.warning}>
+            {summary.isClean
+              ? `Working tree clean · ${summary.branch}`
+              : `${summary.branch} · ${summary.staged + summary.unstaged + summary.untracked} changed file(s)`}
+          </Text>
+          {!summary.isClean ? (
+            <Text color={theme.muted} wrap="truncate">
+              {summary.staged} staged · {summary.unstaged} unstaged · {summary.untracked} untracked
+            </Text>
+          ) : null}
+          {diff?.available && diff.diff ? (
+            <Text color={theme.dimBorder} wrap="truncate">
+              {diff.diff.split("\n").find((line) => line.startsWith("diff --git")) ?? "Changes available"}{diff.truncated ? " …" : ""}
+            </Text>
+          ) : null}
+        </Box>
+      )}
       <Box marginTop={1} flexDirection="column">
         {REVIEW_ACTIONS.map((action, i) => {
           const sel = i === safe;
           return (
             <Box key={action.id} flexDirection="row" alignItems="center">
               <Box width={3}>
-                <Text color={sel ? theme.accent : theme.muted}>{sel ? "▸" : " "}</Text>
+                <Text color={sel ? theme.accent : theme.muted}>{sel ? ">" : " "}</Text>
               </Box>
               <Box width={4}>
                 <Text color={sel ? theme.accent : theme.muted}>{action.icon}</Text>
@@ -106,7 +144,7 @@ export function ReviewMenu({
       </Box>
       <Box marginTop={1}>
         <Text color={theme.muted} dimColor>
-          Enter to run · ↑↓ navigate · Esc close
+          {summary?.available ? "Enter prepares review prompt" : "Esc close"} · ↑↓ navigate
         </Text>
       </Box>
     </Box>

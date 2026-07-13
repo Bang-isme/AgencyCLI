@@ -1,12 +1,14 @@
 import { getModelSpec } from "./thinking-spec.js";
 import { SmartRateLimiter } from "./rate-limiter.js";
 import { inferTaskIntent, optimizeForTask } from "./token-optimizer.js";
+import { FetchTransport } from "./utils/transport.js";
 import type {
   ChatMessage,
   CompleteOptions,
   LlmProvider,
   ProviderProfile,
   StreamCompleteOptions,
+  Transport,
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
@@ -43,16 +45,18 @@ function buildSystemField(
 
 export function createAnthropicProvider(
   profile: ProviderProfile = {},
-  fetchImpl?: typeof fetch
+  transportParam: Transport | typeof fetch = new FetchTransport()
 ): LlmProvider {
-  const doFetch = fetchImpl ?? globalThis.fetch;
+  const transport = typeof transportParam === "function" ? new FetchTransport(transportParam) : transportParam;
   const baseUrl = (profile.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+
   const defaultModel = profile.model ?? DEFAULT_MODEL;
 
-  const spec = getModelSpec(defaultModel);
+  const spec = getModelSpec(defaultModel, "anthropic");
   const limiter = new SmartRateLimiter({
     rpm: spec.freeRateLimit?.rpm ?? 60,
     tpm: spec.freeRateLimit?.tpm ?? 0,
+    providerId: "anthropic",
   });
 
   return {
@@ -70,7 +74,7 @@ export function createAnthropicProvider(
         const { system, conversation } = splitMessages(messages);
 
         const currentModel = opts?.model ?? defaultModel;
-        const modelSpec = getModelSpec(currentModel);
+        const modelSpec = getModelSpec(currentModel, "anthropic");
         const lastPrompt = messages[messages.length - 1]?.content ?? "";
         const intent = inferTaskIntent(lastPrompt);
         const optimization = optimizeForTask(intent, modelSpec, profile.thinking);
@@ -122,7 +126,8 @@ export function createAnthropicProvider(
           ? AbortSignal.any([opts.signal, timeoutSignal])
           : timeoutSignal;
 
-        const res = await doFetch(`${baseUrl}/messages`, {
+        const res = await transport.request({
+          url: `${baseUrl}/messages`,
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -135,8 +140,13 @@ export function createAnthropicProvider(
 
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(`anthropic API error ${res.status}: ${text}`);
+          const err = new Error(`anthropic API error ${res.status}: ${text}`);
+          (err as any).status = res.status;
+          (err as any).headers = res.headers;
+          throw err;
         }
+
+        limiter.updateLimitsFromHeaders(res.headers);
 
         const data = (await res.json()) as {
           content?: Array<{ type?: string; text?: string; thinking?: string }>;
@@ -183,7 +193,7 @@ export function createAnthropicProvider(
         const { system, conversation } = splitMessages(messages);
 
         const currentModel = opts.model ?? defaultModel;
-        const modelSpec = getModelSpec(currentModel);
+        const modelSpec = getModelSpec(currentModel, "anthropic");
         const lastPrompt = messages[messages.length - 1]?.content ?? "";
         const intent = inferTaskIntent(lastPrompt);
         const optimization = optimizeForTask(intent, modelSpec, profile.thinking);
@@ -227,7 +237,8 @@ export function createAnthropicProvider(
           }
         }
 
-        const res = await doFetch(`${baseUrl}/messages`, {
+        const res = await transport.request({
+          url: `${baseUrl}/messages`,
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -240,8 +251,13 @@ export function createAnthropicProvider(
 
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(`anthropic API error ${res.status}: ${text}`);
+          const err = new Error(`anthropic API error ${res.status}: ${text}`);
+          (err as any).status = res.status;
+          (err as any).headers = res.headers;
+          throw err;
         }
+
+        limiter.updateLimitsFromHeaders(res.headers);
 
         if (!res.body) {
           const full = await this.complete(messages, opts);
@@ -250,72 +266,80 @@ export function createAnthropicProvider(
         }
 
         const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let fullThought = "";
-        let fullText = "";
+        try {
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let fullThought = "";
+          let fullText = "";
 
-        let promptTokens = 0;
-        let completionTokens = 0;
+          let promptTokens = 0;
+          let completionTokens = 0;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
 
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            const payload = trimmed.slice(5).trim();
-            if (!payload) continue;
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const payload = trimmed.slice(5).trim();
+              if (!payload) continue;
 
-            try {
-              const event = JSON.parse(payload) as {
+              let event: {
                 type: string;
                 message?: { usage?: { input_tokens?: number } };
                 content_block?: { type?: string };
                 delta?: { type?: string; text?: string; thinking?: string; stop_reason?: string };
                 usage?: { output_tokens?: number };
-              };
+              } | null = null;
+              try {
+                event = JSON.parse(payload);
+              } catch {
+                // ignore malformed SSE frames
+              }
 
-              if (event.type === "message_start" && event.message?.usage?.input_tokens) {
-                promptTokens = event.message.usage.input_tokens;
-              } else if (event.type === "content_block_delta" && event.delta) {
-                if (event.delta.type === "thinking_delta" && event.delta.thinking) {
-                  const chunk = event.delta.thinking;
-                  fullThought += chunk;
-                  opts.onThought?.(chunk);
-                } else if (event.delta.type === "text_delta" && event.delta.text) {
-                  const chunk = event.delta.text;
-                  fullText += chunk;
-                  opts.onDelta(chunk);
-                }
-              } else if (event.type === "message_delta") {
-                if (event.usage?.output_tokens) {
-                  completionTokens = event.usage.output_tokens;
-                }
-                if (event.delta?.stop_reason && opts.onFinishReason) {
-                  opts.onFinishReason(event.delta.stop_reason);
+              if (event) {
+                if (event.type === "message_start" && event.message?.usage?.input_tokens) {
+                  promptTokens = event.message.usage.input_tokens;
+                } else if (event.type === "content_block_delta" && event.delta) {
+                  if (event.delta.type === "thinking_delta" && event.delta.thinking) {
+                    const chunk = event.delta.thinking;
+                    fullThought += chunk;
+                    opts.onThought?.(chunk);
+                  } else if (event.delta.type === "text_delta" && event.delta.text) {
+                    const chunk = event.delta.text;
+                    fullText += chunk;
+                    opts.onDelta(chunk);
+                  }
+                } else if (event.type === "message_delta") {
+                  if (event.usage?.output_tokens) {
+                    completionTokens = event.usage.output_tokens;
+                  }
+                  if (event.delta?.stop_reason && opts.onFinishReason) {
+                    opts.onFinishReason(event.delta.stop_reason);
+                  }
                 }
               }
-            } catch {
-              // ignore malformed SSE frames
             }
           }
-        }
 
-        if (opts.onUsage && promptTokens > 0) {
-          opts.onUsage({
-            promptTokens,
-            completionTokens: completionTokens || Math.ceil(fullText.length / 4),
-          });
-        }
+          if (opts.onUsage && promptTokens > 0) {
+            opts.onUsage({
+              promptTokens,
+              completionTokens: completionTokens || Math.ceil(fullText.length / 4),
+            });
+          }
 
-        limiter.recordUsage(Math.ceil(fullText.length / 4));
-        return fullText;
+          limiter.recordUsage(Math.ceil(fullText.length / 4));
+          return fullText;
+        } finally {
+          await reader.cancel().catch(() => {});
+          reader.releaseLock();
+        }
       });
     },
   };

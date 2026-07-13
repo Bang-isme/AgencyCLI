@@ -1,10 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   getProvider,
   loadAgencyConfig,
   getModelSpec,
-  updateModelOverride,
   isContextLimitError,
   parseContextLimit,
   isTransientError,
@@ -29,13 +26,15 @@ import { type RouteResult } from "../router/model-router.js";
 import { globalCostGovernor, globalProviderSupervisor } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, recordTurnTokenCost, resolveSessionId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, MAX_AUTO_CONTINUE } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, pruneToolResultsInHistory, recordTurnTokenCost, resolveSessionId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, buildAutoContinueExhaustedNotice, publishAutoContinueContinuation, MAX_AUTO_CONTINUE, MAX_TOTAL_AUTO_CONTINUE } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall, executeDispatchSubagentFanout } from "../skill/tool-harness.js";
+import { resolveContextRetryLimit } from "./context-retry.js";
 import { consumeBreakerTrip, type CircuitBreakerState } from "./circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
+import { applyLoopMitigation, executeTurnToolBatch } from "./turn-loop.js";
 
 
 
@@ -59,6 +58,7 @@ export interface ChatTurnInput {
   reasoningBudgetMultiplier?: number;
   maxLoops?: number;
   sessionId?: string;
+  loopMitigationWaitForResume?: boolean;
 }
 
 export interface ChatTurnResult {
@@ -239,7 +239,8 @@ export async function runChatTurn(
     await compactIfEnabled();
 
     loopCount = 0;
-    let autoContinueCount = 0; // bounded auto-continues on a detected-unfinished stop
+    let autoContinueCount = 0;
+    let totalAutoContinueCount = 0;
     // §8.10 — partial tool-call XML carried across token-limit continuations so a
     // write_file split by the output limit reassembles into one executable call.
     let carryOverText = "";
@@ -255,6 +256,7 @@ export async function runChatTurn(
 
     while (loopCount < maxLoops) {
       await compactIfEnabled();
+      lastFinishReason = "";
       let currentText = "";
       let completionSuccess = false;
       let attempt = 0;
@@ -290,32 +292,21 @@ export async function runChatTurn(
         } catch (err: any) {
           if (isContextLimitError(err) && attempt < maxAttempts) {
             attempt++;
-            const currentSpec = getModelSpec(modelName, providerId);
-            const oldLimit = currentSpec.contextWindow;
+            const catalogSpec = getModelSpec(modelName, providerId);
+            const oldLimit = catalogSpec.contextWindow;
+            const parsedLimit = parseContextLimit(err.message || String(err));
+            const trimLimit = resolveContextRetryLimit(
+              resolvedSessionId,
+              modelName,
+              providerId,
+              parsedLimit
+            );
 
-            if (oldLimit > 8192) {
-              // Honour the provider's stated real limit when we have one and
-              // trim the BODY to fit it (§8.1), instead of ratcheting the window
-              // down 20% on every retry — the latter, combined with the old
-              // system-prompt-only repack that never actually shrank the
-              // payload, drove minimax-m2.7 from 196608 to an absurd 16887
-              // persisted on disk.
-              const parsedLimit = parseContextLimit(err.message || String(err));
-              const newLimit = parsedLimit && parsedLimit > 8192
-                ? parsedLimit
-                : Math.max(8192, Math.floor(oldLimit * 0.8));
-
-              updateModelOverride(modelName, { contextWindow: newLimit });
-
-              const updatedConfig = loadAgencyConfig();
-              provider = getProvider(updatedConfig, providerId);
+            if (trimLimit > 8192) {
               const updatedPlan = getTokenBudgetPlan(budget, modelName, providerId);
               plan = updatedPlan;
 
-              // §8.1 — reduce the conversation BODY, not just the system prompt
-              // (the old handler only repacked turnHistory[0], so the oversized
-              // history was re-sent and the retry failed again until it threw).
-              const reduction = await reduceHistoryToFit(turnHistory, newLimit, {
+              const reduction = await reduceHistoryToFit(turnHistory, trimLimit, {
                 input,
                 route,
                 plan: updatedPlan,
@@ -324,9 +315,10 @@ export async function runChatTurn(
                 cacheKey: resolvedSessionId,
               });
               turnHistory = reduction.messages;
+              turnHistory = pruneToolResultsInHistory(turnHistory);
 
               void EventBus.getInstance().publish("system:warning", {
-                message: `Context limit exceeded for model ${modelName}. Reduced conversation to ~${reduction.estimatedTokens} est tokens (window ${oldLimit} → ${newLimit})${reduction.fits ? "" : " — still tight"} and retrying...`
+                message: `Context limit exceeded for model ${modelName}. Reduced conversation to ~${reduction.estimatedTokens} est tokens (catalog window ${oldLimit}${parsedLimit ? `, provider reported ${parsedLimit}` : ""})${reduction.fits ? "" : " — still tight"} and retrying...`
               });
 
               currentText = "";
@@ -366,77 +358,36 @@ export async function runChatTurn(
       const toolCalls = parseToolCalls(toolCallSource);
       if (toolCalls.length > 0) {
         carryOverText = ""; // consumed — the call(s) parsed completely
-        for (const tc of toolCalls) {
-          if (isFileWritingTool(tc.name) && tc.arguments.path) {
-            filesWritten.add(tc.arguments.path);
-          }
-        }
+        const turnAgentId = input.agentId || process.env.AGENCY_AGENT_ID;
+        const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
+        const toolOutputs = await executeTurnToolBatch({
+          toolCalls,
+          projectRoot: input.projectRoot,
+          skillsRoot: input.skillsRoot,
+          sessionId: resolvedSessionId,
+          prompt: input.prompt,
+          loopCount,
+          modelName,
+          breaker: turnBreaker,
+          toolEventAgentId: turnAgentId || "main",
+          subagentProgressAgentId: turnAgentId,
+          isFileWritingTool,
+          executeTool,
+          truncateToolResult,
+          onFilesWritten: (path) => filesWritten.add(path),
+          recordTool: (name, args, result) => traceRecorder?.recordTool(name, args, result),
+          executeDispatchSubagentFanout,
+        });
 
-        const results = await Promise.all(
-          toolCalls.map(async (tc) => {
-            const agentId = input.agentId || process.env.AGENCY_AGENT_ID;
-            let stepLabel = `${tc.name}: ${tc.arguments.path || tc.arguments.AbsolutePath || tc.arguments.command || ""}`;
-            if (tc.name === "read_file" || tc.name === "view_file") {
-              const start = tc.arguments.StartLine || tc.arguments.start_line || tc.arguments.start;
-              const end = tc.arguments.EndLine || tc.arguments.end_line || tc.arguments.end;
-              if (start !== undefined && end !== undefined) {
-                stepLabel += ` (lines ${start}-${end})`;
-              } else if (start !== undefined) {
-                stepLabel += ` (from line ${start})`;
-              } else {
-                const pathArg = tc.arguments.path || tc.arguments.AbsolutePath || "";
-                const filePath = resolve(input.projectRoot, pathArg);
-                if (existsSync(filePath)) {
-                  try {
-                    const content = readFileSync(filePath, "utf8");
-                    const totalLines = content.split("\n").length;
-                    const maxDefaultLines = tc.name === "view_file" ? 800 : 500;
-                    const defaultReadLines = tc.name === "view_file" ? 800 : 300;
-                    if (totalLines <= maxDefaultLines) {
-                      stepLabel += ` (lines 1-${totalLines})`;
-                    } else {
-                      stepLabel += ` (lines 1-${defaultReadLines} of ${totalLines})`;
-                    }
-                  } catch {
-                    stepLabel += ` (full file)`;
-                  }
-                } else {
-                  stepLabel += ` (full file)`;
-                }
-              }
-            }
-            if (agentId) {
-              const eventBus = EventBus.getInstance();
-              await eventBus.publish("subagent:progress", {
-                agentId,
-                phase: `Running: ${tc.name}`,
-                step: { label: stepLabel, status: "active" }
-              });
-            }
-            const result = await executeTool(tc.name, tc.arguments, input.projectRoot, input.skillsRoot, undefined, turnBreaker ?? undefined);
-            const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
-            const truncated = truncateToolResult(tc.name, result, modelName);
-            traceRecorder?.recordTool(tc.name, tc.arguments, truncated);
-            safeAddEpisode(
-              input.projectRoot,
-              resolvedSessionId,
-              input.prompt,
-              loopCount,
-              `tool_call:${tc.name}`,
-              `Arguments: ${JSON.stringify(tc.arguments)}\nResult:\n${truncated}`
-            );
-            if (agentId) {
-              const eventBus = EventBus.getInstance();
-              await eventBus.publish("subagent:progress", {
-                agentId,
-                phase: `Completed: ${tc.name}`,
-                step: { label: stepLabel, status: "done" }
-              });
-            }
-            return `\n[Tool Result for "${tc.name}":]\n${truncated}\n`;
-          })
-        );
-        const toolOutputs = results.join("");
+        await applyLoopMitigation({
+          breaker: turnBreaker,
+          toolCalls,
+          turnHistory,
+          agentId: input.agentId,
+          conversationId: resolvedSessionId,
+          projectRoot: input.projectRoot,
+          waitForResume: input.loopMitigationWaitForResume,
+        });
 
         turnHistory = [
           ...turnHistory,
@@ -457,11 +408,24 @@ export async function runChatTurn(
         }
 
         loopCount++;
+        if (
+          toolCalls.some(
+            (tc) =>
+              isFileWritingTool(tc.name) ||
+              tc.name === "update_plan" ||
+              tc.name === "dispatch_subagent" ||
+              tc.name === "dispatch_parallel"
+          )
+        ) {
+          autoContinueCount = 0;
+        }
         continue;
       }
 
       const lowerReason = lastFinishReason.toLowerCase();
-      if (lowerReason === "length" || lowerReason === "max_tokens" || lowerReason === "max_token_tokens" || lowerReason === "max_tokens_budget") {
+      const isLengthFinish = lowerReason === "length" || lowerReason === "max_tokens" || lowerReason === "max_token_tokens" || lowerReason === "max_tokens_budget";
+      const isSilentTruncation = reassembleToolCalls && hasUnclosedToolCall(toolCallSource);
+      if (isLengthFinish || isSilentTruncation) {
         // Carry a tool call cut off mid-content forward so the next completion's
         // tail reassembles it (see stream.ts); off → carryOverText stays "".
         carryOverText =
@@ -482,6 +446,7 @@ export async function runChatTurn(
       } else if (
         getRuntimeFlags().autoContinue &&
         autoContinueCount < MAX_AUTO_CONTINUE &&
+        totalAutoContinueCount < MAX_TOTAL_AUTO_CONTINUE &&
         (detectIncompleteCompletion(currentText) ||
           (filesWritten.size > 0 && detectTruncatedArtifact(filesWritten, input.projectRoot)))
       ) {
@@ -491,15 +456,37 @@ export async function runChatTurn(
         // on-disk state and run another bounded iteration instead of returning a
         // half-done turn. Off → byte-identical break (legacy).
         autoContinueCount++;
-        carryOverText = ""; // a normal (non-tool, non-length) completion — drop any partial
+        totalAutoContinueCount++;
+        carryOverText = "";
+        publishAutoContinueContinuation(autoContinueCount, MAX_AUTO_CONTINUE);
         turnHistory = [
           ...turnHistory,
           { role: "assistant" as const, content: currentText },
-          { role: "user" as const, content: buildAutoContinueNudge(filesWritten, input.projectRoot) },
+          { role: "user" as const, content: buildAutoContinueNudge(filesWritten, input.projectRoot, autoContinueCount) },
         ];
         loopCount++;
       } else {
         carryOverText = "";
+        if (
+          getRuntimeFlags().autoContinue &&
+          (autoContinueCount >= MAX_AUTO_CONTINUE ||
+            totalAutoContinueCount >= MAX_TOTAL_AUTO_CONTINUE) &&
+          (detectIncompleteCompletion(currentText) ||
+            (filesWritten.size > 0 && detectTruncatedArtifact(filesWritten, input.projectRoot)))
+        ) {
+          const cap = totalAutoContinueCount >= MAX_TOTAL_AUTO_CONTINUE
+            ? MAX_TOTAL_AUTO_CONTINUE
+            : MAX_AUTO_CONTINUE;
+          const notice = buildAutoContinueExhaustedNotice(
+            cap,
+            filesWritten,
+            input.projectRoot
+          );
+          llmText += `\n${notice}`;
+          void EventBus.getInstance().publish("system:warning", {
+            message: `Turn paused after ${cap} resume attempt(s) — send "continue" to pick up where it stopped.`,
+          });
+        }
         break;
       }
     }

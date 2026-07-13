@@ -2,12 +2,15 @@ import { createOpenAiCompatibleProvider } from "./adapters/openai-compatible.js"
 import { getModelSpec } from "./thinking-spec.js";
 import { SmartRateLimiter } from "./rate-limiter.js";
 import { inferTaskIntent, optimizeForTask } from "./token-optimizer.js";
+import { FetchTransport } from "./utils/transport.js";
 import type {
   ChatMessage,
   CompleteOptions,
   LlmProvider,
   ProviderProfile,
   StreamCompleteOptions,
+  Transport,
+  TransportResponse,
 } from "./types.js";
 
 const DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -24,7 +27,7 @@ function toGeminiContents(messages: ChatMessage[]) {
   return { system, contents };
 }
 
-async function parseGoogleLlmError(response: Response): Promise<Error> {
+async function parseGoogleLlmError(response: TransportResponse): Promise<Error> {
   const text = await response.text();
   try {
     const json = JSON.parse(text);
@@ -60,25 +63,27 @@ async function parseGoogleLlmError(response: Response): Promise<Error> {
 
 export function createGoogleProvider(
   profile: ProviderProfile = {},
-  fetchImpl?: typeof fetch
+  transportParam: Transport | typeof fetch = new FetchTransport()
 ): LlmProvider {
+  const transport = typeof transportParam === "function" ? new FetchTransport(transportParam) : transportParam;
   if (profile.baseUrl) {
     return createOpenAiCompatibleProvider({
       id: "google",
       apiKey: profile.apiKey,
       baseUrl: profile.baseUrl,
       defaultModel: profile.model ?? DEFAULT_MODEL,
-      fetchImpl,
+      transport,
     });
   }
 
-  const doFetch = fetchImpl ?? globalThis.fetch;
+
   const model = profile.model ?? DEFAULT_MODEL;
 
-  const spec = getModelSpec(model);
+  const spec = getModelSpec(model, "google");
   const limiter = new SmartRateLimiter({
     rpm: spec.freeRateLimit?.rpm ?? 60,
     tpm: spec.freeRateLimit?.tpm ?? 0,
+    providerId: "google",
   });
 
   return {
@@ -96,7 +101,7 @@ export function createGoogleProvider(
         const { system, contents } = toGeminiContents(messages);
 
         const currentModel = opts?.model ?? model;
-        const modelSpec = getModelSpec(currentModel);
+        const modelSpec = getModelSpec(currentModel, "google");
         const lastPrompt = messages[messages.length - 1]?.content ?? "";
         const intent = inferTaskIntent(lastPrompt);
         const optimization = optimizeForTask(intent, modelSpec, profile.thinking);
@@ -146,7 +151,8 @@ export function createGoogleProvider(
         const reqSignal = opts?.signal
           ? AbortSignal.any([opts.signal, timeoutSignal])
           : timeoutSignal;
-        const res = await doFetch(url, {
+        const res = await transport.request({
+          url,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -154,8 +160,13 @@ export function createGoogleProvider(
         });
 
         if (!res.ok) {
-          throw await parseGoogleLlmError(res);
+          const err = await parseGoogleLlmError(res);
+          (err as any).status = res.status;
+          (err as any).headers = res.headers;
+          throw err;
         }
+
+        limiter.updateLimitsFromHeaders(res.headers);
 
         const data = (await res.json()) as {
           candidates?: Array<{
@@ -210,7 +221,7 @@ export function createGoogleProvider(
         const { system, contents } = toGeminiContents(messages);
 
         const currentModel = opts?.model ?? model;
-        const modelSpec = getModelSpec(currentModel);
+        const modelSpec = getModelSpec(currentModel, "google");
         const lastPrompt = messages[messages.length - 1]?.content ?? "";
         const intent = inferTaskIntent(lastPrompt);
         const optimization = optimizeForTask(intent, modelSpec, profile.thinking);
@@ -257,7 +268,8 @@ export function createGoogleProvider(
 
         // Gemini REST streaming endpoint is :streamGenerateContent
         const url = `${DEFAULT_GEMINI_BASE}/models/${currentModel}:streamGenerateContent?key=${encodeURIComponent(apiKey)}`;
-        const res = await doFetch(url, {
+        const res = await transport.request({
+          url,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -265,8 +277,13 @@ export function createGoogleProvider(
         });
 
         if (!res.ok) {
-          throw await parseGoogleLlmError(res);
+          const err = await parseGoogleLlmError(res);
+          (err as any).status = res.status;
+          (err as any).headers = res.headers;
+          throw err;
         }
+
+        limiter.updateLimitsFromHeaders(res.headers);
 
         if (!res.body) {
           const full = await this.complete(messages, opts);
@@ -275,81 +292,89 @@ export function createGoogleProvider(
         }
 
         const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let fullThought = "";
-        let fullText = "";
+        try {
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let fullThought = "";
+          let fullText = "";
 
-        let braceCount = 0;
-        let startIdx = -1;
+          let braceCount = 0;
+          let startIdx = -1;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
 
-          let i = 0;
-          while (i < buffer.length) {
-            const char = buffer[i];
-            if (char === "{") {
-              if (braceCount === 0) {
-                startIdx = i;
-              }
-              braceCount++;
-            } else if (char === "}") {
-              braceCount--;
-              if (braceCount === 0 && startIdx !== -1) {
-                const jsonStr = buffer.slice(startIdx, i + 1);
-                try {
-                  const data = JSON.parse(jsonStr) as {
+            let i = 0;
+            while (i < buffer.length) {
+              const char = buffer[i];
+              if (char === "{") {
+                if (braceCount === 0) {
+                  startIdx = i;
+                }
+                braceCount++;
+              } else if (char === "}") {
+                braceCount--;
+                if (braceCount === 0 && startIdx !== -1) {
+                  const jsonStr = buffer.slice(startIdx, i + 1);
+                  let data: {
                     candidates?: Array<{
                       content?: { parts?: Array<{ text?: string; thought?: boolean }> };
                       finishReason?: string;
                     }>;
                     usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number };
-                  };
+                  } | null = null;
+                  try {
+                    data = JSON.parse(jsonStr);
+                  } catch {
+                    // ignore malformed or incomplete brace matching json frames
+                  }
 
-                  const parts = data.candidates?.[0]?.content?.parts ?? [];
-                  for (const part of parts) {
-                    if (part.thought) {
-                      const thoughtPiece = part.text ?? "";
-                      if (thoughtPiece) {
-                        fullThought += thoughtPiece;
-                        opts.onThought?.(thoughtPiece);
-                      }
-                    } else {
-                      const textPiece = part.text ?? "";
-                      if (textPiece) {
-                        fullText += textPiece;
-                        opts.onDelta(textPiece);
+                  if (data) {
+                    const parts = data.candidates?.[0]?.content?.parts ?? [];
+                    for (const part of parts) {
+                      if (part.thought) {
+                        const thoughtPiece = part.text ?? "";
+                        if (thoughtPiece) {
+                          fullThought += thoughtPiece;
+                          opts.onThought?.(thoughtPiece);
+                        }
+                      } else {
+                        const textPiece = part.text ?? "";
+                        if (textPiece) {
+                          fullText += textPiece;
+                          opts.onDelta(textPiece);
+                        }
                       }
                     }
-                  }
 
-                  if (data.candidates?.[0]?.finishReason && opts.onFinishReason) {
-                    opts.onFinishReason(data.candidates[0].finishReason);
-                  }
+                    if (data.candidates?.[0]?.finishReason && opts.onFinishReason) {
+                      opts.onFinishReason(data.candidates[0].finishReason);
+                    }
 
-                  if (data.usageMetadata && opts.onUsage) {
-                    opts.onUsage({
-                      promptTokens: data.usageMetadata.promptTokenCount,
-                      completionTokens: data.usageMetadata.candidatesTokenCount,
-                    });
+                    if (data.usageMetadata && opts.onUsage) {
+                      opts.onUsage({
+                        promptTokens: data.usageMetadata.promptTokenCount,
+                        completionTokens: data.usageMetadata.candidatesTokenCount,
+                      });
+                    }
                   }
-                } catch {
-                  // ignore malformed or incomplete brace matching json frames
+                  buffer = buffer.slice(i + 1);
+                  i = -1; // reset index scanner
+                  startIdx = -1;
                 }
-                buffer = buffer.slice(i + 1);
-                i = -1; // reset index scanner
-                startIdx = -1;
               }
+              i++;
             }
-            i++;
           }
-        }
 
-        limiter.recordUsage(Math.ceil(fullText.length / 4));
-        return fullText;
+          limiter.recordUsage(Math.ceil(fullText.length / 4));
+          return fullText;
+        } finally {
+          await reader.cancel().catch(() => {});
+          reader.releaseLock();
+        }
       });
     },
   };

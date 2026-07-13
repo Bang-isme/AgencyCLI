@@ -218,26 +218,27 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
         overlayActive,
       } = optionsRef.current;
     // ── Subagent panel navigation ──
+    const workerKey = (s: SubagentStatus) => s.dispatchId ?? s.agentId;
     if (activeSubagentId !== null) {
       if (key.upArrow) {
         setActiveSubagentId(null);
         return;
       }
       if (key.leftArrow) {
-        const idx = subagents.findIndex((s) => s.agentId === activeSubagentId);
+        const idx = subagents.findIndex((s) => workerKey(s) === activeSubagentId);
         if (idx > 0) {
-          setActiveSubagentId(subagents[idx - 1]!.agentId);
+          setActiveSubagentId(workerKey(subagents[idx - 1]!));
         } else if (subagents.length > 0) {
-          setActiveSubagentId(subagents[subagents.length - 1]!.agentId);
+          setActiveSubagentId(workerKey(subagents[subagents.length - 1]!));
         }
         return;
       }
       if (key.rightArrow) {
-        const idx = subagents.findIndex((s) => s.agentId === activeSubagentId);
+        const idx = subagents.findIndex((s) => workerKey(s) === activeSubagentId);
         if (idx !== -1 && idx < subagents.length - 1) {
-          setActiveSubagentId(subagents[idx + 1]!.agentId);
+          setActiveSubagentId(workerKey(subagents[idx + 1]!));
         } else if (subagents.length > 0) {
-          setActiveSubagentId(subagents[0]!.agentId);
+          setActiveSubagentId(workerKey(subagents[0]!));
         }
         return;
       }
@@ -249,7 +250,7 @@ export function useKeyboardHandlers(options: UseKeyboardHandlersOptions) {
     }
 
     if (key.ctrl && input === "x" && subagents.length > 0) {
-      setActiveSubagentId(subagents[0]!.agentId);
+      setActiveSubagentId(workerKey(subagents[0]!));
       return;
     }
 

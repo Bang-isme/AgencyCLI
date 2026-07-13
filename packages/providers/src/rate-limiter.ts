@@ -17,6 +17,8 @@ export interface RateLimitConfig {
   retryMaxAttempts: number;
   /** Base delay in ms for exponential backoff. */
   retryBaseDelayMs: number;
+  /** Unique provider ID for registration. */
+  providerId?: string;
 }
 
 const DEFAULT_CONFIG: RateLimitConfig = {
@@ -33,11 +35,62 @@ export interface RateLimitUtilization {
   tpmPercent: number | null;
   /** Whether we are currently throttling. */
   throttled: boolean;
+  /** Current active RPM count in sliding window. */
+  currentRpm: number;
+  /** Current active TPM count in sliding window. */
+  currentTpm: number;
+  /** Adapted RPM. */
+  adaptedRpm: number;
 }
 
 interface TimestampedEntry {
   ts: number;
   tokens: number;
+}
+
+function getHeaderValue(headers: any, key: string): string | null {
+  if (!headers) return null;
+  if (typeof headers.get === "function") {
+    try {
+      const val = headers.get(key);
+      if (val !== null && val !== undefined) return String(val);
+    } catch {
+      // Ignore
+    }
+  }
+  const lowerKey = key.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === lowerKey) {
+      return String(headers[k]);
+    }
+  }
+  return null;
+}
+
+function parseRetryAfter(err: any): number | null {
+  if (!err) return null;
+  let headers = err.headers;
+  let retryAfterStr = getHeaderValue(headers, "retry-after");
+  if (!retryAfterStr && err.retryAfter !== undefined) {
+    retryAfterStr = String(err.retryAfter);
+  }
+  if (!retryAfterStr && err["retry-after"] !== undefined) {
+    retryAfterStr = String(err["retry-after"]);
+  }
+  if (!retryAfterStr) return null;
+
+  const seconds = parseFloat(retryAfterStr);
+  if (!isNaN(seconds)) {
+    return seconds * 1000;
+  }
+
+  const parsedDate = Date.parse(retryAfterStr);
+  if (!isNaN(parsedDate)) {
+    const delay = parsedDate - Date.now();
+    return delay > 0 ? delay : 0;
+  }
+
+  return null;
 }
 
 export class SmartRateLimiter {
@@ -47,10 +100,27 @@ export class SmartRateLimiter {
   /** Track consecutive 429s to adaptively lower limits. */
   private consecutive429s = 0;
   private adaptedRpm: number;
+  private last429Time = 0;
 
   constructor(config?: Partial<RateLimitConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.adaptedRpm = this.config.rpm;
+
+    if (this.config.providerId) {
+      if (!(globalThis as any).agencyProviderLimiters) {
+        (globalThis as any).agencyProviderLimiters = new Map<string, SmartRateLimiter>();
+      }
+      (globalThis as any).agencyProviderLimiters.set(this.config.providerId, this);
+    }
+  }
+
+  /** Register limiter instance. */
+  registerProvider(providerId: string): void {
+    this.config.providerId = providerId;
+    if (!(globalThis as any).agencyProviderLimiters) {
+      (globalThis as any).agencyProviderLimiters = new Map<string, SmartRateLimiter>();
+    }
+    (globalThis as any).agencyProviderLimiters.set(providerId, this);
   }
 
   /** Purge entries older than 60 seconds. */
@@ -71,12 +141,57 @@ export class SmartRateLimiter {
     return this.entries.reduce((sum, e) => sum + e.tokens, 0);
   }
 
+  /** Public getter for current RPM. */
+  getCurrentRpm(): number {
+    return this.currentRpm();
+  }
+
+  /** Public getter for current TPM. */
+  getCurrentTpm(): number {
+    return this.currentTpm();
+  }
+
+  /** Update RPM/TPM configuration dynamically from response headers. */
+  updateLimitsFromHeaders(headers: any): void {
+    if (!headers) return;
+    
+    // Parse RPM limit
+    const rpmHeader = getHeaderValue(headers, "anthropic-ratelimit-requests-limit") ||
+                      getHeaderValue(headers, "x-ratelimit-limit-requests") ||
+                      getHeaderValue(headers, "x-ratelimit-requests-limit");
+    if (rpmHeader) {
+      const rpmVal = parseInt(rpmHeader, 10);
+      if (!isNaN(rpmVal) && rpmVal > 0) {
+        if (this.config.rpm !== rpmVal) {
+          this.config.rpm = rpmVal;
+          this.adaptedRpm = rpmVal;
+        } else if (this.adaptedRpm > this.config.rpm) {
+          this.adaptedRpm = this.config.rpm;
+        }
+      }
+    }
+
+    // Parse TPM limit
+    const tpmHeader = getHeaderValue(headers, "anthropic-ratelimit-tokens-limit") ||
+                      getHeaderValue(headers, "x-ratelimit-limit-tokens") ||
+                      getHeaderValue(headers, "x-ratelimit-tokens-limit");
+    if (tpmHeader) {
+      const tpmVal = parseInt(tpmHeader, 10);
+      if (!isNaN(tpmVal) && tpmVal >= 0) {
+        this.config.tpm = tpmVal;
+      }
+    }
+  }
+
   /**
    * Wait until there is a slot available.
    * If we're near the limit, introduces a proportional delay
    * to spread requests evenly (prevents burst + stall patterns).
    */
   async waitForSlot(estimatedTokens = 0): Promise<void> {
+    if (Date.now() - this.last429Time > 30_000 && this.adaptedRpm < this.config.rpm) {
+      this.adaptedRpm = this.config.rpm;
+    }
     this.purgeOld();
     const currentRpm = this.currentRpm();
     const headroom = this.adaptedRpm - currentRpm;
@@ -126,11 +241,16 @@ export class SmartRateLimiter {
     this.entries.push({ ts: Date.now(), tokens });
     // Reset consecutive 429 counter on success
     this.consecutive429s = 0;
+    // Additive recovery on success
+    if (this.adaptedRpm < this.config.rpm) {
+      this.adaptedRpm = Math.min(this.config.rpm, this.adaptedRpm + 1);
+    }
   }
 
   /** Called when a 429 is received — adapt limits downward. */
   recordRateLimit(): void {
     this.consecutive429s += 1;
+    this.last429Time = Date.now();
     // Adaptive: lower effective RPM by 20% per consecutive 429, floor at 2
     this.adaptedRpm = Math.max(2, Math.round(this.adaptedRpm * 0.8));
   }
@@ -138,6 +258,7 @@ export class SmartRateLimiter {
   /** Reset adaptive limits (e.g. after config change). */
   resetAdaptation(): void {
     this.consecutive429s = 0;
+    this.last429Time = 0;
     this.adaptedRpm = this.config.rpm;
   }
 
@@ -163,9 +284,16 @@ export class SmartRateLimiter {
         }
 
         this.recordRateLimit();
-        const baseDelay = this.config.retryBaseDelayMs * Math.pow(2, attempt);
-        const jitter = Math.random() * baseDelay * 0.3;
-        const finalDelay = baseDelay + jitter;
+        
+        let finalDelay = 0;
+        const retryAfterMs = parseRetryAfter(err);
+        if (retryAfterMs !== null) {
+          finalDelay = retryAfterMs;
+        } else {
+          const baseDelay = this.config.retryBaseDelayMs * Math.pow(2, attempt);
+          const jitter = Math.random() * baseDelay * 0.3;
+          finalDelay = baseDelay + jitter;
+        }
 
         const seconds = (finalDelay / 1000).toFixed(1);
         const warningMsg = `⚠️ [Rate Limit / Transient Error] LLM request failed. Attempt ${attempt + 1}/${maxAttempts + 1}. Retrying in ${seconds}s (Adapted RPM: ${this.adaptedRpm})...`;
@@ -190,6 +318,9 @@ export class SmartRateLimiter {
         ? Math.round((this.currentTpm() / this.config.tpm) * 100)
         : null,
       throttled: this.throttled,
+      currentRpm: this.currentRpm(),
+      currentTpm: this.currentTpm(),
+      adaptedRpm: this.adaptedRpm,
     };
   }
 

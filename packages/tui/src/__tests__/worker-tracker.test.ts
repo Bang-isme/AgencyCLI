@@ -14,6 +14,8 @@ describe("SemanticTranslator.translatePhase (no shouty raw enum leak)", () => {
       "CONSOLIDATING",
       "COMPLETED",
       "FAILED",
+      "INCOMPLETE",
+      "SKIPPED",
       "INTERRUPTED",
     ];
     for (const s of states) {
@@ -66,5 +68,38 @@ describe("WorkerLifecycleTracker.finalizeOrphans / reset", () => {
     t.reset();
 
     expect(t.getWorkers()).toHaveLength(0);
+  });
+
+  it("tracks same-role parallel workers by dispatchId instead of overwriting", () => {
+    const t = new WorkerLifecycleTracker();
+    t.registerWorker("planner", "first", "planner-1");
+    t.registerWorker("planner", "second", "planner-2");
+    t.getWorkers().find((w) => w.dispatchId === "planner-2")!.lastStateChange = Date.now() - 1000;
+
+    t.transitionWorker("planner", "COMPLETED", "ok", "", undefined, "planner-2");
+
+    const workers = t.getWorkers();
+    expect(workers).toHaveLength(2);
+    expect(workers.find((w) => w.dispatchId === "planner-1")!.task).toBe("first");
+    expect(workers.find((w) => w.dispatchId === "planner-1")!.state).toBe("SPAWNING");
+    expect(workers.find((w) => w.dispatchId === "planner-2")!.state).toBe("COMPLETED");
+  });
+
+  it("represents skipped workers as terminal", () => {
+    const t = new WorkerLifecycleTracker();
+    t.registerWorker("planner", "skip me", "planner-skip");
+    t.transitionWorker("planner", "SKIPPED", "budget exhausted", "", undefined, "planner-skip");
+    t.finalizeOrphans();
+
+    expect(t.getWorkers()[0]!.state).toBe("SKIPPED");
+  });
+
+  it("keeps incomplete workers terminal and distinct from a failure", () => {
+    const t = new WorkerLifecycleTracker();
+    t.registerWorker("planner", "finish task", "planner-incomplete");
+    t.transitionWorker("planner", "INCOMPLETE", "Reached loop limit", "", undefined, "planner-incomplete");
+    t.finalizeOrphans();
+
+    expect(t.getWorkers()[0]!.state).toBe("INCOMPLETE");
   });
 });

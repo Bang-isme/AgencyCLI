@@ -75,7 +75,7 @@ export function SubagentsOverlay({
 }: SubagentsOverlayProps) {
   const { cols, rows } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 80, 45);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   const agentIdColW = Math.min(14, Math.max(8, Math.floor(innerWidth * 0.18)));
@@ -241,7 +241,7 @@ export function SubagentsOverlay({
                     <Box key={item.filename} flexDirection="row" height={1} overflow="hidden">
                       <Box width={3}>
                         <Text color={isSel ? theme.accent : theme.muted}>
-                          {isSel ? "▸" : " "}
+                          {isSel ? ">" : " "}
                         </Text>
                       </Box>
                       <Box width={agentIdColW}>

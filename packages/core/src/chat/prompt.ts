@@ -123,6 +123,7 @@ export function buildSystemPrompt(
   const guidance = [
     "You have full read access to the workspace. Use the provided context pack (which includes a project file tree and selected file contents) to answer the user's questions, analyze code, or write file changes.",
     "Be structured and concise; avoid generic filler and repeated tool dumps.",
+    "Keep internal trial-and-error, debugging narration, and chain-of-thought out of user-visible text. Use tool calls and the live plan for progress; after work completes, provide only a concise result, key changes, and verification status. Do not invent phased roadmaps, option menus, or a 'what's your call?' question when a safe scoped action can simply be completed.",
     "",
   ];
   const flags = getRuntimeFlags();
@@ -160,7 +161,7 @@ export function buildSystemPrompt(
     "",
     "CRITICAL TOOL PROTOCOL RULES:",
     "1. IMMEDIATE TOOL INVOCATION: If the user asks you to read/edit a file, run a command, or spawn/dispatch a specialist subagent, you MUST output the XML tool call block immediately in your response! Never respond with plain text like 'I will spawn a subagent' or 'I will analyze' without including the corresponding `<tool_call>` block in the exact same turn. Doing so ends the turn with the action never run — the user is left waiting while nothing happens. You must trigger the tool call immediately.",
-    "2. SPAWNING SUBAGENTS: If the user requests to spawn a subagent, delegate to a specialist, or perform deep code analysis/restructuring, immediately call `dispatch_subagent` with the correct specialist `<agentId>` and a clear, descriptive `<task>`. The TUI will render a dedicated real-time worker progress panel displaying the subagent's execution phase and elapsed time. Trigger this tool call immediately so the user can see the progress of the worker.",
+    "2. SPAWNING SUBAGENTS: For **multiple parallel tasks** (2+ independent routes/files/features), call `dispatch_parallel` once with a `tasks` JSON array inside `<tasks>[{...}]</tasks>` — each entry has `agentId`, a **concise** scoped `task` (file paths + goals, not full code), and optional `label`. Max **3–4 tasks per batch**; split larger plans across multiple `dispatch_parallel` calls. For a **single** quick delegate, call `dispatch_subagent`. Do NOT mix `dispatch_parallel` with other tools in the same turn. After `dispatch_parallel`, the runtime injects a batch report and runs a synthesis step — do NOT answer the user until synthesis completes.",
     "3. Once you output a tool call, execution will pause, the tool will run, and you will receive the tool's result in the next turn as a User message so you can continue your task.",
     "4. MULTI-STEP PLANS: For a task that needs several steps, call `update_plan` with the full checklist (each step `pending`/`in_progress`/`completed`) at the start, and AGAIN as you finish each step — keep exactly one step `in_progress`. The user sees this as a live plan panel, so keep it current instead of narrating the checklist in prose. Skip it for a trivial single-step request.",
     "",

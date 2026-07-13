@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import * as childProcess from "node:child_process";
-import { NativeSandbox, DockerSandbox, isDockerAvailable, normalizeDockerPath, getDockerImage } from "../sandbox.js";
+import { NativeSandbox, DockerSandbox, isDockerAvailable, normalizeDockerPath, getDockerImage, isDevServerPattern } from "../sandbox.js";
 import { Readable } from "node:stream";
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -496,6 +496,29 @@ describe("Sandbox Suite", () => {
       expect(result.stdout).toContain("[TRUNCATED stdout]");
       expect(result.stdout.slice(0, 10)).toBe("1234567890");
       expect(events.some((e) => e.type === "output-truncated")).toBe(true);
+    });
+  });
+
+  describe("isDevServerPattern", () => {
+    it("should match standard dev commands with server output indicators", () => {
+      expect(isDevServerPattern("npm run dev", "localhost:3000 ready in 500ms", "")).toBe(true);
+      expect(isDevServerPattern("next start", "listening on port 3000", "")).toBe(true);
+    });
+
+    it("should match dev commands with output redirection", () => {
+      expect(isDevServerPattern("npx next dev > dev.log 2>&1", "", "")).toBe(true);
+      expect(isDevServerPattern("npm run dev | Out-File log.txt", "", "")).toBe(true);
+    });
+
+    it("should match dev commands launched in background using Start-Process or start /B", () => {
+      expect(isDevServerPattern("Start-Process -FilePath npm -ArgumentList 'run','dev'", "", "")).toBe(true);
+      expect(isDevServerPattern("cmd /c start /B npm run dev", "", "")).toBe(true);
+      expect(isDevServerPattern("wmic process call create 'cmd.exe /c npx next dev'", "", "")).toBe(true);
+    });
+
+    it("should not match plain non-dev commands or commands without background/redirection indicators", () => {
+      expect(isDevServerPattern("npm run build", "", "")).toBe(false);
+      expect(isDevServerPattern("git status", "", "")).toBe(false);
     });
   });
 });

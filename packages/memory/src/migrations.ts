@@ -191,6 +191,26 @@ export const MIGRATIONS: Migration[] = [
       db.prepare(`DROP TABLE IF EXISTS embedding_cache`).run();
     },
   },
+  {
+    version: 3,
+    name: "add_revision_column",
+    up(db: Database) {
+      db.prepare(`ALTER TABLE episodes ADD COLUMN revision INTEGER DEFAULT 0`).run();
+      db.prepare(`ALTER TABLE schema_migrations ADD COLUMN revision INTEGER DEFAULT 0`).run();
+    },
+    down(db: Database) {
+      try {
+        db.prepare(`ALTER TABLE episodes DROP COLUMN revision`).run();
+      } catch (err) {
+        // Fallback for older sqlite versions
+      }
+      try {
+        db.prepare(`ALTER TABLE schema_migrations DROP COLUMN revision`).run();
+      } catch (err) {
+        // Fallback
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: Database): void {

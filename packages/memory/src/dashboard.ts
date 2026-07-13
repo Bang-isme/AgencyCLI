@@ -30,7 +30,16 @@ export class DashboardServer {
 
         res.end(JSON.stringify({ nodes, edges }));
       } else if (req.url === "/api/telemetry") {
-        res.end(JSON.stringify(this.backend.getTelemetry()));
+        const telemetry = this.backend.getTelemetry();
+        const rateLimiters: Record<string, any> = {};
+        const limitersMap = (globalThis as any).agencyProviderLimiters;
+        if (limitersMap && limitersMap instanceof Map) {
+          for (const [providerId, limiter] of limitersMap.entries()) {
+            rateLimiters[providerId] = limiter.getUtilization();
+          }
+        }
+        telemetry.rate_limiters = { ...telemetry.rate_limiters, ...rateLimiters };
+        res.end(JSON.stringify(telemetry));
       } else {
         res.writeHead(404);
         res.end(JSON.stringify({ error: "Endpoint not found" }));

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { AgencyConfig, ProviderProfile } from "./types.js";
+import { pruneStaleContextWindowOverrides } from "./override-prune.js";
 
 const providerIdSchema = z.string();
 
@@ -113,16 +114,66 @@ export function loadAgencyConfig(configPath?: string): AgencyConfig {
     }
     const parsed = agencyConfigSchema.safeParse(raw);
     if (!parsed.success) return cloneConfig(DEFAULT_CONFIG);
-    const config: AgencyConfig = {
+    let config: AgencyConfig = {
       defaultProvider: parsed.data.defaultProvider,
       providers: parsed.data.providers,
       modelOverrides: parsed.data.modelOverrides,
     };
+    config = applyStaleOverridePrune(config, path);
     configCache.set(path, { mtimeMs: stat.mtimeMs, size: stat.size, config });
     return cloneConfig(config);
   } catch {
     return cloneConfig(DEFAULT_CONFIG);
   }
+}
+
+/** Persist pruned config when stale retry-ratchet overrides are detected. */
+function applyStaleOverridePrune(config: AgencyConfig, path: string): AgencyConfig {
+  const pruned = pruneStaleContextWindowOverrides(config);
+  if (pruned !== config) {
+    saveAgencyConfig(pruned, path);
+    return pruned;
+  }
+  return config;
+}
+
+export function clearModelOverride(model: string): boolean {
+  const path = configFilePath();
+  let cfg: AgencyConfig;
+  try {
+    cfg = JSON.parse(readFileSync(path, "utf8")) as AgencyConfig;
+  } catch {
+    return false;
+  }
+  if (!cfg.modelOverrides?.[model]) return false;
+  const next = { ...cfg.modelOverrides };
+  delete next[model];
+  saveAgencyConfig({ ...cfg, modelOverrides: next }, path);
+  return true;
+}
+
+export function clearModelOverrideField(
+  model: string,
+  field: keyof NonNullable<AgencyConfig["modelOverrides"]>[string]
+): boolean {
+  const path = configFilePath();
+  let cfg: AgencyConfig;
+  try {
+    cfg = JSON.parse(readFileSync(path, "utf8")) as AgencyConfig;
+  } catch {
+    return false;
+  }
+  const existing = cfg.modelOverrides?.[model];
+  if (!existing || !(field in existing)) return false;
+  const { [field]: _removed, ...rest } = existing;
+  const nextOverrides = { ...(cfg.modelOverrides ?? {}) };
+  if (Object.keys(rest).length === 0) {
+    delete nextOverrides[model];
+  } else {
+    nextOverrides[model] = rest;
+  }
+  saveAgencyConfig({ ...cfg, modelOverrides: nextOverrides }, path);
+  return true;
 }
 
 export function updateModelOverride(

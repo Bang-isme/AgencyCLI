@@ -70,6 +70,33 @@ describe("Workers panel lifecycle (AGENCY_WORKER_LIFECYCLE)", () => {
     expect(frame).toContain("Edit dashboard.tsx"); // the live action is visible at a glance
   });
 
+  it("flag ON: same-role parallel workers render as distinct rows", () => {
+    process.env.AGENCY_WORKER_LIFECYCLE = "1";
+    process.env.AGENCY_TUI_ANIMATIONS = "0";
+    const frame = frameFor(
+      [
+        { agentId: "planner", dispatchId: "planner-1", task: "first", status: "running", elapsedMs: 1000, phase: "Task one" },
+        { agentId: "planner", dispatchId: "planner-2", task: "second", status: "running", elapsedMs: 2000, phase: "Task two" },
+      ],
+      true
+    );
+    expect(frame).toContain("2 active");
+    expect(frame.match(/worker\.planner/g)?.length).toBe(2);
+    expect(frame).toContain("Task one");
+    expect(frame).toContain("Task two");
+  });
+
+  it("flag ON: skipped workers appear as terminal skipped", () => {
+    process.env.AGENCY_WORKER_LIFECYCLE = "1";
+    process.env.AGENCY_TUI_ANIMATIONS = "0";
+    const frame = frameFor(
+      [{ agentId: "planner", dispatchId: "planner-skip", task: "skip", status: "skipped", elapsedMs: 0 }],
+      true
+    );
+    expect(frame).toContain("1 skipped");
+    expect(frame).toContain("[skipped");
+  });
+
   it("flag OFF: the collapsed row does NOT show the phase (legacy byte-identical)", () => {
     process.env.AGENCY_WORKER_LIFECYCLE = "0";
     process.env.AGENCY_TUI_ANIMATIONS = "0";

@@ -103,7 +103,7 @@ export function SessionPicker({
 
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 72, 40);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   const msgColW = innerWidth >= 50 ? 10 : 8;
@@ -165,7 +165,7 @@ export function SessionPicker({
             : s.firstUserMessage
               ? s.firstUserMessage
               : "empty session";
-            const arrowStr = selected ? "▸  " : "   ";
+            const arrowStr = selected ? ">  " : "   ";
             const msgsStr = `${s.messageCount} msgs`.padEnd(msgColW) + " ";
             const timeStr = timeColW > 0 ? timeAgo(s.updatedAt).padEnd(timeColW) + " " : "";
 

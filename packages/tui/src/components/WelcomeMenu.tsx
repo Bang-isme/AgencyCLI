@@ -86,7 +86,7 @@ export function WelcomeMenu({
         >
           {OPTIONS.map((opt, idx) => {
             const isSelected = idx === selectedIndex;
-            const arrow = isSelected ? (tick % 8 < 4 ? "▸ " : "▹ ") : "  ";
+            const arrow = isSelected ? (tick % 8 < 4 ? "> " : "  ") : "  ";
             const paddedLabel = ` ${opt.label} `.padEnd(16);
             return (
               <Box key={opt.label} flexDirection="row" marginY={0} overflow="hidden">

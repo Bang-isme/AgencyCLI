@@ -10,7 +10,7 @@ describe("Database Migration Verification", () => {
     runMigrations(db);
     
     let userVersion = (db.prepare("PRAGMA user_version").get() as any).user_version;
-    expect(userVersion).toBe(2);
+    expect(userVersion).toBe(3);
 
     // Verify initial tables are created
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[];

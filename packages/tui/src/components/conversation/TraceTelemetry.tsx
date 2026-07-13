@@ -6,7 +6,6 @@ import { useTick } from "../../motion/useTick.js";
 import { getLoopLag } from "../../terminal/screen.js";
 import {
   getToolAlias,
-  getGroundedTargetName,
   getSemanticToolOperation,
   toPastTense
 } from "../../utils/conversation/tool-labels.js";
@@ -266,23 +265,22 @@ export function toConciseTelemetry(line: string, theme: ThemeTokens, isActive = 
       const toolName = parsed.toolName!;
       const target = parsed.target ?? "";
       const args = parsed.args ?? "";
-      const displayTarget = target ? getGroundedTargetName(target) : (args ? getGroundedTargetName(args) : "");
+      const semanticOp = getSemanticToolOperation(toolName, args, target);
       return (
         <Box flexDirection="row">
           <Text color={theme.accent}>{isActive ? `${spinnerFrame} ` : "▶ "}</Text>
-          <Text color={theme.muted}>{`exec · ${getToolAlias(toolName)}`}</Text>
-          {displayTarget ? <Text color={theme.muted}> · </Text> : null}
-          {displayTarget ? <Text color={theme.text} bold wrap="truncate">{displayTarget}</Text> : null}
+          <Text color={theme.muted} bold={isActive}>{semanticOp}</Text>
         </Box>
       );
     }
 
     case "completed": {
       const detail = parsed.summary ?? (parsed.len ? `${parsed.len} chars` : "completed");
+      const base = toPastTense(getSemanticToolOperation(parsed.toolName!, "", ""));
       return (
         <Box flexDirection="row">
           <Text color={theme.success}>✓ </Text>
-          <Text color={theme.muted}>{`exec · ${getToolAlias(parsed.toolName!)} · ${detail}`}</Text>
+          <Text color={theme.muted}>{`${base} · ${detail}`}</Text>
         </Box>
       );
     }

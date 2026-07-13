@@ -43,6 +43,8 @@ describe("unified ordered timeline render (AGENCY_TIMELINE_PARTS)", () => {
     ]);
     // The raw [SYSTEM:] framing must NOT be dumped verbatim — it renders concisely.
     expect(frame).not.toContain("[SYSTEM:");
+    expect(frame).not.toContain("exec · write");
+    expect(frame).toContain("Write auth.ts");
     // The tool's target still shows, and the surrounding prose stays in order.
     expect(frame).toContain("auth.ts");
     expect(frame).toContain("Starting work.");

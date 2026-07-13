@@ -1,16 +1,19 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { ProviderStatus } from "./ConnectOverlay.js";
-import type { McpServerStatus } from "@agency/core";
-import { getModelSpec } from "@agency/providers";
+import { getWorkspaceReadiness, type McpServerStatus, type WorkspaceReadinessCheck } from "@agency/core";
+import { getModelSpec, getBaselineModelSpec, clearModelOverrideField } from "@agency/providers";
+import type { ContextBreakdown } from "@agency/core";
 import { getSpecSourceColor } from "../utils/spec-source.js";
+import { ContextUsagePanel } from "./ContextUsagePanel.js";
 
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
 import { panelWidth } from "../layout/terminal-layout.js";
 
 export interface StatusDashboardProps {
   theme: ThemeTokens;
+  project?: string;
   providers: ProviderStatus[];
   skillsPath?: string;
   skillsCount?: number;
@@ -21,14 +24,17 @@ export interface StatusDashboardProps {
   contextPercent?: number;
   contextTokens?: number;
   contextMax?: number;
+  contextBreakdown?: ContextBreakdown;
   currentModel?: string;
   agentMode?: string;
   lastUsage?: any;
   onClose: () => void;
+  onConfigChanged?: () => void;
 }
 
 export function StatusDashboard({
   theme,
+  project = process.cwd(),
   providers,
   skillsPath,
   skillsCount,
@@ -39,14 +45,17 @@ export function StatusDashboard({
   contextPercent = 0,
   contextTokens,
   contextMax,
+  contextBreakdown,
   currentModel,
   agentMode,
   lastUsage,
   onClose,
+  onConfigChanged,
 }: StatusDashboardProps) {
+  const [readiness, setReadiness] = useState<WorkspaceReadinessCheck[]>([]);
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 85, 45);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const isSmallScreen = cols < 75;
   const col1Width = isSmallScreen ? innerWidth : Math.floor(innerWidth * 0.35);
   const col2Width = isSmallScreen ? innerWidth : Math.floor(innerWidth * 0.35);
@@ -54,20 +63,40 @@ export function StatusDashboard({
 
   const stateRef = useRef({
     onClose,
+    onConfigChanged,
+    currentModel,
   });
 
   useEffect(() => {
     stateRef.current = {
       onClose,
+      onConfigChanged,
+      currentModel,
     };
   });
 
+  useEffect(() => {
+    let live = true;
+    void getWorkspaceReadiness(project).then((checks) => {
+      if (live) setReadiness(checks);
+    });
+    return () => { live = false; };
+  }, [project]);
+
   useInput(
-    useCallback((_input, key) => {
-      const { onClose } = stateRef.current;
+    useCallback((input, key) => {
+      const { onClose, onConfigChanged, currentModel: model } = stateRef.current;
       if (key.escape) {
         onClose();
         return;
+      }
+      if ((input === "r" || input === "R") && model) {
+        const bare = model.split("/").slice(1).join("/") || model;
+        const spec = getModelSpec(bare);
+        if (spec.specSource === "override") {
+          clearModelOverrideField(bare, "contextWindow");
+          onConfigChanged?.();
+        }
       }
     }, [])
   );
@@ -91,6 +120,19 @@ export function StatusDashboard({
       <Text color={theme.text} bold>
         System Status
       </Text>
+      {readiness.length > 0 ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={theme.muted} bold dimColor>Workspace readiness</Text>
+          <Text color={theme.muted} wrap="truncate">
+            {readiness.map((check) => `${check.state === "ready" ? "✓" : check.state === "attention" ? "!" : "○"} ${check.label}: ${check.detail}`).join(" · ")}
+          </Text>
+          {readiness.find((check) => check.state === "attention")?.recovery ? (
+            <Text color={theme.warning} wrap="truncate">
+              {readiness.find((check) => check.state === "attention")!.recovery}
+            </Text>
+          ) : null}
+        </Box>
+      ) : null}
 
       <Box flexDirection={isSmallScreen ? "column" : "row"} marginTop={1}>
         {/* Column 1: Providers & Settings */}
@@ -152,27 +194,32 @@ export function StatusDashboard({
         {/* Column 3: Session & Context */}
         <Box flexDirection="column" width={col3Width} overflow="hidden" marginTop={isSmallScreen ? 1 : 0}>
           <Text color={theme.muted} bold dimColor>
-            Session
+            Model Info
           </Text>
-          {sessionId && (
-            <Text color={theme.muted} wrap="wrap">
-              ID: <Text color={theme.text}>{sessionId}</Text>
-            </Text>
-          )}
           {currentModel && (
             <Text color={theme.muted} wrap="wrap">
               Model: <Text color={theme.accent}>{currentModel.split("/").pop()}</Text>
             </Text>
           )}
           {currentModel && (() => {
-            const spec = getModelSpec(currentModel.split("/").slice(1).join("/") || currentModel);
+            const bare = currentModel.split("/").slice(1).join("/") || currentModel;
+            const spec = getModelSpec(bare);
+            const baseline = getBaselineModelSpec(bare);
             const specSource = spec.specSource || "default";
-            const specSourceLabel = specSource;
+            const specSourceLabel = specSource === "override" ? "override (stale?)" : specSource;
             const specSourceColor = getSpecSourceColor(specSource, theme);
+            const catalogWindow = baseline.contextWindow;
             return (
-              <Text color={theme.muted} wrap="wrap">
-                Specs: <Text color={specSourceColor} bold>{specSourceLabel}</Text>
-              </Text>
+              <>
+                <Text color={theme.muted} wrap="wrap">
+                  Specs: <Text color={specSourceColor} bold>{specSourceLabel}</Text>
+                </Text>
+                {specSource === "override" && spec.contextWindow !== catalogWindow ? (
+                  <Text color={theme.warning} wrap="wrap">
+                    Ctx Window Override: {spec.contextWindow.toLocaleString("en-US")} (vs catalog: {catalogWindow.toLocaleString("en-US")})
+                  </Text>
+                ) : null}
+              </>
             );
           })()}
           {agentMode && (
@@ -180,17 +227,29 @@ export function StatusDashboard({
               Mode: <Text color={theme.text}>{agentMode}</Text>
             </Text>
           )}
-          <Text color={theme.muted} wrap="wrap">
-            Messages: <Text color={theme.text}>{messageCount}</Text>
-          </Text>
-          <Text color={theme.muted} wrap="wrap">
-            Context: <Text color={ctxColor}>{contextPercent}%</Text>
-          </Text>
-          {contextTokens !== undefined && contextMax !== undefined && (
-            <Text color={theme.muted} dimColor wrap="wrap">
-              {contextTokens} / {contextMax}
+
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={theme.muted} bold dimColor>
+              Session Context
             </Text>
-          )}
+            {sessionId && (
+              <Text color={theme.muted} wrap="wrap">
+                Session ID: <Text color={theme.text}>{sessionId}</Text>
+              </Text>
+            )}
+            <Text color={theme.muted} wrap="wrap">
+              Messages: <Text color={theme.text}>{messageCount}</Text>
+            </Text>
+            <Text color={theme.muted} wrap="wrap">
+              Context Usage: <Text color={ctxColor}>{contextPercent}%</Text>
+            </Text>
+            {contextTokens !== undefined && contextMax !== undefined && (
+              <Text color={theme.muted} dimColor wrap="wrap">
+                Tokens: {contextTokens.toLocaleString("en-US")} / {contextMax.toLocaleString("en-US")}
+              </Text>
+            )}
+          </Box>
+
           {lastUsage && (
             <Box flexDirection="column" marginTop={1}>
               <Text color={theme.muted} bold dimColor>
@@ -198,23 +257,40 @@ export function StatusDashboard({
               </Text>
               {lastUsage.thinkingBudget !== undefined && lastUsage.thinkingBudget !== 0 && (
                 <Text color={theme.muted} wrap="wrap">
-                  Budget: <Text color={theme.accent}>{typeof lastUsage.thinkingBudget === "number" ? `${lastUsage.thinkingBudget} tokens` : lastUsage.thinkingBudget}{lastUsage.taskIntent ? ` (${lastUsage.taskIntent})` : ""}</Text>
+                  Budget: <Text color={theme.accent}>{typeof lastUsage.thinkingBudget === "number" ? `${lastUsage.thinkingBudget.toLocaleString("en-US")} tokens` : lastUsage.thinkingBudget}</Text>
                 </Text>
               )}
-              <Text color={theme.muted} wrap="wrap">
-                Tokens: <Text color={theme.text}>
-                  {lastUsage.promptTokens?.toLocaleString("en-US") ?? 0} prompt + {lastUsage.completionTokens?.toLocaleString("en-US") ?? 0} completion
-                  {lastUsage.reasoningTokens ? ` (${lastUsage.reasoningTokens.toLocaleString("en-US")} reasoning)` : ""}
+              {lastUsage.taskIntent && (
+                <Text color={theme.muted} wrap="wrap">
+                  Intent: <Text color={theme.highlight}>{lastUsage.taskIntent}</Text>
                 </Text>
-              </Text>
+              )}
+              <Box flexDirection="column" marginTop={0}>
+                <Text color={theme.muted}>Tokens:</Text>
+                <Text>
+                  {"  "}• Prompt: <Text color={theme.highlight}>{lastUsage.promptTokens?.toLocaleString("en-US") ?? 0}</Text>
+                </Text>
+                <Text>
+                  {"  "}• Completion: <Text color={theme.success}>{lastUsage.completionTokens?.toLocaleString("en-US") ?? 0}</Text>
+                </Text>
+                {lastUsage.reasoningTokens ? (
+                  <Text>
+                    {"  "}• Reasoning: <Text color={theme.accent}>{lastUsage.reasoningTokens.toLocaleString("en-US")}</Text>
+                  </Text>
+                ) : null}
+              </Box>
             </Box>
           )}
         </Box>
       </Box>
 
+      {contextBreakdown ? (
+        <ContextUsagePanel theme={theme} breakdown={contextBreakdown} width={innerWidth} />
+      ) : null}
+
       <Box marginTop={1}>
         <Text color={theme.muted} dimColor>
-          Esc to close
+          Esc to close · r reset stale context override
         </Text>
       </Box>
     </Box>

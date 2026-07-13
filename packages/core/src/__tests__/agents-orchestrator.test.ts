@@ -30,6 +30,7 @@ import { execa } from "execa";
 import { routeUserPrompt } from "../router/model-router.js";
 import * as chatOrchestrator from "../chat/orchestrator.js";
 import * as chatStream from "../chat/stream.js";
+import * as workspaceIsolation from "../agents/workspace-isolation.js";
 import { EventBus } from "../events/event-bus.js";
 import type { ReplayEvent } from "@agency/contracts";
 import { StagingEngine } from "@agency/workspace";
@@ -100,12 +101,14 @@ describe("buildIsolatedEnv", () => {
         task: "Find root cause",
         projectRoot: "/proj",
         contextFiles: ["src/a.ts", "src/b.ts"],
+        dispatchId: "dispatch-123",
       });
 
       expect(env.PATH).toBe("/bin");
       expect(env.AGENCY_AGENT_ID).toBe("debugger");
       expect(env.AGENCY_TASK).toBe("Find root cause");
       expect(env.AGENCY_PROJECT_ROOT).toBe("/proj");
+      expect(env.AGENCY_DISPATCH_ID).toBe("dispatch-123");
       expect(env.AGENCY_CONTEXT_FILES).toBe("src/a.ts,src/b.ts");
       expect(env.AGENCY_SKILLS_ROOT).toBeUndefined();
     } finally {
@@ -482,9 +485,12 @@ describe("dispatchAgent", () => {
 
       expect(started.length).toBeGreaterThan(0);
       expect(started[0]!.agentId).toBe("planner");
+      expect(started[0]!.dispatchId).toMatch(/^planner-/);
+      expect(JSON.parse(started[0]!.payload).dispatchId).toBe(started[0]!.dispatchId);
 
       expect(finished.length).toBeGreaterThan(0);
       expect(finished[0]!.agentId).toBe("planner");
+      expect(finished[0]!.dispatchId).toBe(started[0]!.dispatchId);
       // durationMs + costUsd are attribution-only metadata (never folded into
       // the dedup/replay hash), estimated from the turn's token usage.
       expect(typeof finished[0]!.durationMs).toBe("number");
@@ -533,6 +539,51 @@ describe("dispatchAgent", () => {
       rmSync(projectRoot, { recursive: true, force: true });
     }
   });
+
+  it("aborts timed-out subagent work and emits a terminal error", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "dispatch-timeout-"));
+    mockedRoute.mockResolvedValue(baseRoute);
+    mockedExeca.mockResolvedValue({
+      exitCode: 0,
+      stdout: JSON.stringify({ intent: "plan", suggested_agent: "planner", workflow: "plan", skills: [] }),
+      stderr: "",
+    } as Awaited<ReturnType<typeof execa>>);
+    const aborts: string[] = [];
+    vi.spyOn(chatStream, "runChatTurnWithStream").mockImplementation(async (input: any) => {
+      return await new Promise((_, reject) => {
+        input.signal?.addEventListener("abort", () => {
+          aborts.push("aborted");
+          reject(input.signal.reason ?? new Error("aborted"));
+        }, { once: true });
+      });
+    });
+
+    const bus = EventBus.getInstance();
+    const errored: ReplayEvent[] = [];
+    const onError = (e: ReplayEvent) => errored.push(e);
+    bus.subscribe("subagent:error", onError);
+
+    try {
+      const result = await dispatchAgent(
+        { agentId: "planner", task: "hang until timeout", projectRoot, dispatchId: "timeout-dispatch" },
+        { skillsRoot: FIXTURE_SKILLS, executionBudgetMs: 5 }
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.dispatchId).toBe("timeout-dispatch");
+      expect(result.stderr).toContain("exceeded execution budget");
+      expect(aborts).toEqual(["aborted"]);
+      for (let i = 0; i < 50 && errored.length === 0; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(errored.length).toBeGreaterThan(0);
+      expect(errored[0]!.dispatchId).toBe("timeout-dispatch");
+      expect(JSON.parse(errored[0]!.payload).result).toContain("exceeded execution budget");
+    } finally {
+      bus.unsubscribe("subagent:error", onError);
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("dispatchAgentsParallel", () => {
@@ -575,6 +626,30 @@ describe("dispatchAgentsParallel", () => {
     expect(res.results.length).toBe(2);
     expect(res.results[0]?.exitCode).toBe(0);
     expect(res.results[1]?.exitCode).toBe(0);
+  });
+
+  it("cleans already-created isolated workspaces if fan-out setup fails", async () => {
+    const create = vi.mocked(workspaceIsolation.createIsolatedWorkspace);
+    const clean = vi.mocked(workspaceIsolation.cleanIsolatedWorkspace);
+    const first = { tempDir: "/fake/ws-planner", projectRoot: "/fake/project" };
+    create
+      .mockImplementationOnce(() => first)
+      .mockImplementationOnce(() => {
+        throw new Error("copy failed");
+      });
+
+    const res = await dispatchAgentsParallel(
+      "/fake/project",
+      [
+        { agentId: "planner", task: "Task A" },
+        { agentId: "debugger", task: "Task B" },
+      ],
+      { skillsRoot: FIXTURE_SKILLS }
+    );
+
+    expect(res.success).toBe(false);
+    expect(res.error).toContain("copy failed");
+    expect(clean).toHaveBeenCalledWith(first);
   });
 
   it("a pre-flight throw in one agent does not discard the whole batch", async () => {
@@ -628,6 +703,60 @@ describe("dispatchAgentsParallel", () => {
       expect(res.success).toBe(false);
     } finally {
       delete process.env.AGENCY_DELEGATION_CHAIN;
+    }
+  });
+
+  it("aborts opts.signal during verification and asserts that the subagent returns exitCode: 1 with a cancelled error in stderr, and that changes are NOT committed", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "agency-abort-verify-"));
+    mockedRoute.mockResolvedValue(baseRoute);
+
+    mockedExeca.mockResolvedValue({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        intent: "plan",
+        suggested_agent: "planner",
+        workflow: "plan",
+        skills: [],
+      }),
+      stderr: "",
+    } as Awaited<ReturnType<typeof execa>>);
+
+    // Mock an edit suggestion
+    vi.spyOn(chatStream, "runChatTurnWithStream").mockResolvedValue({
+      route: baseRoute,
+      routeSummary: "intent: plan · workflow: plan",
+      assistantText: "### File: file.txt\n```\nconst x = 2;\n```",
+      suggestedCommands: [],
+      routeOnly: false,
+      budget: "balanced" as any,
+      contextFiles: [],
+      routeFromCache: false,
+      filesWritten: ["file.txt"],
+    });
+
+    const abortController = new AbortController();
+
+    // Spy on verifyTransaction to trigger abort during verification
+    const verifySpy = vi.spyOn(StagingEngine.prototype, "verifyTransaction").mockImplementation(async () => {
+      abortController.abort(new Error("Canceled by user"));
+      return { success: true, errors: [] };
+    });
+
+    const commitSpy = vi.spyOn(StagingEngine.prototype, "commitTransaction").mockResolvedValue([]);
+
+    try {
+      const result = await dispatchAgent(
+        { agentId: "planner", task: "make edit", projectRoot },
+        { skillsRoot: FIXTURE_SKILLS, signal: abortController.signal }
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Canceled by user");
+      expect(commitSpy).not.toHaveBeenCalled();
+    } finally {
+      verifySpy.mockRestore();
+      commitSpy.mockRestore();
+      rmSync(projectRoot, { recursive: true, force: true });
     }
   });
 });

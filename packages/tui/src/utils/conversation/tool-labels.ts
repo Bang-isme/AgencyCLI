@@ -105,6 +105,20 @@ export function getGroundedTargetName(targetPath: string): string {
   return cleanedPath.split(/[\\/]/).pop() || cleanedPath;
 }
 
+export function summarizeCommandLabel(command: string): string {
+  const cmd = command.trim().replace(/\s+/g, " ");
+  const lower = cmd.toLowerCase();
+  if (!cmd) return "";
+  if (/\b(pnpm|npm|yarn)\s+(run\s+)?build\b/.test(lower)) return cmd.length > 48 ? "build verification" : cmd;
+  if (lower.includes("build") && (lower.includes("verify") || lower.includes("final") || lower.includes("build_"))) {
+    return "build verification";
+  }
+  if (/[>&|;]/.test(cmd) && lower.includes("build")) {
+    return "build verification";
+  }
+  return cmd.length > 48 ? cmd.slice(0, 48) + "…" : cmd;
+}
+
 const PAST_TENSE: Record<string, string> = {
   Run: "Ran",
   Read: "Read",
@@ -165,11 +179,11 @@ export function getSemanticToolOperation(toolName: string, argsStr: string, targ
   }
 
   if (rawPath) {
-    displayTarget = getGroundedTargetName(rawPath);
+    displayTarget = cleanToolIsCommand(toolName)
+      ? summarizeCommandLabel(rawPath)
+      : getGroundedTargetName(rawPath);
   } else if (command) {
-    // The real command (truncated), not "validation suite via npm" — not every
-    // shell call is a test run.
-    displayTarget = command.length > 48 ? command.slice(0, 48) + "…" : command;
+    displayTarget = summarizeCommandLabel(command);
   }
 
   // Plain, accurate verbs (mirrors opencode) instead of flowery, often-wrong
@@ -219,4 +233,9 @@ export function getSemanticToolOperation(toolName: string, argsStr: string, targ
       return displayTarget ? `${alias} ${displayTarget}` : alias;
     }
   }
+}
+
+function cleanToolIsCommand(toolName: string): boolean {
+  const cleanTool = toolName.toLowerCase();
+  return cleanTool === "execute_command" || cleanTool === "run_command";
 }

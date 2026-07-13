@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyTool, toolTarget, toolResultIsFailure } from "../chat/tool-events.js";
+import { classifyTool, shouldEmitToolLifecycleEvent, toolTarget, toolResultIsFailure } from "../chat/tool-events.js";
 
 describe("tool-events classifier (Phase A)", () => {
   it("classifies fs / exec / search / agent / memory tools", () => {
@@ -38,8 +38,15 @@ describe("tool-events classifier (Phase A)", () => {
     expect(toolResultIsFailure("Error\nstack")).toBe(true);
     expect(toolResultIsFailure("Exit Code: 1\nStderr: nope")).toBe(true);
     expect(toolResultIsFailure("Exit Code: 127")).toBe(true);
+    expect(toolResultIsFailure("Exit Code: -1")).toBe(true);
+    expect(toolResultIsFailure("Exit Code: 10")).toBe(true);
     expect(toolResultIsFailure("Exit Code: 0\nStdout: ok")).toBe(false);
     expect(toolResultIsFailure("42 bytes written")).toBe(false);
     expect(toolResultIsFailure("No files found")).toBe(false);
+  });
+
+  it("does not emit lifecycle display events for plan-only meta tools", () => {
+    expect(shouldEmitToolLifecycleEvent("update_plan")).toBe(false);
+    expect(shouldEmitToolLifecycleEvent("write_file")).toBe(true);
   });
 });

@@ -125,7 +125,7 @@ export function WelcomeScreen({
                 color={selected ? theme.text : theme.muted}
                 bold={selected}
               >
-                {selected ? "▸ " : "  "}
+                {selected ? "> " : "  "}
                 <Text color={selected ? theme.accent : theme.muted}>
                   {padEndWide(p.name, 16)}
                 </Text>
@@ -156,7 +156,7 @@ export function WelcomeScreen({
             color={safe === projects.length ? theme.text : theme.muted}
             bold={safe === projects.length}
           >
-            {safe === projects.length ? "▸ " : "  "}
+            {safe === projects.length ? "> " : "  "}
             <Text color={safe === projects.length ? theme.success : theme.muted}>
               ○ Use current directory
             </Text>

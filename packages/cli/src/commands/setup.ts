@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -8,25 +8,10 @@ import {
   resolveSkillsRoot,
   writeIndex,
   buildKnowledgeGraph,
+  getWorkspaceReadiness,
 } from "@agency/core";
 import { resolveProjectRoot } from "../resolve-project.js";
 import { out, handleError } from "../utils.js";
-
-function configHasLlmKey(configPath: string): boolean {
-  if (!existsSync(configPath)) return false;
-  try {
-    const raw = JSON.parse(readFileSync(configPath, "utf8")) as {
-      providers?: Record<string, { apiKey?: string }>;
-    };
-    for (const profile of Object.values(raw.providers ?? {})) {
-      const key = profile?.apiKey?.trim();
-      if (key && key.length > 2) return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
 
 const CONFIG_EXAMPLE = `{
   "defaultProvider": "openrouter",
@@ -78,14 +63,15 @@ export function registerSetup(program: Command) {
           configCreated = true;
         }
 
-        const hasKey = configHasLlmKey(configPath);
+        const readiness = await getWorkspaceReadiness(projectRoot);
+        const provider = readiness.find((check) => check.id === "provider");
 
         out.phase("setup completion", {
           project: projectRoot,
           indexedFiles: String(index.files.length),
           skillsPack: skillsRoot,
           configPath: configPath + (configCreated ? " (created template)" : ""),
-          llmReady: hasKey ? "yes" : "no",
+          provider: provider?.detail ?? "Unknown",
         });
 
         if (options.json) {
@@ -94,7 +80,7 @@ export function registerSetup(program: Command) {
             files: index.files.length,
             skills: skillsRoot,
             config: configPath,
-            llmReady: hasKey,
+            readiness,
           });
         }
       } catch (err) {

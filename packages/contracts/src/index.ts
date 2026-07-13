@@ -42,6 +42,7 @@ export interface ReplayEvent {
   // Optional attribution for forensics / per-agent + per-task cost accounting.
   // Additive: absent on legacy events, never affects the replay payload hash.
   agentId?: string;
+  dispatchId?: string;
   taskId?: string;
   durationMs?: number;
   costUsd?: number;

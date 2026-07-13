@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import { Box, Text } from "ink";
+import type { ActionLifecycleEvent } from "@agency/core";
 import type { ThemeTokens } from "../themes/registry.js";
 import { useTick } from "../motion/useTick.js";
 import { getPhaseLabel, type ActivityPhase } from "../state/context-tracker.js";
@@ -7,6 +8,7 @@ import { pulseDots, SPINNER_BLOCKS } from "../motion/design-system.js";
 import { formatTokenCount } from "../utils/text.js";
 import { normalizeWorkerName, formatElapsed } from "@agency/core";
 import type { SubagentStatus } from "../state/subagent-status.js";
+import { PresentationMapper } from "../presentation/presentation-mapper.js";
 
 export interface ToolActivityProps {
   theme: ThemeTokens;
@@ -15,6 +17,8 @@ export interface ToolActivityProps {
   startMs?: number;
   tokenCount?: number;
   subagents?: SubagentStatus[];
+  label?: string;
+  lifecycle?: ActionLifecycleEvent;
 }
 
 interface ShimmerRun {
@@ -22,19 +26,14 @@ interface ShimmerRun {
   color: string;
 }
 
-/**
- * Builds grouped text runs for a soft light band sweeping left→right across the
- * label. The base color stays steady (no global dim), so only a localized
- * highlight travels — a calm shimmer with zero on/off flicker.
- */
 function buildShimmerRuns(label: string, tick: number, theme: ThemeTokens): ShimmerRun[] {
   const chars = [...label];
   const len = chars.length;
   if (len === 0) return [];
 
-  const GAP = 12; // dark pause between sweeps
-  const BAND = 2; // half-width of the bright band
-  const SPEED = 2; // cells advanced per tick
+  const GAP = 12;
+  const BAND = 2;
+  const SPEED = 2;
   const head = len > 1 ? Math.floor(tick * SPEED) % (len + GAP) : -99;
 
   const runs: ShimmerRun[] = [];
@@ -58,47 +57,45 @@ export const ToolActivity = memo(function ToolActivity({
   startMs = 0,
   tokenCount = 0,
   subagents,
+  label,
+  lifecycle,
 }: ToolActivityProps) {
   const tick = useTick(active, 100);
   const wave = SPINNER_BLOCKS[tick % SPINNER_BLOCKS.length]!;
 
-  let displayLabel = getPhaseLabel(phase);
+  let displayLabel = label;
+  if (!displayLabel && lifecycle) {
+    displayLabel = PresentationMapper.mapToCompactRow(lifecycle, theme, { tick }).label;
+  }
+  if (!displayLabel) {
+    displayLabel = getPhaseLabel(phase);
+  }
 
   const runningSubagent = subagents?.find(a => a.status === "running");
-  if (runningSubagent) {
+  if (runningSubagent && !label && !lifecycle) {
     const rawName = normalizeWorkerName(runningSubagent.agentId);
-    // Ensure clean prefix and prevent duplicate worker.worker.
     const name = rawName.startsWith("worker.") ? rawName : `worker.${rawName}`;
-    
-    // Prioritize active step label, fallback to phase/task
     const activeStep = runningSubagent.steps?.find(s => s.status === "active");
     let progressText = activeStep?.label || runningSubagent.phase || runningSubagent.task || "processing";
     if (progressText.length > 50) {
       progressText = progressText.slice(0, 47) + "...";
     }
-
-    // The worker's own elapsed is shown by the conversation Workers panel
-    // ([running | Ns]); don't repeat it — the trailing turn-elapsed is the timer.
     displayLabel = `${name} ➔ ${progressText}`;
   }
 
   const dots = pulseDots(tick);
-
   const [elapsed, setElapsed] = useState(() => (startMs > 0 ? Date.now() - startMs : 0));
 
   useEffect(() => {
     if (!active || startMs === 0) return;
     const interval = setInterval(() => {
       setElapsed(Date.now() - startMs);
-    }, 200); // 5Hz ticks locally is optimal
+    }, 200);
     return () => clearInterval(interval);
   }, [active, startMs]);
 
   if (!active) return null;
 
-  // Holographic light sweep: a soft band glides left→right across the label
-  // (same beam identity as the logo). No global dim/brighten — the base stays
-  // steady, only a localized highlight travels, so there is zero on/off flicker.
   const labelRuns = buildShimmerRuns(displayLabel, tick, theme);
 
   return (
@@ -111,7 +108,6 @@ export const ToolActivity = memo(function ToolActivity({
       <Text color={theme.muted}>
         · {formatElapsed(elapsed)}
         {tokenCount > 0 ? ` · ${formatTokenCount(tokenCount)} tokens` : ""}
-        {" "}· esc cancel
       </Text>
     </Box>
   );

@@ -29,11 +29,17 @@ const PROVIDER_INFO: Record<string, { label: string; icon: string }> = {
   google: { label: "Google Gemini", icon: "💎" },
   openai: { label: "OpenAI", icon: "🤖" },
   anthropic: { label: "Anthropic", icon: "🔮" },
-  local: { label: "Local (Ollama)", icon: "🖥" },
+  local: { label: "Local (Ollama)", icon: "💻" },
 };
 
 export function getProviderInfo(id: string): { label: string; icon: string } {
-  return PROVIDER_INFO[id] ?? { label: id, icon: "·" };
+  const defaultInfo = PROVIDER_INFO[id];
+  if (defaultInfo) return defaultInfo;
+  if (id === "add_custom") {
+    return { label: "Add Custom Provider", icon: "" };
+  }
+  const label = id.charAt(0).toUpperCase() + id.slice(1);
+  return { label, icon: "🧩" };
 }
 
 type Phase = "list" | "menu" | "input" | "confirm_disconnect";
@@ -48,7 +54,7 @@ export function ConnectOverlay({
 }: ConnectOverlayProps) {
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 72, 40);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   const [index, setIndex] = useState(0);
@@ -57,23 +63,35 @@ export function ConnectOverlay({
   const [menuIndex, setMenuIndex] = useState(0);
   const [confirmIndex, setConfirmIndex] = useState(0);
 
-  const [localStep, setLocalStep] = useState<"baseUrl" | "model" | "apiKey">("baseUrl");
-  const [localBaseUrl, setLocalBaseUrl] = useState("");
-  const [localModel, setLocalModel] = useState("");
+  const [wizardSteps, setWizardSteps] = useState<("id" | "baseUrl" | "apiKey" | "model")[]>(["apiKey"]);
+  const [stepIdx, setStepIdx] = useState(0);
 
-  const safe = providers.length === 0 ? 0 : index % providers.length;
-  const selected = providers[safe];
+  const [inputId, setInputId] = useState("");
+  const [inputBaseUrl, setInputBaseUrl] = useState("");
+  const [inputApiKey, setInputApiKey] = useState("");
+  const [inputModel, setInputModel] = useState("");
+
+  const listItems: ProviderStatus[] = [
+    ...providers,
+    { id: "add_custom" as any, label: "Add Custom Provider", icon: "", configured: false }
+  ];
+
+  const safe = listItems.length === 0 ? 0 : index % listItems.length;
+  const selected = listItems[safe];
 
   const stateRef = useRef({
     phase,
     index,
-    providers,
+    listItems,
     keyBuffer,
     menuIndex,
     confirmIndex,
-    localStep,
-    localBaseUrl,
-    localModel,
+    wizardSteps,
+    stepIdx,
+    inputId,
+    inputBaseUrl,
+    inputApiKey,
+    inputModel,
     selected,
     onSaveKey,
     onClose,
@@ -85,13 +103,16 @@ export function ConnectOverlay({
     stateRef.current = {
       phase,
       index,
-      providers,
+      listItems,
       keyBuffer,
       menuIndex,
       confirmIndex,
-      localStep,
-      localBaseUrl,
-      localModel,
+      wizardSteps,
+      stepIdx,
+      inputId,
+      inputBaseUrl,
+      inputApiKey,
+      inputModel,
       selected,
       onSaveKey,
       onClose,
@@ -105,218 +126,265 @@ export function ConnectOverlay({
       const {
         phase,
         index,
-        providers,
+        listItems,
         keyBuffer,
         menuIndex,
         confirmIndex,
-        localStep,
-        localBaseUrl,
-        localModel,
+        wizardSteps,
+        stepIdx,
+        inputId,
+        inputBaseUrl,
+        inputApiKey,
+        inputModel,
         selected,
         onSaveKey,
         onClose,
         onSelect,
         profiles,
       } = stateRef.current;
-    if (phase === "input") {
-      if (key.escape) {
-        if (selected?.id === "local") {
-          if (localStep === "apiKey") {
-            setLocalStep("model");
-            setKeyBuffer(localModel);
+
+      if (phase === "input") {
+        if (key.escape) {
+          if (stepIdx > 0) {
+            const prevStep = wizardSteps[stepIdx - 1];
+            setStepIdx(stepIdx - 1);
+            if (prevStep === "id") setKeyBuffer(inputId);
+            else if (prevStep === "baseUrl") setKeyBuffer(inputBaseUrl);
+            else if (prevStep === "model") setKeyBuffer(inputModel);
+            else if (prevStep === "apiKey") setKeyBuffer(inputApiKey);
             return;
           }
-          if (localStep === "model") {
-            setLocalStep("baseUrl");
-            setKeyBuffer(localBaseUrl);
-            return;
-          }
+          setPhase(selected?.configured ? "menu" : "list");
+          setKeyBuffer("");
+          return;
         }
-        setPhase(selected?.configured ? "menu" : "list");
-        setKeyBuffer("");
-        return;
-      }
-      if (key.return) {
-        if (selected?.id === "local") {
-          if (localStep === "baseUrl") {
-            const val = keyBuffer.trim() || profiles?.local?.baseUrl || "http://localhost:11434/v1";
-            setLocalBaseUrl(val);
-            setLocalStep("model");
-            setKeyBuffer(profiles?.local?.model ?? "llama3.2");
-            return;
-          }
-          if (localStep === "model") {
-            const val = keyBuffer.trim() || profiles?.local?.model || "llama3.2";
-            setLocalModel(val);
-            setLocalStep("apiKey");
-            setKeyBuffer(profiles?.local?.apiKey ?? "");
-            return;
-          }
-          if (localStep === "apiKey") {
+
+        if (key.return) {
+          const currentStep = wizardSteps[stepIdx];
+          let nextId = inputId;
+          let nextBaseUrl = inputBaseUrl;
+          let nextModel = inputModel;
+          let nextApiKey = inputApiKey;
+
+          if (currentStep === "id") {
+            const val = keyBuffer.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
+            if (!val || val === "add_custom" || ["nvidia", "openrouter", "google", "openai", "anthropic", "local"].includes(val)) {
+              return;
+            }
+            nextId = val;
+            setInputId(val);
+          } else if (currentStep === "baseUrl") {
+            const defaultUrl = selected?.id === "local" ? "http://localhost:11434/v1" : "https://api.openai.com/v1";
+            const val = keyBuffer.trim() || defaultUrl;
+            nextBaseUrl = val;
+            setInputBaseUrl(val);
+          } else if (currentStep === "model") {
+            const defaultModel = selected?.id === "local" ? "llama3.2" : "default";
+            const val = keyBuffer.trim() || defaultModel;
+            nextModel = val;
+            setInputModel(val);
+          } else if (currentStep === "apiKey") {
             const val = keyBuffer.trim();
-            onSaveKey(selected.id, val, {
-              baseUrl: localBaseUrl,
-              model: localModel,
-            });
+            nextApiKey = val;
+            setInputApiKey(val);
+          }
+
+          if (stepIdx < wizardSteps.length - 1) {
+            const nextStep = wizardSteps[stepIdx + 1];
+            setStepIdx(stepIdx + 1);
+            if (nextStep === "baseUrl") {
+              setKeyBuffer(nextBaseUrl);
+            } else if (nextStep === "model") {
+              setKeyBuffer(nextModel);
+            } else if (nextStep === "apiKey") {
+              setKeyBuffer(nextApiKey);
+            }
+            return;
+          } else {
+            const targetId = selected.id === "add_custom" ? nextId : selected.id;
+            if (targetId === "local" || selected.id === "add_custom" || !["nvidia", "openrouter", "google", "openai", "anthropic"].includes(targetId as string)) {
+              onSaveKey(targetId, nextApiKey, {
+                baseUrl: nextBaseUrl,
+                model: nextModel,
+              });
+            } else {
+              onSaveKey(targetId, nextApiKey);
+            }
             setPhase("list");
             setKeyBuffer("");
             return;
           }
-        } else {
-          if (keyBuffer.trim() && selected) {
-            onSaveKey(selected.id, keyBuffer.trim());
-          }
-          setPhase("list");
-          setKeyBuffer("");
+        }
+
+        const isCtrlH = key.ctrl && (input === "h" || (key as any).name === "h");
+        const isBackspace = key.backspace || (key as any).name === "backspace" || input === "\b" || input === "\x08" || input === "\x7f";
+        const isBackspaceOrDelete = isBackspace || key.delete || (key as any).name === "delete" || isCtrlH;
+
+        if (isBackspaceOrDelete) {
+          setKeyBuffer((b) => deleteLastGrapheme(b));
           return;
         }
-      }
-      // Handle physical backspace/delete/Ctrl+H explicitly first
-      const isCtrlH = key.ctrl && (input === "h" || (key as any).name === "h");
-      const isBackspace = key.backspace || (key as any).name === "backspace" || input === "\b" || input === "\x08" || input === "\x7f";
-      const isBackspaceOrDelete = isBackspace || key.delete || (key as any).name === "delete" || isCtrlH;
 
-      if (isBackspaceOrDelete) {
-        setKeyBuffer((b) => deleteLastGrapheme(b));
-        return;
-      }
-
-      // Handle escape sequences
-      if (input.includes("\x1b")) {
-        if (key.escape) {
-          // Ignored or handled elsewhere
+        if (input.includes("\x1b")) {
+          return;
         }
-        return;
-      }
 
-      // Handle control shortcuts (e.g. Ctrl+A, Ctrl+Z, etc.), excluding backspace/delete codes
-      const isControlShortcut =
-        (key.ctrl || key.meta) &&
-        (!input ||
-          (/^[a-zA-Z]$/.test(input) && input !== "h") ||
-          (input.length > 0 &&
-            input.charCodeAt(0) < 32 &&
-            input.charCodeAt(0) !== 8 &&
-            input.charCodeAt(0) !== 127));
+        const isControlShortcut =
+          (key.ctrl || key.meta) &&
+          (!input ||
+            (/^[a-zA-Z]$/.test(input) && input !== "h") ||
+            (input.length > 0 &&
+              input.charCodeAt(0) < 32 &&
+              input.charCodeAt(0) !== 8 &&
+              input.charCodeAt(0) !== 127));
 
-      if (isControlShortcut || key.escape) {
-        return;
-      }
+        if (isControlShortcut || key.escape) {
+          return;
+        }
 
-      // Default/Fall-through: process any typed characters (including IME chunks and fallback backspaces)
-      if (input) {
-        for (let i = 0; i < input.length; i++) {
-          const char = input[i];
-          const isCharBackspace =
-            char === "\b" ||
-            char === "\x08" ||
-            char === "\x7f";
+        if (input) {
+          for (let i = 0; i < input.length; i++) {
+            const char = input[i];
+            const isCharBackspace =
+              char === "\b" ||
+              char === "\x08" ||
+              char === "\x7f";
 
-          if (isCharBackspace) {
-            setKeyBuffer((b) => deleteLastGrapheme(b));
-          } else {
-            const cleaned = char.replace(/[\x00-\x1F\x7F-\x9F\u200B-\u200F\uFEFF]/g, "");
-            if (cleaned) {
-              setKeyBuffer((b) => b + cleaned);
+            if (isCharBackspace) {
+              setKeyBuffer((b) => deleteLastGrapheme(b));
+            } else {
+              const cleaned = char.replace(/[\x00-\x1F\x7F-\x9F\u200B-\u200F\uFEFF]/g, "");
+              if (cleaned) {
+                setKeyBuffer((b) => b + cleaned);
+              }
             }
           }
         }
+        return;
       }
-      return;
-    }
 
-    if (phase === "menu") {
+      if (phase === "menu") {
+        if (key.escape) {
+          setPhase("list");
+          return;
+        }
+        if (key.upArrow) {
+          setMenuIndex((i) => (i === 0 ? 2 : i - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setMenuIndex((i) => (i === 2 ? 0 : i + 1));
+          return;
+        }
+        if (key.return && selected) {
+          if (menuIndex === 0) {
+            setPhase("input");
+            if (selected.id === "local") {
+              setWizardSteps(["baseUrl", "model", "apiKey"]);
+              setStepIdx(0);
+              setInputBaseUrl(profiles?.local?.baseUrl ?? "http://localhost:11434/v1");
+              setInputModel(profiles?.local?.model ?? "llama3.2");
+              setInputApiKey(profiles?.local?.apiKey ?? "");
+              setKeyBuffer(profiles?.local?.baseUrl ?? "http://localhost:11434/v1");
+            } else if (selected.id !== "add_custom" && !["nvidia", "openrouter", "google", "openai", "anthropic"].includes(selected.id as string)) {
+              setWizardSteps(["baseUrl", "apiKey", "model"]);
+              setStepIdx(0);
+              const prof = profiles?.[selected.id] ?? {};
+              setInputBaseUrl(prof.baseUrl ?? "");
+              setInputApiKey(prof.apiKey ?? "");
+              setInputModel(prof.model ?? "");
+              setKeyBuffer(prof.baseUrl ?? "");
+            } else {
+              setWizardSteps(["apiKey"]);
+              setStepIdx(0);
+              const prof = profiles?.[selected.id] ?? {};
+              setInputApiKey(prof.apiKey ?? "");
+              setKeyBuffer("");
+            }
+          } else if (menuIndex === 1) {
+            setPhase("confirm_disconnect");
+            setConfirmIndex(1);
+          } else {
+            setPhase("list");
+          }
+          return;
+        }
+        return;
+      }
+
+      if (phase === "confirm_disconnect") {
+        if (key.escape) {
+          setPhase("menu");
+          return;
+        }
+        if (key.upArrow || key.downArrow) {
+          setConfirmIndex((i) => (i === 0 ? 1 : 0));
+          return;
+        }
+        if (key.return && selected) {
+          if (confirmIndex === 0) {
+            onSaveKey(selected.id, "");
+            setPhase("list");
+          } else {
+            setPhase("menu");
+          }
+          return;
+        }
+        return;
+      }
+
+      // List phase
       if (key.escape) {
-        setPhase("list");
+        onClose();
         return;
       }
       if (key.upArrow) {
-        setMenuIndex((i) => (i === 0 ? 2 : i - 1));
+        const nextIdx = Math.max(0, index - 1);
+        setIndex(nextIdx);
+        if (onSelect && listItems[nextIdx] && listItems[nextIdx].id !== "add_custom") {
+          onSelect(listItems[nextIdx].id);
+        }
         return;
       }
       if (key.downArrow) {
-        setMenuIndex((i) => (i === 2 ? 0 : i + 1));
+        const nextIdx = Math.min(listItems.length - 1, index + 1);
+        setIndex(nextIdx);
+        if (onSelect && listItems[nextIdx] && listItems[nextIdx].id !== "add_custom") {
+          onSelect(listItems[nextIdx].id);
+        }
         return;
       }
       if (key.return && selected) {
-        if (menuIndex === 0) {
+        if (selected.id === "add_custom") {
+          setPhase("input");
+          setWizardSteps(["id", "baseUrl", "apiKey", "model"]);
+          setStepIdx(0);
+          setInputId("");
+          setInputBaseUrl("https://api.openai.com/v1");
+          setInputApiKey("");
+          setInputModel("default");
+          setKeyBuffer("");
+        } else if (selected.configured) {
+          setPhase("menu");
+          setMenuIndex(0);
+        } else {
           setPhase("input");
           if (selected.id === "local") {
-            setLocalStep("baseUrl");
+            setWizardSteps(["baseUrl", "model", "apiKey"]);
+            setStepIdx(0);
+            setInputBaseUrl(profiles?.local?.baseUrl ?? "http://localhost:11434/v1");
+            setInputModel(profiles?.local?.model ?? "llama3.2");
+            setInputApiKey(profiles?.local?.apiKey ?? "");
             setKeyBuffer(profiles?.local?.baseUrl ?? "http://localhost:11434/v1");
           } else {
+            setWizardSteps(["apiKey"]);
+            setStepIdx(0);
+            setInputApiKey("");
             setKeyBuffer("");
           }
-        } else if (menuIndex === 1) {
-          setPhase("confirm_disconnect");
-          setConfirmIndex(1); // Default to safe option (Keep)
-        } else {
-          setPhase("list");
-        }
-        return;
-      }
-      return;
-    }
-
-    if (phase === "confirm_disconnect") {
-      if (key.escape) {
-        setPhase("menu");
-        return;
-      }
-      if (key.upArrow || key.downArrow) {
-        setConfirmIndex((i) => (i === 0 ? 1 : 0));
-        return;
-      }
-      if (key.return && selected) {
-        if (confirmIndex === 0) {
-          // Yes, disconnect
-          onSaveKey(selected.id, "");
-          setPhase("list");
-        } else {
-          // No, keep key
-          setPhase("menu");
-        }
-        return;
-      }
-      return;
-    }
-
-    // List phase
-    if (key.escape) {
-      onClose();
-      return;
-    }
-    if (key.upArrow) {
-      const nextIdx = Math.max(0, index - 1);
-      setIndex(nextIdx);
-      if (onSelect && providers[nextIdx]) {
-        onSelect(providers[nextIdx]!.id);
-      }
-      return;
-    }
-    if (key.downArrow) {
-      const nextIdx = Math.min(providers.length - 1, index + 1);
-      setIndex(nextIdx);
-      if (onSelect && providers[nextIdx]) {
-        onSelect(providers[nextIdx]!.id);
-      }
-      return;
-    }
-    if (key.return && selected) {
-      if (selected.configured) {
-        setPhase("menu");
-        setMenuIndex(0);
-      } else {
-        setPhase("input");
-        if (selected.id === "local") {
-          setLocalStep("baseUrl");
-          setKeyBuffer(profiles?.local?.baseUrl ?? "http://localhost:11434/v1");
-        } else {
-          setKeyBuffer("");
         }
       }
-    }
-  }, [])
+    }, [])
   );
 
   let footerLeft = "";
@@ -379,7 +447,7 @@ export function ConnectOverlay({
           {phase === "list" && (innerWidth >= 50 ? "Select a provider to connect or manage" : "Select a provider")}
           {phase === "menu" && `Manage ${selected?.label}`}
           {phase === "confirm_disconnect" && `Remove the stored key for ${selected?.label}`}
-          {phase === "input" && `Enter API key for ${selected?.label}`}
+          {phase === "input" && `Configure ${selected?.label}`}
         </Text>
       </Box>
 
@@ -389,41 +457,51 @@ export function ConnectOverlay({
       {/* Main Content Area */}
       <Box marginTop={0} marginBottom={1} flexDirection="column" overflow="hidden">
         {phase === "list" && (() => {
-          const labelW = Math.min(18, Math.max(10, Math.floor(innerWidth * 0.25)));
-          return providers.map((p, i) => {
+          return listItems.map((p, i) => {
             const sel = i === safe;
             
             let statusText = "";
             if (p.configured) {
               if (innerWidth >= 45) {
-                statusText = `✓ connected${p.modelCount ? ` · ${p.modelCount} models` : ""}`;
+                statusText = `connected${p.modelCount ? ` · ${p.modelCount} models` : ""}`;
               } else if (innerWidth >= 40) {
-                statusText = `✓ connected${p.modelCount ? ` · ${p.modelCount}` : ""}`;
+                statusText = `connected${p.modelCount ? ` · ${p.modelCount}` : ""}`;
               } else {
-                statusText = "✓ connected";
+                statusText = "connected";
               }
+            } else if (p.id === "add_custom") {
+              statusText = "";
             } else {
-              statusText = innerWidth >= 40 ? "· not connected" : "·";
+              statusText = innerWidth >= 40 ? "not connected" : "offline";
             }
 
-            const arrowStr = sel ? "▸ " : "  ";
-            const iconStr = p.icon.padEnd(4);
-            const labelStr = p.label.slice(0, labelW).padEnd(labelW);
+            const arrowStr = sel ? ">" : "";
+            const truncatedLabel = p.label;
 
             return (
-              <Box key={p.id} height={1} overflow="hidden">
-                <Text wrap="truncate">
-                  <Text color={sel ? theme.accent : theme.muted} bold={sel}>
+              <Box key={p.id} height={1} overflow="hidden" flexDirection="row">
+                <Box width={3}>
+                  <Text color={sel ? theme.accent : theme.muted}>
                     {arrowStr}
                   </Text>
-                  <Text>{iconStr}</Text>
-                  <Text color={sel ? theme.text : theme.muted} bold={sel}>
-                    {labelStr}
+                </Box>
+                <Box width={4}>
+                  <Text color={p.id === "add_custom" ? theme.accent : undefined} bold={p.id === "add_custom"}>
+                    {p.icon}
                   </Text>
-                  <Text color={p.configured ? theme.success : theme.muted} bold={p.configured && sel}>
-                    {statusText}
+                </Box>
+                <Box flexGrow={1} flexShrink={1}>
+                  <Text color={sel ? theme.text : theme.muted} bold={sel} wrap="truncate">
+                    {truncatedLabel}
                   </Text>
-                </Text>
+                </Box>
+                {statusText ? (
+                  <Box marginLeft={2}>
+                    <Text color={p.configured ? theme.success : theme.muted} bold={p.configured && sel}>
+                      {statusText}
+                    </Text>
+                  </Box>
+                ) : null}
               </Box>
             );
           });
@@ -440,7 +518,7 @@ export function ConnectOverlay({
               </Text>
               <Box marginLeft={1} overflow="hidden">
                 <Text color={theme.success} bold wrap="truncate">
-                  {selected.id === "local" ? "✓ configured" : "✓ connected"}
+                  {selected.id === "local" ? "configured" : "connected"}
                 </Text>
               </Box>
             </Box>
@@ -450,16 +528,16 @@ export function ConnectOverlay({
                 <Text color={theme.accent} bold>Actions</Text>
               </Box>
               {[
-                { label: selected.id === "local" ? "Update settings" : "Update API key", idx: 0 },
-                { label: selected.id === "local" ? "Reset configuration" : "Disconnect", idx: 1 },
+                { label: selected.id === "local" || (selected.id !== "add_custom" && !["nvidia", "openrouter", "google", "openai", "anthropic"].includes(selected.id as string)) ? "Update settings" : "Update API key", idx: 0 },
+                { label: selected.id === "local" || (selected.id !== "add_custom" && !["nvidia", "openrouter", "google", "openai", "anthropic"].includes(selected.id as string)) ? "Reset configuration" : "Disconnect", idx: 1 },
                 { label: "Cancel", idx: 2 },
               ].map((opt) => {
                 const isSel = opt.idx === menuIndex;
                 return (
                   <Box key={opt.idx} overflow="hidden">
                     <Text wrap="wrap">
-                      <Text color={isSel ? theme.accent : theme.muted} bold={isSel}>
-                        {isSel ? "▸ " : "  "}
+                      <Text color={isSel ? theme.accent : theme.muted}>
+                        {isSel ? "> " : "  "}
                       </Text>
                       <Text color={isSel ? theme.text : theme.muted} bold={isSel}>
                         {opt.label}
@@ -496,8 +574,8 @@ export function ConnectOverlay({
                   return (
                     <Box key={opt.val} height={1} overflow="hidden">
                       <Text wrap="truncate">
-                        <Text color={isSel ? theme.danger : theme.muted} bold={isSel}>
-                          {isSel ? "▸ " : "  "}
+                        <Text color={isSel ? theme.danger : theme.muted}>
+                          {isSel ? "> " : "  "}
                         </Text>
                         <Text color={isSel ? theme.text : theme.muted} bold={isSel}>
                           {opt.label}
@@ -515,30 +593,49 @@ export function ConnectOverlay({
           <Box flexDirection="column" paddingY={0} overflow="hidden">
             <Box flexDirection="row" alignItems="center" overflow="hidden">
               <Box width={4}>
-                <Text>{selected.icon}</Text>
+                <Text>{selected.id === "add_custom" ? (stepIdx === 0 ? "" : "🧩") : selected.icon}</Text>
               </Box>
               <Text color={theme.text} bold wrap="truncate">
-                Connect {selected.label}
+                Configure {selected.id === "add_custom" && inputId ? inputId : selected.label}
               </Text>
             </Box>
 
-            {selected.id === "local" ? (
+            {wizardSteps.length > 1 ? (
               <Box flexDirection="column" marginTop={1} overflow="hidden">
-                <Box marginBottom={0}>
-                  <Text color={localStep === "baseUrl" ? theme.accent : theme.muted} bold={localStep === "baseUrl"} wrap="truncate">
-                    {localStep === "baseUrl" ? "▸ " : "  "}1. Base URL: {localStep !== "baseUrl" ? (localBaseUrl || "http://localhost:11434/v1") : ""}
-                  </Text>
-                </Box>
-                <Box marginBottom={0}>
-                  <Text color={localStep === "model" ? theme.accent : theme.muted} bold={localStep === "model"} wrap="truncate">
-                    {localStep === "model" ? "▸ " : "  "}2. Model Name: {localStep !== "model" && localStep !== "baseUrl" ? (localModel || "llama3.2") : ""}
-                  </Text>
-                </Box>
-                <Box marginBottom={1}>
-                  <Text color={localStep === "apiKey" ? theme.accent : theme.muted} bold={localStep === "apiKey"} wrap="truncate">
-                    {localStep === "apiKey" ? "▸ " : "  "}3. API Key (Optional):
-                  </Text>
-                </Box>
+                {wizardSteps.map((step, idx) => {
+                  const isCurrent = idx === stepIdx;
+                  let stepValue = "";
+                  if (step === "id") stepValue = inputId;
+                  else if (step === "baseUrl") stepValue = inputBaseUrl;
+                  else if (step === "model") stepValue = inputModel;
+                  else if (step === "apiKey") stepValue = inputApiKey;
+
+                  let stepLabel = "";
+                  if (step === "id") stepLabel = "Provider ID";
+                  else if (step === "baseUrl") stepLabel = "Base URL";
+                  else if (step === "apiKey") stepLabel = "API Key";
+                  else if (step === "model") stepLabel = "Default Model";
+
+                  const indicator = isCurrent ? "> " : "  ";
+
+                  return (
+                    <Box key={step} marginBottom={0}>
+                      <Text
+                        color={isCurrent ? theme.accent : theme.muted}
+                        bold={isCurrent}
+                        wrap="truncate"
+                      >
+                        {indicator}
+                        {idx + 1}. {stepLabel}:{" "}
+                        {!isCurrent && stepValue
+                          ? step === "apiKey"
+                            ? "•".repeat(Math.min(stepValue.length, 12))
+                            : stepValue
+                          : ""}
+                      </Text>
+                    </Box>
+                  );
+                })}
 
                 <Box
                   borderStyle="single"
@@ -549,26 +646,43 @@ export function ConnectOverlay({
                   alignItems="center"
                   width={innerWidth}
                   overflow="hidden"
+                  marginTop={1}
                 >
                   <Box width={3}>
                     <Text color={theme.accent} bold>
-                      {localStep === "baseUrl" ? "◆" : localStep === "model" ? "◈" : "■"}
+                      {wizardSteps[stepIdx] === "id"
+                        ? "🆔"
+                        : wizardSteps[stepIdx] === "baseUrl"
+                        ? "🔗"
+                        : wizardSteps[stepIdx] === "model"
+                        ? "🤖"
+                        : "🔑"}
                     </Text>
                   </Box>
                   <Text color={theme.accent} bold>
-                    {localStep === "baseUrl" ? "Base URL: " : localStep === "model" ? "Model: " : "API Key: "}
+                    {wizardSteps[stepIdx] === "id"
+                      ? "ID: "
+                      : wizardSteps[stepIdx] === "baseUrl"
+                      ? "Base URL: "
+                      : wizardSteps[stepIdx] === "model"
+                      ? "Model: "
+                      : "API Key: "}
                   </Text>
                   {keyBuffer.length > 0 ? (
                     <Text color={theme.text} bold wrap="wrap">
-                      {localStep === "apiKey" ? "•".repeat(Math.min(keyBuffer.length, 45)) : keyBuffer}
+                      {wizardSteps[stepIdx] === "apiKey"
+                        ? "•".repeat(Math.min(keyBuffer.length, 45))
+                        : keyBuffer}
                     </Text>
                   ) : (
                     <Text color={theme.muted} italic wrap="wrap">
-                      {localStep === "baseUrl"
+                      {wizardSteps[stepIdx] === "id"
+                        ? "Enter custom ID (e.g. tokenrouter)..."
+                        : wizardSteps[stepIdx] === "baseUrl"
                         ? "Enter URL (e.g. http://localhost:11434/v1)..."
-                        : localStep === "model"
-                        ? "Enter model name (e.g. llama3.2)..."
-                        : "Enter optional API key or token..."}
+                        : wizardSteps[stepIdx] === "model"
+                        ? "Enter default model (e.g. llama3.2)..."
+                        : "Enter optional API key..."}
                     </Text>
                   )}
                   <Text color={theme.accent} bold>▎</Text>

@@ -66,7 +66,7 @@ export function ModelsOverlay({
 }: ModelsOverlayProps) {
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 90, 55);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   // Deduplicate models to avoid list spamming and key collisions
@@ -346,7 +346,7 @@ export function ModelsOverlay({
               <Box key={p} flexDirection="row" alignItems="center" height={1} overflow="hidden">
                 <Box width={3}>
                   <Text color={sel ? theme.accent : theme.muted}>
-                    {sel ? "▸" : " "}
+                    {sel ? ">" : " "}
                   </Text>
                 </Box>
                 <Box width={provColW}>
@@ -482,7 +482,7 @@ export function ModelsOverlay({
               <Box flexDirection="row" alignItems="center" height={1} overflow="hidden">
                 <Box width={3}>
                   <Text color={sel ? theme.accent : theme.muted}>
-                    {sel ? "▸" : " "}
+                    {sel ? ">" : " "}
                   </Text>
                 </Box>
                 <Box flexGrow={1} flexShrink={1}>

@@ -32,6 +32,14 @@ describe("ToolRegistry Subsystem", () => {
     }),
     category: "read",
     execute: async (args) => args.a + args.b,
+    metadata: {
+      semanticAction: "Add numbers",
+      targetExtractor: (args) => `${args.a} + ${args.b}`,
+      resultSummarizer: (_args, result) => String(result),
+      risk: "low",
+      prerequisite: "none",
+      recovery: "Try providing valid numbers",
+    },
   };
 
   registry.register(addTool);

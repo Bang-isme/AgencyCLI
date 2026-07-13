@@ -35,6 +35,7 @@ export interface Episode {
   origin_workflow_id?: string;
   origin_git_commit?: string;
   lineage_parent_id?: number;
+  revision?: number;
 }
 
 export interface VectorEntry {
@@ -120,6 +121,14 @@ export interface StorageTelemetry {
   cache_hit_count: number;
   cache_miss_count: number;
   cache_efficiency_ratio: number;
+  rate_limiters?: Record<string, {
+    rpmPercent: number;
+    tpmPercent: number | null;
+    throttled: boolean;
+    currentRpm: number;
+    currentTpm: number;
+    adaptedRpm: number;
+  }>;
 }
 
 export interface Explanation {
@@ -129,4 +138,14 @@ export interface Explanation {
   reranker_shift: number;
   final_score: number;
   reason: string;
+}
+
+export class RevisionMismatch extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RevisionMismatch";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, RevisionMismatch);
+    }
+  }
 }

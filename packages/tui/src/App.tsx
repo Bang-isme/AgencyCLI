@@ -896,12 +896,18 @@ export function App({
     [session.messages, displayModelName]
   );
 
+  const [isSlashExpanded, setIsSlashExpanded] = useState(false);
   const atActive = useMemo(() => getAtQuery(buffer), [buffer]);
   const slashActive = useMemo(() => getSlashQuery(buffer), [buffer]);
+
+  useEffect(() => {
+    setIsSlashExpanded(false);
+  }, [slashActive?.query]);
+
   const slashSuggestions = useMemo(() => {
     if (!slashActive) return [];
-    return filterSlashMenu(slashActive.query);
-  }, [slashActive]);
+    return filterSlashMenu(slashActive.query, isSlashExpanded);
+  }, [slashActive, isSlashExpanded]);
   const atSuggestions = useMemo(() => {
     if (!atActive) return [];
     return fuzzySearchFiles(project, atActive.query, 30);
@@ -1101,6 +1107,12 @@ export function App({
         themeId,
         session,
       });
+      if (slash.thinkingMode) {
+        setExpandedTui(slash.thinkingMode === "show");
+      }
+      if (slash.toggleThinkingMode) {
+        setExpandedTui((prev) => !prev);
+      }
       if (slash.exit) {
         safeExit();
         return;
@@ -2386,6 +2398,7 @@ ${taskDesc}`;
               buffer={buffer}
               cursorPos={composerCursorEdit ? cursorPos : undefined}
               onBufferChange={setBuffer}
+              onSlashExpand={() => setIsSlashExpanded(true)}
               loading={loading}
               showHelp={overlays.help}
               slashQuery={slashActive?.query ?? null}
@@ -2682,8 +2695,25 @@ ${taskDesc}`;
             {overlays.review ? (
               <ReviewMenu
                 theme={theme}
-                onSelect={(action) => {
-                  setBuffer(action.prompt);
+                project={project}
+                onSelect={async (action) => {
+                  const subModeMap: Record<string, "staged" | "unstaged" | "working_tree" | "commit" | "branch" | "pr"> = {
+                    commit: "commit",
+                    branch: "branch",
+                    pr: "pr",
+                  };
+                  const mode = subModeMap[action.id];
+                  if (mode) {
+                    const { GitReviewService } = await import("@agency/core");
+                    const reviewCtx = await GitReviewService.buildReviewContext({
+                      projectRoot: project,
+                      mode,
+                    });
+                    const formattedPrompt = GitReviewService.formatReviewPrompt(reviewCtx, action.prompt);
+                    setBuffer(formattedPrompt);
+                  } else {
+                    setBuffer(action.prompt);
+                  }
                   setOverlayOpen("review", false);
                 }}
                 onClose={() => setOverlayOpen("review", false)}

@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+vi.mock("execa", () => ({
+  execa: vi.fn(async () => ({
+    exitCode: 1,
+    stderr: "mock build failure",
+    stdout: "",
+  })),
+}));
 import { buildAcceptanceCommandsStrict } from "../utils/package-manager.js";
 import { snapshotWorkspace, workspaceChangedSince } from "../utils/workspace-snapshot.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
+import { verifyAndHeal } from "../chat/verify-turn.js";
+import { EventBus } from "../events/event-bus.js";
 
 describe("buildAcceptanceCommandsStrict", () => {
   let dir: string;
@@ -93,7 +103,7 @@ describe("workspace snapshot edit-detection", () => {
 });
 
 describe("verifyMainTurn flag resolution", () => {
-  const KEYS = ["AGENCY_PROFILE", "AGENCY_VERIFY_LOOP", "AGENCY_VERIFY_MAIN_TURN"];
+  const KEYS = ["AGENCY_PROFILE", "AGENCY_VERIFY_LOOP", "AGENCY_VERIFY_MAIN_TURN", "AGENCY_VERIFY_MAX_ROUNDS"];
   let saved: Record<string, string | undefined>;
   beforeEach(() => {
     saved = {};
@@ -128,5 +138,82 @@ describe("verifyMainTurn flag resolution", () => {
     const f = getRuntimeFlags();
     expect(f.verifyLoop).toBe(false);
     expect(f.verifyMainTurn).toBe(true);
+  });
+});
+
+describe("verifyAndHeal main-turn contract", () => {
+  const KEYS = ["AGENCY_VERIFY_LOOP", "AGENCY_VERIFY_MAIN_TURN", "AGENCY_VERIFY_MAX_ROUNDS"];
+  let saved: Record<string, string | undefined>;
+  let dir: string;
+
+  beforeEach(() => {
+    saved = {};
+    for (const k of KEYS) {
+      saved[k] = process.env[k];
+    }
+    process.env.AGENCY_VERIFY_LOOP = "1";
+    process.env.AGENCY_VERIFY_MAIN_TURN = "1";
+    process.env.AGENCY_VERIFY_MAX_ROUNDS = "2";
+    dir = mkdtempSync(join(tmpdir(), "mtv-verify-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "x", scripts: { build: "node -e \"process.exit(1)\"" } })
+    );
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    EventBus.getInstance().clear();
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  const fakeResult = {
+    route: { intent: "edit", skills: [], workflow: "plan", agent: "planner", provider: "local" },
+    routeSummary: "route",
+    assistantText: "done",
+    suggestedCommands: [],
+    routeOnly: false,
+    budget: "normal",
+    contextFiles: [],
+    routeFromCache: false,
+  } as any;
+
+  it("honors noVerify even when verify flags and failing scripts are enabled", async () => {
+    let calls = 0;
+    const result = await verifyAndHeal(
+      { prompt: "edit", projectRoot: dir, skillsRoot: dir, noVerify: true },
+      async () => {
+        calls++;
+        writeFileSync(join(dir, "changed.txt"), `round ${calls}`);
+        return fakeResult;
+      }
+    );
+
+    expect(result).toBe(fakeResult);
+    expect(calls).toBe(1);
+  });
+
+  it("re-runs and emits verify-failed when acceptance keeps failing", async () => {
+    let calls = 0;
+
+    await verifyAndHeal(
+      { prompt: "edit", projectRoot: dir, skillsRoot: dir },
+      async () => {
+        calls++;
+        writeFileSync(join(dir, "changed.txt"), `round ${calls}`);
+        return fakeResult;
+      }
+    );
+
+    const failedEvents = EventBus.getInstance()
+      .getJournal()
+      .filter((event) => event.action === "chat:verify-failed")
+      .map((event) => JSON.parse(event.payload));
+    expect(calls).toBe(2);
+    expect(failedEvents).toHaveLength(1);
+    expect(failedEvents[0].rounds).toBe(2);
   });
 });

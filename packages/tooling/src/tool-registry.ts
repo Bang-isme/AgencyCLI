@@ -3,12 +3,22 @@ import { ExecutionContext } from "@agency/contracts";
 
 import { CoercionLayer } from "./coercion-layer.js";
 
+export interface ToolMetadata<T = any, R = any> {
+  semanticAction: string;
+  targetExtractor: (args: T) => string;
+  resultSummarizer: (args: T, result: R) => string;
+  risk: "low" | "medium" | "high";
+  prerequisite: string;
+  recovery: string;
+}
+
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
   name: string;
   description: string;
   schema: T;
   category: "read" | "write" | "compile" | "test" | "other";
   execute: (args: z.infer<T>, context: ExecutionContext) => Promise<any>;
+  metadata: ToolMetadata<z.infer<T>, any>;
 }
 
 /**
@@ -30,6 +40,22 @@ export class ToolRegistry {
   private postExecuteHooks: ((name: string, args: any, result: any, context: ExecutionContext) => void | Promise<void>)[] = [];
 
   public register<T extends z.ZodTypeAny>(tool: ToolDefinition<T>): void {
+    if (!tool.metadata) {
+      throw new Error(`Tool registration failed: Tool "${tool.name}" is missing metadata.`);
+    }
+    const { semanticAction, targetExtractor, resultSummarizer, risk, prerequisite, recovery } = tool.metadata;
+    if (
+      semanticAction === undefined ||
+      targetExtractor === undefined ||
+      resultSummarizer === undefined ||
+      risk === undefined ||
+      prerequisite === undefined ||
+      recovery === undefined
+    ) {
+      throw new Error(
+        `Tool registration failed: Tool "${tool.name}" metadata is incomplete. Required fields: semanticAction, targetExtractor, resultSummarizer, risk, prerequisite, recovery.`
+      );
+    }
     this.tools.set(tool.name, tool);
   }
 

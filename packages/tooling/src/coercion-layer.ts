@@ -89,9 +89,14 @@ export class CoercionLayer {
       const val = coerced[key];
       let defType = field;
 
-      // Unwrap optional/nullable types
-      if (field._def && field._def.innerType) {
-        defType = field._def.innerType;
+      // Unwrap optional/nullable/default wrappers
+      while (defType._def?.innerType) {
+        const tn = defType._def.typeName;
+        if (tn === "ZodOptional" || tn === "ZodNullable" || tn === "ZodDefault") {
+          defType = defType._def.innerType;
+        } else {
+          break;
+        }
       }
 
       const typeName = defType._def?.typeName;
@@ -106,6 +111,13 @@ export class CoercionLayer {
         const num = Number(val);
         if (!isNaN(num)) {
           coerced[key] = num;
+        }
+      } else if (typeName === "ZodArray" && typeof val === "string" && val.trim().startsWith("[")) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) coerced[key] = parsed;
+        } catch {
+          // leave as string — validation will fail with a clear message
         }
       }
     }

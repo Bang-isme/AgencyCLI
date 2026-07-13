@@ -133,4 +133,76 @@ describe("anthropic provider complete & streamComplete", () => {
       { type: "text", text: "SYSTEM PROMPT", cache_control: { type: "ephemeral" } },
     ]);
   });
+
+  describe("stream complete exception recovery", () => {
+    it("releases lock and cancels reader if read() throws", async () => {
+      const mockReader = {
+        read: vi.fn().mockRejectedValue(new Error("Read error")),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        releaseLock: vi.fn(),
+      };
+      const mockBody = {
+        getReader: () => mockReader,
+      };
+      const fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: mockBody,
+        headers: new Headers(),
+      });
+
+      const provider = createAnthropicProvider(
+        { apiKey: "test-key", model: "claude-3-5-sonnet" },
+        fetchImpl as unknown as typeof fetch
+      );
+
+      const onDelta = vi.fn();
+      await expect(
+        provider.streamComplete([{ role: "user", content: "Hi" }], { onDelta })
+      ).rejects.toThrow("Read error");
+
+      expect(mockReader.cancel).toHaveBeenCalled();
+      expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+
+    it("releases lock and cancels reader if onDelta throws", async () => {
+      const encoder = new TextEncoder();
+      const mockReader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: encoder.encode('data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hello"}}\n\n'),
+          })
+          .mockResolvedValueOnce({ done: true }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        releaseLock: vi.fn(),
+      };
+      const mockBody = {
+        getReader: () => mockReader,
+      };
+      const fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: mockBody,
+        headers: new Headers(),
+      });
+
+      const provider = createAnthropicProvider(
+        { apiKey: "test-key", model: "claude-3-5-sonnet" },
+        fetchImpl as unknown as typeof fetch
+      );
+
+      const onDelta = vi.fn().mockImplementation(() => {
+        throw new Error("Callback error");
+      });
+
+      await expect(
+        provider.streamComplete([{ role: "user", content: "Hi" }], { onDelta })
+      ).rejects.toThrow("Callback error");
+
+      expect(mockReader.cancel).toHaveBeenCalled();
+      expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+  });
 });

@@ -65,3 +65,25 @@ export interface LlmProvider {
     opts: StreamCompleteOptions
   ): Promise<string>;
 }
+
+export interface TransportRequest {
+  url: string;
+  method: "GET" | "POST";
+  headers: Record<string, string>;
+  body?: string;
+  signal?: AbortSignal;
+}
+
+export interface TransportResponse {
+  ok: boolean;
+  status: number;
+  headers: Headers;
+  body: ReadableStream<Uint8Array> | null;
+  json(): Promise<any>;
+  text(): Promise<string>;
+}
+
+export interface Transport {
+  request(req: TransportRequest): Promise<TransportResponse>;
+}
+

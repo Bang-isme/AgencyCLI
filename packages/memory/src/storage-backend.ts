@@ -5,12 +5,13 @@ import {
   GraphEdge,
   AuditEntry,
   StorageTelemetry,
+  RevisionMismatch,
 } from "./types.js";
 import { IngestionPipeline } from "./ingestion.js";
 import { isSecretScanEnabled } from "./secret-policy.js";
 
 export interface MemoryStorageBackend {
-  addEpisode(episode: Episode): void;
+  addEpisode(episode: Episode, expectedRevision?: number): void;
   queryEpisodes(sessionId: string, tenantId?: string): Episode[];
   queryEpisodesByAction(sessionId: string, actionSignature: string, tenantId?: string): Episode[];
   /** Most-recent episodes from OTHER sessions (cross-session recency recall). */
@@ -110,8 +111,24 @@ export class SqliteStorageBackend implements MemoryStorageBackend {
     }
   }
 
-  addEpisode(episode: Episode): void {
+  addEpisode(episode: Episode, expectedRevision?: number): void {
     this.checkChaos();
+
+    // Query current max revision
+    const row = this.db
+      .prepare(`SELECT MAX(revision) AS maxRev FROM episodes WHERE session_id = ?`)
+      .get(episode.session_id) as { maxRev: number | null } | undefined;
+    const currentMaxRevision = row?.maxRev ?? 0;
+
+    if (expectedRevision !== undefined) {
+      if (currentMaxRevision !== expectedRevision) {
+        throw new RevisionMismatch(
+          `Revision mismatch for session ${episode.session_id}: expected ${expectedRevision}, got ${currentMaxRevision}`
+        );
+      }
+    }
+
+    const newRevision = currentMaxRevision + 1;
 
     // Secret-on-persist: scrub any credential-looking value from the content
     // before it lands in the store (and the FTS index). Off by default (legacy).
@@ -126,8 +143,9 @@ export class SqliteStorageBackend implements MemoryStorageBackend {
         tenant_id, workspace_id, project_id, session_id, agent_id, memory_type, state,
         goal, turn_index, action_signature, content, metadata, created_at, expires_at,
         is_archived, confidence_score, decay_factor, lamport_timestamp,
-        source_file, source_type, origin_agent_id, origin_workflow_id, origin_git_commit, lineage_parent_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source_file, source_type, origin_agent_id, origin_workflow_id, origin_git_commit, lineage_parent_id,
+        revision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -154,7 +172,8 @@ export class SqliteStorageBackend implements MemoryStorageBackend {
       episode.origin_agent_id ?? null,
       episode.origin_workflow_id ?? null,
       episode.origin_git_commit ?? null,
-      episode.lineage_parent_id ?? null
+      episode.lineage_parent_id ?? null,
+      newRevision
     );
   }
 
@@ -478,6 +497,14 @@ export class SqliteStorageBackend implements MemoryStorageBackend {
     const totalCacheOps = this.cacheHits + this.cacheMisses;
     const cacheEfficiencyRatio = totalCacheOps > 0 ? this.cacheHits / totalCacheOps : 1.0;
 
+    const rateLimiters: Record<string, any> = {};
+    const limitersMap = (globalThis as any).agencyProviderLimiters;
+    if (limitersMap && limitersMap instanceof Map) {
+      for (const [providerId, limiter] of limitersMap.entries()) {
+        rateLimiters[providerId] = limiter.getUtilization();
+      }
+    }
+
     return {
       page_size: pageSize,
       page_count: pageCount,
@@ -490,6 +517,7 @@ export class SqliteStorageBackend implements MemoryStorageBackend {
       cache_hit_count: this.cacheHits,
       cache_miss_count: this.cacheMisses,
       cache_efficiency_ratio: cacheEfficiencyRatio,
+      rate_limiters: rateLimiters,
     };
   }
 

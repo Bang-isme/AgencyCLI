@@ -90,7 +90,7 @@ export const AtPicker = memo(function AtPicker({
         <Box key={vi} flexDirection="row" height={1} overflow="hidden">
           <Box width={3}>
             <Text color={selected ? theme.accent : theme.muted}>
-              {selected ? "▸" : " "}
+              {selected ? ">" : " "}
             </Text>
           </Box>
           <Box width={4}>

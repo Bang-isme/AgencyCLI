@@ -1,17 +1,15 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { execa } from "execa";
 import {
   resolveSkillsRoot,
-  loadAgencyConfig,
-  resolveApiKey,
-  type ProviderProfile,
+  getWorkspaceReadiness,
 } from "@agency/core";
 import { runTool, resolvePythonBin, loadManifestSkills, skillMdPath } from "@agency/skills-bridge";
 import { out, handleError } from "../utils.js";
 import { pluginApprovalGate } from "../plugin-approval-gate.js";
+import { resolveProjectRoot } from "../resolve-project.js";
 
 type CheckStatus = "ok" | "warn" | "fail";
 
@@ -39,21 +37,18 @@ const GLYPH: Record<CheckStatus, string> = { ok: "✓", warn: "▲", fail: "✗"
  * would be a fabricated status (the same class as the de-faked Splash
  * "providers ready").
  */
-export function providerIsReady(id: string, profile: ProviderProfile): boolean {
-  if (id === "local") return true;
-  if (resolveApiKey(profile)?.trim()) return true;
-  return !profile.apiKey && Boolean(profile.baseUrl);
-}
+export { providerIsUsable as providerIsReady } from "@agency/core";
 
 export function registerDoctor(program: Command) {
   program
     .command("doctor")
     .description("Check the Agency CLI environment + CodexAI skills pack health")
     .option("--json", "Machine-readable JSON output")
+    .option("--project-root <path>", "Project root for index and Git readiness checks")
     .option("--quiet", "Suppress routing meta on stderr")
     .option("--deep", "Also run the Python skills-pack health check")
     .action(
-      async (options: { json?: boolean; quiet?: boolean; deep?: boolean }) => {
+      async (options: { json?: boolean; quiet?: boolean; deep?: boolean; projectRoot?: string }) => {
         out.configure({
           surface: options.json ? "json" : "human",
           quiet: options.quiet,
@@ -141,30 +136,16 @@ export function registerDoctor(program: Command) {
             }
           }
 
-          // 3. Provider config + resolvable keys
-          const cfg = loadAgencyConfig();
-          const providers = cfg.providers ?? {};
-          const ready = Object.entries(providers).filter(([id, profile]) =>
-            providerIsReady(id, profile as ProviderProfile)
-          );
-          const configPath = join(homedir(), ".agency", "config.json");
-          if (ready.length > 0) {
+          // 3. Shared workspace readiness. This is the same predicate that powers
+          // setup, `agency status`, and the TUI dashboard; doctor adds its own
+          // Python and deeper skills-integrity checks above.
+          const readiness = await getWorkspaceReadiness(resolveProjectRoot(options.projectRoot));
+          for (const item of readiness.filter((item) => item.id !== "skills")) {
             checks.push({
-              name: "providers",
-              status: "ok",
-              detail: `${ready.length} ready: ${ready
-                .map(([id]) => id)
-                .join(", ")} (default: ${cfg.defaultProvider})`,
-            });
-          } else {
-            checks.push({
-              name: "providers",
-              status: "fail",
-              detail: existsSync(configPath)
-                ? "no provider has a resolvable API key"
-                : "no config file found",
-              recovery:
-                "Run `agency config init`, set a key with `agency config set`, or use `/connect` in the TUI.",
+              name: item.id === "provider" ? "providers" : item.id,
+              status: item.state === "ready" ? "ok" : item.state === "attention" ? "fail" : "warn",
+              detail: item.detail,
+              recovery: item.recovery,
             });
           }
 
@@ -206,6 +187,7 @@ export function registerDoctor(program: Command) {
             out.json({
               ok: !failed,
               checks,
+              readiness,
               ...(packHealth !== undefined ? { packHealth } : {}),
             });
           } else {

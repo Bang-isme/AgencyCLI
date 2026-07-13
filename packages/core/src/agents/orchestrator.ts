@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { execa } from "execa";
 import { spawnSync, type ChildProcess } from "node:child_process";
 import pidusage from "pidusage";
@@ -19,7 +20,50 @@ import {
   loadCustomAgents,
 } from "./profiles.js";
 import { type AgentId, MANIFEST_AGENTS, isAgentId } from "./types.js";
-import { capabilityRegistry } from "./agent-registry.js";
+import { agentCapabilityRegistry } from "./agent-registry.js";
+import {
+  publishActionLifecycle,
+  type ActionLifecycleEvent,
+} from "../product/action-lifecycle.js";
+
+function publishSubagentLifecycle(
+  state: "queued" | "running" | "succeeded" | "failed" | "incomplete" | "cancelled",
+  args: {
+    agentId: string;
+    dispatchId: string;
+    task?: string;
+    result?: string;
+    reason?: string;
+    elapsedMs?: number;
+    startedAt?: number;
+  }
+) {
+  const target = `worker.${args.agentId}`;
+  const label = `Delegate to ${args.agentId}`;
+  const event: ActionLifecycleEvent = {
+    id: `subagent:${args.dispatchId}:${args.agentId}`,
+    dispatchId: args.dispatchId,
+    agentId: args.agentId,
+    action: "dispatch_subagent",
+    state,
+    label,
+    target,
+    semantic: {
+      category: "agent",
+      operation: "dispatch",
+      label,
+      description: args.task ?? `Task assigned to worker.${args.agentId}`,
+    },
+    startedAt: args.startedAt ?? Date.now(),
+    updatedAt: Date.now(),
+    elapsedMs: args.elapsedMs,
+    durationMs: args.elapsedMs,
+    summary: args.result ?? args.reason ?? args.task,
+    recovery: state === "failed" || state === "incomplete" ? "Review subagent errors and retry or resume execution." : undefined,
+    recoveryHint: state === "failed" || state === "incomplete" ? { suggestion: "Review subagent errors and retry or resume execution.", autoRecoverable: true } : undefined,
+  };
+  publishActionLifecycle(event);
+}
 import {
   createIsolatedWorkspace,
   mergeWorkspaceChanges,
@@ -167,12 +211,61 @@ export class DispatchTimeoutError extends Error {
  * rejects with {@link DispatchTimeoutError}; the underlying work is already
  * iteration-bounded (maxLoops) so it cannot run away even if it keeps going.
  */
-async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  if (!ms || ms <= 0) return work;
+async function withDeadline<T>(
+  startWork: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  label: string,
+  parentSignal?: AbortSignal,
+  onTimeout?: () => void | Promise<void>
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutError = () => new DispatchTimeoutError(`Agent "${label}" exceeded execution budget of ${ms}ms`);
+  const abortFromParent = () => controller.abort(parentSignal?.reason);
+  if (parentSignal?.aborted) {
+    controller.abort(parentSignal.reason);
+  } else {
+    parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+  }
+
+  const work = startWork(controller.signal);
+  if (!ms || ms <= 0) {
+    let onAbort: (() => void) | undefined;
+    try {
+      if (parentSignal?.aborted) {
+        throw parentSignal.reason || new Error("aborted");
+      }
+      const parentAbortPromise = new Promise<never>((_, reject) => {
+        onAbort = () => reject(parentSignal?.reason || new Error("aborted"));
+        parentSignal?.addEventListener("abort", onAbort, { once: true });
+      });
+      return await Promise.race([work, parentAbortPromise]);
+    } finally {
+      parentSignal?.removeEventListener("abort", abortFromParent);
+      if (onAbort) {
+        parentSignal?.removeEventListener("abort", onAbort);
+      }
+    }
+  }
+
   let timer: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  let onParentAbort: (() => void) | undefined;
   const deadline = new Promise<never>((_, reject) => {
+    if (parentSignal?.aborted) {
+      reject(parentSignal.reason || new Error("aborted"));
+      return;
+    }
+    onParentAbort = () => reject(parentSignal?.reason || new Error("aborted"));
+    parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+
     timer = setTimeout(
-      () => reject(new DispatchTimeoutError(`Agent "${label}" exceeded execution budget of ${ms}ms`)),
+      () => {
+        timedOut = true;
+        const err = timeoutError();
+        controller.abort(err);
+        void onTimeout?.();
+        reject(err);
+      },
       ms
     );
     timer.unref?.();
@@ -181,6 +274,11 @@ async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Pro
     return await Promise.race([work, deadline]);
   } finally {
     if (timer) clearTimeout(timer);
+    parentSignal?.removeEventListener("abort", abortFromParent);
+    if (onParentAbort) {
+      parentSignal?.removeEventListener("abort", onParentAbort);
+    }
+    if (timedOut) work.catch(() => {});
   }
 }
 
@@ -244,10 +342,28 @@ export interface AgentDispatchRequest {
   task: string;
   projectRoot: string;
   contextFiles?: string[];
+  dispatchId?: string;
+  label?: string;
+}
+
+export interface ParallelDispatchRequest {
+  agentId: AgentId;
+  task: string;
+  dispatchId?: string;
+  contextFiles?: string[];
+  label?: string;
+}
+
+export interface ParallelDispatchResult {
+  success: boolean;
+  results: AgentDispatchResult[];
+  mergeResult?: MergeResult;
+  error?: string;
 }
 
 export interface AgentDispatchPayload {
   agentId: AgentId;
+  dispatchId: string;
   task: string;
   coordinatorRoute: Awaited<ReturnType<typeof routeUserPrompt>>;
   subagentRoute: Record<string, unknown> | null;
@@ -262,6 +378,7 @@ export interface AgentDispatchPayload {
 
 export interface AgentDispatchResult {
   agentId: AgentId;
+  dispatchId: string;
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -280,6 +397,10 @@ export interface DispatchAgentOptions {
   executionBudgetMs?: number;
   /** Max concurrent agents for parallel dispatch (undefined → use runtime flag). */
   maxParallelAgents?: number;
+  /** Abort signal propagated from the owning turn or fan-out budget. */
+  signal?: AbortSignal;
+  /** Skip per-worker verify loop (parent verifies after parallel merge). */
+  skipVerify?: boolean;
 }
 
 export function agentsDir(projectRoot: string): string {
@@ -294,6 +415,9 @@ export function buildIsolatedEnv(req: AgentDispatchRequest): Record<string, stri
   env.AGENCY_AGENT_ID = req.agentId;
   env.AGENCY_TASK = req.task;
   env.AGENCY_PROJECT_ROOT = req.projectRoot;
+  if (req.dispatchId) {
+    env.AGENCY_DISPATCH_ID = req.dispatchId;
+  }
   if (req.contextFiles?.length) {
     env.AGENCY_CONTEXT_FILES = req.contextFiles.join(",");
   }
@@ -303,6 +427,11 @@ export function buildIsolatedEnv(req: AgentDispatchRequest): Record<string, stri
   env[DELEGATION_DEPTH_ENV] = String(child.depth + 1);
   env[DELEGATION_CHAIN_ENV] = [...child.chain, req.agentId].join(",");
   return env;
+}
+
+function ensureDispatchId(req: AgentDispatchRequest): AgentDispatchRequest {
+  if (req.dispatchId && req.dispatchId.trim()) return req;
+  return { ...req, dispatchId: `${req.agentId}-${randomUUID()}` };
 }
 
 function logDispatch(
@@ -323,6 +452,11 @@ function logDispatch(
     `${JSON.stringify(record, null, 2)}\n`,
     "utf8"
   );
+}
+
+/** A loop cap means the worker stopped before producing a trustworthy completion. */
+export function exhaustedToolLoop(text: string | undefined): boolean {
+  return /\[SYSTEM:\s*Reached the maximum\s+\d+\s+tool\/continuation iterations/i.test(text ?? "");
 }
 
 function buildDispatchPrompt(req: AgentDispatchRequest): string {
@@ -432,12 +566,43 @@ async function dispatchAgentImpl(
   const eventBus = EventBus.getInstance();
   const startTime = Date.now();
 
+  const runtimeFlags = getRuntimeFlags();
+  const deadlineMs =
+    opts.executionBudgetMs ??
+    (runtimeFlags.subagentExecutionBudgetMs > 0
+      ? runtimeFlags.subagentExecutionBudgetMs
+      : runtimeFlags.executionBudgetMs);
+
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(opts.signal?.reason || new Error("aborted"));
+  if (opts.signal?.aborted) {
+    controller.abort(opts.signal.reason || new Error("aborted"));
+  } else {
+    opts.signal?.addEventListener("abort", abortFromParent, { once: true });
+  }
+
+  let timer: NodeJS.Timeout | undefined;
+  if (deadlineMs > 0) {
+    timer = setTimeout(() => {
+      controller.abort(new DispatchTimeoutError(`Agent "${req.agentId}" exceeded execution budget of ${deadlineMs}ms`));
+    }, deadlineMs);
+    timer.unref?.();
+  }
+
+  const checkCancelled = () => {
+    if (controller.signal.aborted) {
+      throw controller.signal.reason || new Error("Subagent execution cancelled or timed out");
+    }
+  };
+
+  try {
+
   // Capability-driven routing (flag-gated, audit §5(C)). Resolve the operative
   // agent *before* the delegation/cycle checks so the whole dispatch — chain,
   // events, prompt, health — uses one consistent id. With the flag off this is
   // a no-op and req keeps the legacy hardcoded role routing.
   if (getRuntimeFlags().capabilityRouting) {
-    const routing = capabilityRegistry.resolveAgentForTask({
+    const routing = agentCapabilityRegistry.resolveAgentForTask({
       requested: req.agentId,
       task: req.task,
       projectRoot: req.projectRoot,
@@ -453,6 +618,8 @@ async function dispatchAgentImpl(
       req = { ...req, agentId: routing.agentId };
     }
   }
+  req = ensureDispatchId(req);
+  const dispatchId = req.dispatchId!;
 
   // Delegation safety: reject runaway recursion / cycles before doing any work
   // or spawning processes. Throws DelegationLimitError when guards trip.
@@ -460,10 +627,18 @@ async function dispatchAgentImpl(
 
   await eventBus.publish("subagent:started", {
     agentId: req.agentId,
+    dispatchId,
     task: req.task,
     status: "running",
     timestamp: startTime,
-  }, { agentId: req.agentId as string });
+  }, { agentId: req.agentId as string, dispatchId });
+
+  publishSubagentLifecycle("running", {
+    agentId: req.agentId,
+    dispatchId,
+    task: req.task,
+    startedAt: startTime,
+  });
 
   const skillsRoot = opts.skillsRoot ?? resolveSkillsRoot();
   const isolatedEnv = buildIsolatedEnv(req);
@@ -471,6 +646,7 @@ async function dispatchAgentImpl(
 
   await eventBus.publish("subagent:progress", {
     agentId: req.agentId,
+    dispatchId,
     phase: "Routing Prompt",
     elapsedMs: Date.now() - startTime,
   });
@@ -499,12 +675,21 @@ async function dispatchAgentImpl(
     // worker forever. (The dispatch_subagent tool still returns the error string.)
     await eventBus.publish("subagent:error", {
       agentId: req.agentId,
+      dispatchId,
       status: "error",
       result: setupErr?.message || "Subagent routing failed",
       exitCode: 1,
       elapsedMs: Date.now() - startTime,
       timestamp: Date.now(),
-    }, { agentId: req.agentId as string });
+    }, { agentId: req.agentId as string, dispatchId });
+
+    publishSubagentLifecycle("failed", {
+      agentId: req.agentId,
+      dispatchId,
+      task: req.task,
+      reason: setupErr?.message || "Subagent routing failed",
+      elapsedMs: Date.now() - startTime,
+    });
     throw setupErr;
   }
 
@@ -534,7 +719,7 @@ async function dispatchAgentImpl(
   // in-flight slot — every path from here to markDone below is throw-safe (the
   // task body has its own try/catch, then only local bookkeeping runs).
   // recordOutcome + markDone run once the exit code is known (below).
-  capabilityRegistry.markInFlight(req.agentId, req.task);
+  agentCapabilityRegistry.markInFlight(req.agentId, req.task);
 
   // Real LLM task completion
   try {
@@ -549,8 +734,15 @@ async function dispatchAgentImpl(
       systemInstructionOverride = readFileSync(promptPath, "utf8");
     }
 
+    const scopeGuard =
+      "\n\n### DELEGATION SCOPE\nComplete ONLY the assigned task in the user prompt. Do not call dispatch_subagent or dispatch_parallel. Do not run full-project build verification unless the task explicitly requests it.\n";
+    systemInstructionOverride = systemInstructionOverride
+      ? `${systemInstructionOverride}${scopeGuard}`
+      : scopeGuard.trim();
+
     await eventBus.publish("subagent:progress", {
       agentId: req.agentId,
+      dispatchId,
       phase: "Executing LLM Turn",
       elapsedMs: Date.now() - startTime,
     });
@@ -569,49 +761,70 @@ async function dispatchAgentImpl(
     const STREAM_PROGRESS_THROTTLE_MS = 200;
     let lastStreamProgressMs = 0;
     let lastThoughtProgressMs = 0;
-    const deadlineMs = opts.executionBudgetMs ?? getRuntimeFlags().executionBudgetMs;
-    const chatTurnResult = await withDeadline(runChatTurnWithStream(
-      {
-        prompt: req.task + contextRefs,
-        projectRoot: req.projectRoot,
-        skillsRoot,
-        providerId: opts.providerId as any,
-        noLlm: opts.noLlm,
-        systemInstructionOverride,
-        agentId: req.agentId,
-        reasoningBudgetMultiplier: opts.reasoningBudgetMultiplier,
-        maxLoops: opts.maxLoops ?? 15,
-      },
-      {
-        onRoute: () => {},
-        onDelta: (delta) => {
-          subagentText += delta;
-          const ts = Date.now();
-          if (ts - lastStreamProgressMs >= STREAM_PROGRESS_THROTTLE_MS) {
-            lastStreamProgressMs = ts;
-            void eventBus.publish("subagent:progress", {
-              agentId: req.agentId,
-              phase: "Streaming response",
-              chars: subagentText.length,
-              elapsedMs: ts - startTime,
-            });
-          }
+    const runtimeFlags = getRuntimeFlags();
+    const deadlineMs =
+      opts.executionBudgetMs ??
+      (runtimeFlags.subagentExecutionBudgetMs > 0
+        ? runtimeFlags.subagentExecutionBudgetMs
+        : runtimeFlags.executionBudgetMs);
+    const chatTurnResult = await withDeadline(
+      (deadlineSignal) => runChatTurnWithStream(
+        {
+          prompt: req.task + contextRefs,
+          projectRoot: req.projectRoot,
+          skillsRoot,
+          providerId: opts.providerId as any,
+          noLlm: opts.noLlm,
+          systemInstructionOverride,
+          agentId: req.agentId,
+          reasoningBudgetMultiplier: opts.reasoningBudgetMultiplier,
+          maxLoops: opts.maxLoops ?? 15,
+          signal: deadlineSignal,
         },
-        onThought: (thoughtDelta) => {
-          subagentThought += thoughtDelta;
-          const ts = Date.now();
-          if (ts - lastThoughtProgressMs >= STREAM_PROGRESS_THROTTLE_MS) {
-            lastThoughtProgressMs = ts;
-            void eventBus.publish("subagent:progress", {
-              agentId: req.agentId,
-              phase: "Thinking...",
-              chars: subagentThought.length,
-              elapsedMs: ts - startTime,
-            });
-          }
-        },
+        {
+          onRoute: () => {},
+          onDelta: (delta) => {
+            subagentText += delta;
+            const ts = Date.now();
+            if (ts - lastStreamProgressMs >= STREAM_PROGRESS_THROTTLE_MS) {
+              lastStreamProgressMs = ts;
+              void eventBus.publish("subagent:progress", {
+                agentId: req.agentId,
+                dispatchId,
+                phase: "Streaming response",
+                chars: subagentText.length,
+                elapsedMs: ts - startTime,
+              });
+            }
+          },
+          onThought: (thoughtDelta) => {
+            subagentThought += thoughtDelta;
+            const ts = Date.now();
+            if (ts - lastThoughtProgressMs >= STREAM_PROGRESS_THROTTLE_MS) {
+              lastThoughtProgressMs = ts;
+              void eventBus.publish("subagent:progress", {
+                agentId: req.agentId,
+                dispatchId,
+                phase: "Thinking...",
+                chars: subagentThought.length,
+                elapsedMs: ts - startTime,
+              });
+            }
+          },
+        }
+      ),
+      deadlineMs,
+      dispatchId,
+      controller.signal,
+      async () => {
+        await eventBus.publish("subagent:progress", {
+          agentId: req.agentId,
+          dispatchId,
+          phase: "Execution budget exceeded; cancelling",
+          elapsedMs: Date.now() - startTime,
+        });
       }
-    ), deadlineMs, req.agentId);
+    );
 
     if (chatTurnResult && !chatTurnResult.routeOnly) {
       llmResponse = chatTurnResult.assistantText;
@@ -654,10 +867,12 @@ async function dispatchAgentImpl(
         try {
           const loop = await runVerifyLoop(
             async (ctx) => {
+              checkCancelled();
               if (ctx.round > 1) {
                 // Self-correction round: re-attempt with the prior failure in context.
                 await eventBus.publish("subagent:progress", {
                   agentId: req.agentId,
+                  dispatchId,
                   phase: `Self-healing (round ${ctx.round})`,
                   elapsedMs: Date.now() - startTime,
                 });
@@ -667,7 +882,7 @@ async function dispatchAgentImpl(
                   `\n\n[Your previous edit failed verification. Fix these errors and output the corrected edits]\n` +
                   (ctx.previousFailures ?? "");
                 const fix = await withDeadline(
-                  runChatTurnWithStream(
+                  (deadlineSignal) => runChatTurnWithStream(
                     {
                       prompt: fixPrompt,
                       projectRoot: req.projectRoot,
@@ -678,11 +893,13 @@ async function dispatchAgentImpl(
                       agentId: req.agentId,
                       reasoningBudgetMultiplier: opts.reasoningBudgetMultiplier,
                       maxLoops: opts.maxLoops ?? 15,
+                      signal: deadlineSignal,
                     },
                     { onRoute: () => {}, onDelta: () => {}, onThought: () => {} }
                   ),
                   deadlineMs,
-                  req.agentId
+                  dispatchId,
+                  controller.signal
                 );
                 suggestions = parseFileEditSuggestions(fix?.assistantText ?? "", req.projectRoot);
               }
@@ -716,6 +933,7 @@ async function dispatchAgentImpl(
 
                   await eventBus.publish("subagent:progress", {
                     agentId: req.agentId,
+                    dispatchId,
                     phase: `Staging: ${sug.filePath}`,
                     elapsedMs: Date.now() - startTime,
                   });
@@ -724,8 +942,10 @@ async function dispatchAgentImpl(
               }
             },
             async () => {
+              checkCancelled();
               await eventBus.publish("subagent:progress", {
                 agentId: req.agentId,
+                dispatchId,
                 phase: "Verifying changes (compiling & checking build)...",
                 elapsedMs: Date.now() - startTime,
               });
@@ -733,7 +953,8 @@ async function dispatchAgentImpl(
               const verifyResult = await stagingEngine.verifyTransaction(
                 pendingTxId,
                 req.projectRoot,
-                acceptanceCommands
+                acceptanceCommands,
+                controller.signal
               );
               lastErrors = verifyResult.errors.join("\n");
               return { passed: verifyResult.success, failures: lastErrors };
@@ -744,8 +965,10 @@ async function dispatchAgentImpl(
           );
 
           if (loop.success && pendingTxId) {
+            checkCancelled();
             await eventBus.publish("subagent:progress", {
               agentId: req.agentId,
+              dispatchId,
               phase: "Committing changes...",
               elapsedMs: Date.now() - startTime,
             });
@@ -800,7 +1023,7 @@ async function dispatchAgentImpl(
         const runWorkspaceAcceptance = async (): Promise<{ passed: boolean; failures: string }> => {
           for (const cmd of xmlAcceptanceCommands) {
             const [bin, ...args] = cmd;
-            const proc = execa(bin!, args, { cwd: req.projectRoot, reject: false, detached: true });
+            const proc = execa(bin!, args, { cwd: req.projectRoot, reject: false, detached: true, signal: controller.signal });
             WorkerRegistry.getInstance().register(proc);
             const res = await proc;
             if (res.exitCode !== 0) {
@@ -820,14 +1043,16 @@ async function dispatchAgentImpl(
           let lastErr = "";
           const loop = await runVerifyLoop(
             async (ctx) => {
+              checkCancelled();
               if (ctx.round > 1) {
                 await eventBus.publish("subagent:progress", {
                   agentId: req.agentId,
+                  dispatchId,
                   phase: `Self-healing (round ${ctx.round})`,
                   elapsedMs: Date.now() - startTime,
                 });
                 await withDeadline(
-                  runChatTurnWithStream(
+                  (deadlineSignal) => runChatTurnWithStream(
                     {
                       prompt:
                         req.task +
@@ -842,17 +1067,21 @@ async function dispatchAgentImpl(
                       agentId: req.agentId,
                       reasoningBudgetMultiplier: opts.reasoningBudgetMultiplier,
                       maxLoops: opts.maxLoops ?? 15,
+                      signal: deadlineSignal,
                     },
                     { onRoute: () => {}, onDelta: () => {}, onThought: () => {} }
                   ),
                   deadlineMs,
-                  req.agentId
+                  dispatchId,
+                  controller.signal
                 );
               }
             },
             async () => {
+              checkCancelled();
               await eventBus.publish("subagent:progress", {
                 agentId: req.agentId,
+                dispatchId,
                 phase: "Validating changes (compiling & checking build)...",
                 elapsedMs: Date.now() - startTime,
               });
@@ -876,11 +1105,11 @@ async function dispatchAgentImpl(
           const uniqueModified = Array.from(new Set([...changes.createdOrModified, ...(chatTurnResult.filesWritten || [])]));
           if (uniqueModified.length > 0 || changes.deleted.length > 0) {
             filesWritten = uniqueModified;
-            await validateWithHeal();
+            if (!opts.skipVerify) await validateWithHeal();
           }
         } else if (chatTurnResult.filesWritten && chatTurnResult.filesWritten.length > 0) {
           filesWritten = chatTurnResult.filesWritten;
-          await validateWithHeal();
+          if (!opts.skipVerify) await validateWithHeal();
         }
 
         // Re-index the workspace to capture the new modifications
@@ -899,8 +1128,18 @@ async function dispatchAgentImpl(
     subagentStderr = subagentStderr || err?.message || String(err);
   }
 
+  // A worker that hit the turn cap cannot honestly be shown as "done". Keep
+  // its partial output, but surface an actionable failure rather than a false
+  // success in the Worker panel and dispatch report.
+  const incomplete = !hasError && exhaustedToolLoop(llmResponse);
+  if (incomplete) {
+    hasError = true;
+    subagentStderr = "Subagent reached its tool-loop limit before completing the task. Review the partial changes and continue or retry with a narrower scope.";
+  }
+
   const payload: AgentDispatchPayload = {
     agentId: req.agentId,
+    dispatchId,
     task: req.task,
     coordinatorRoute,
     subagentRoute: sub.route,
@@ -921,11 +1160,12 @@ async function dispatchAgentImpl(
 
   // Feed the dispatch outcome back into the capability registry so future
   // rankForTask() decisions reflect this agent's live health and free its slot.
-  capabilityRegistry.recordOutcome(req.agentId, exitCode === 0, exitCode === 0 ? undefined : subagentStderr);
-  capabilityRegistry.markDone(req.agentId);
+  agentCapabilityRegistry.recordOutcome(req.agentId, exitCode === 0, exitCode === 0 ? undefined : subagentStderr);
+  agentCapabilityRegistry.markDone(req.agentId);
 
   const result: AgentDispatchResult = {
     agentId: req.agentId,
+    dispatchId,
     exitCode,
     stdout,
     stderr: subagentStderr,
@@ -937,6 +1177,7 @@ async function dispatchAgentImpl(
   if (exitCode === 0) {
     await eventBus.publish("subagent:finished", {
       agentId: req.agentId,
+      dispatchId,
       status: "done",
       result: filesWritten?.length
         ? `Successfully edited: ${filesWritten.join(", ")}`
@@ -944,78 +1185,96 @@ async function dispatchAgentImpl(
       exitCode: 0,
       elapsedMs,
       timestamp: Date.now(),
-    }, { agentId: req.agentId as string, durationMs: elapsedMs, costUsd: subagentCostUsd });
+    }, { agentId: req.agentId as string, dispatchId, durationMs: elapsedMs, costUsd: subagentCostUsd });
+
+    publishSubagentLifecycle("succeeded", {
+      agentId: req.agentId,
+      dispatchId,
+      result: filesWritten?.length ? `Successfully edited: ${filesWritten.join(", ")}` : "Completed successfully",
+      elapsedMs,
+    });
   } else {
     await eventBus.publish("subagent:error", {
       agentId: req.agentId,
-      status: "error",
+      dispatchId,
+      status: incomplete ? "incomplete" : "error",
+      incomplete,
       result: subagentStderr || "Subagent execution failed",
       exitCode: 1,
       elapsedMs,
       timestamp: Date.now(),
-    }, { agentId: req.agentId as string, durationMs: elapsedMs, costUsd: subagentCostUsd });
+    }, { agentId: req.agentId as string, dispatchId, durationMs: elapsedMs, costUsd: subagentCostUsd });
+
+    publishSubagentLifecycle(incomplete ? "incomplete" : "failed", {
+      agentId: req.agentId,
+      dispatchId,
+      result: subagentStderr || "Subagent execution failed",
+      elapsedMs,
+    });
   }
 
-  logDispatch(req.projectRoot, req, result);
-  return result;
-}
-
-export interface ParallelDispatchRequest {
-  agentId: AgentId;
-  task: string;
-  contextFiles?: string[];
-}
-
-export interface ParallelDispatchResult {
-  success: boolean;
-  results: AgentDispatchResult[];
-  mergeResult?: MergeResult;
-  error?: string;
+    logDispatch(req.projectRoot, req, result);
+    return result;
+  } finally {
+    if (timer) clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", abortFromParent);
+  }
 }
 
 export async function dispatchAgentsParallel(
   projectRoot: string,
-  dispatches: ParallelDispatchRequest[],
+  dispatches: AgentDispatchRequest[],
   opts: DispatchAgentOptions = {}
 ): Promise<ParallelDispatchResult> {
-  const workspaces = dispatches.map((req) =>
-    createIsolatedWorkspace(projectRoot, req.agentId)
-  );
-
-  const limit = Math.max(1, opts.maxParallelAgents ?? getRuntimeFlags().maxParallelAgents);
-  const activeQueue: Array<() => void> = [];
-  let activeCount = 0;
+  const flags = getRuntimeFlags();
+  const maxParallel = opts.maxParallelAgents ?? flags.maxParallelAgents;
+  const semaphore = new Array(maxParallel).fill(true);
+  const queue: Array<() => void> = [];
 
   const acquire = () =>
-    new Promise<void>((resolve) => {
-      if (activeCount < limit) {
-        activeCount++;
-        resolve();
+    new Promise<void>((res) => {
+      if (semaphore.length > 0) {
+        semaphore.pop();
+        res();
       } else {
-        activeQueue.push(resolve);
+        queue.push(res);
       }
     });
 
   const release = () => {
-    activeCount--;
-    if (activeQueue.length > 0) {
-      activeCount++;
-      const next = activeQueue.shift();
-      if (next) next();
-    }
+    semaphore.push(true);
+    const next = queue.shift();
+    if (next) next();
   };
 
+  const workspaces: ReturnType<typeof createIsolatedWorkspace>[] = [];
   try {
-    const promises = dispatches.map(async (req, index) => {
+    for (const req of dispatches) {
+      workspaces.push(createIsolatedWorkspace(projectRoot, req.agentId));
+    }
+
+    const promises = dispatches.map(async (rawReq, index) => {
+      const req = ensureDispatchId({ ...rawReq, projectRoot });
+      const dispatchId = req.dispatchId!;
       const ws = workspaces[index]!;
+      await EventBus.getInstance().publish("subagent:queued", {
+        agentId: req.agentId,
+        dispatchId,
+        task: req.task,
+        label: rawReq.label,
+        timestamp: Date.now(),
+      }, { agentId: req.agentId as string, dispatchId });
+      publishSubagentLifecycle("queued", {
+        agentId: req.agentId,
+        dispatchId,
+        task: req.task,
+      });
       await acquire();
       try {
-        // Budget gate: once the cost ceiling is depleted, stop launching NEW
-        // agents instead of letting them run and collectively overshoot. Agents
-        // already in flight finish normally. Closes the concurrent-overspend gap.
         if (globalCostGovernor.getGovernanceState().isDepleted) {
           const skipped: AgentDispatchResult = {
             agentId: req.agentId,
+            dispatchId,
             exitCode: 1,
             stdout: "",
             stderr: `Skipped: cost budget exhausted before dispatch of "${req.agentId}".`,
@@ -1023,17 +1282,25 @@ export async function dispatchAgentsParallel(
           };
           await EventBus.getInstance().publish("subagent:skipped", {
             agentId: req.agentId,
+            dispatchId,
             reason: "cost_budget_exhausted",
             timestamp: Date.now(),
+          }, { agentId: req.agentId as string, dispatchId });
+          publishSubagentLifecycle("cancelled", {
+            agentId: req.agentId,
+            dispatchId,
+            reason: "cost_budget_exhausted",
           });
           return skipped;
         }
+
         return await dispatchAgent(
           {
             agentId: req.agentId,
             task: req.task,
             projectRoot: ws.tempDir,
             contextFiles: req.contextFiles,
+            dispatchId,
           },
           {
             ...opts,
@@ -1041,16 +1308,9 @@ export async function dispatchAgentsParallel(
           }
         );
       } catch (err) {
-        // A pre-flight throw — a delegation-limit violation
-        // (`enforceDelegationLimits`), or a prompt-router / subagent-router spawn
-        // failure — happens BEFORE dispatchAgentImpl's own try/catch and would
-        // otherwise reject this promise. Under `Promise.all` a single rejection
-        // discards the WHOLE batch: every sibling agent's completed work is lost
-        // and the partial-success merge below never runs. Convert it to an
-        // exitCode-1 result so this agent is reported failed exactly like a normal
-        // non-zero exit, while successful siblings still merge.
         const failed: AgentDispatchResult = {
           agentId: req.agentId,
+          dispatchId,
           exitCode: 1,
           stdout: "",
           stderr: err instanceof Error ? err.message : String(err),

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useCallback } from "react";
 import { animationsEnabled } from "./animations.js";
 import { getFrame, subscribeFrame } from "./frameClock.js";
 
@@ -14,9 +14,19 @@ export function useTick(active: boolean, intervalMs = 90): number {
   const motion = animationsEnabled();
   const live = active && motion;
 
-  const tick = useSyncExternalStore(
-    (onChange) => (live ? subscribeFrame(intervalMs, onChange) : () => {}),
+  const subscribe = useCallback(
+    (onChange: () => void) => (live ? subscribeFrame(intervalMs, onChange) : () => {}),
+    [live, intervalMs]
+  );
+
+  const getSnapshot = useCallback(
     () => (live ? getFrame(intervalMs) : 0),
+    [live, intervalMs]
+  );
+
+  const tick = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
     () => 0
   );
 

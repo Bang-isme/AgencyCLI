@@ -30,15 +30,7 @@ export type DegradationTier = 0 | 1 | 2 | 3;
 // Tracks event-loop lag for cache-sizing / diagnostics only. Lag is NEVER used
 // to drop into survival mode (collapse scrollback) — that reactive coupling is
 // what made history vanish during scroll/stream.
-const lagInterval = setInterval(() => {
-  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-  loopLag = Math.max(0, now - lastTickTime - 50);
-  lastTickTime = now;
-}, 50);
-
-if (lagInterval && typeof lagInterval.unref === "function") {
-  lagInterval.unref();
-}
+let lagInterval: NodeJS.Timeout | null = null;
 
 export function getLoopLag(): number {
   if (typeof process !== "undefined" && process.env.VITEST) {
@@ -296,6 +288,17 @@ function registerEmergencyExitListeners(): void {
 export function enterAlternateScreen(): void {
   if (!process.stdout.isTTY || active) return;
   registerEmergencyExitListeners();
+
+  if (!lagInterval) {
+    lagInterval = setInterval(() => {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      loopLag = Math.max(0, now - lastTickTime - 50);
+      lastTickTime = now;
+    }, 50);
+    if (lagInterval && typeof lagInterval.unref === "function") {
+      lagInterval.unref();
+    }
+  }
   // ?1049h alt screen · ?25l hide cursor · ?7l no-autowrap. The wheel handling
   // depends on the mouse layer (flag `mouseSupport`):
   //  - OFF (legacy): ?1007h alternate-scroll makes Windows Terminal / xterm
@@ -424,6 +427,7 @@ export function leaveAlternateScreen(): void {
   // Force clean up of lag monitor interval to release loop handle
   if (lagInterval) {
     clearInterval(lagInterval);
+    lagInterval = null;
   }
 
   // Restore raw mode and pause stdin to return terminal input control to PowerShell/Cmd

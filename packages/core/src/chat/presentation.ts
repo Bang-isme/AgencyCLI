@@ -2,6 +2,7 @@ import type { ChatTurnResult } from "./orchestrator.js";
 import { buildSuggestedCommands } from "./route-presentation.js";
 import type { RouteResult } from "../router/model-router.js";
 import { JSONRepairEngine } from "@agency/tooling";
+import { sanitizeAssistantTranscript } from "./transcript-sanitize.js";
 
 
 export type ChatOutputSurface = "human" | "json";
@@ -129,7 +130,7 @@ export function parseAssistantContent(
   const chips = opts?.route ? routeToChips(opts.route) : [];
 
   return {
-    body: body.trim(),
+    body: sanitizeAssistantTranscript(body).trim(),
     chips,
     suggestions,
     cacheHint,

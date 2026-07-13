@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker, createTurnCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { executeTurnToolBatch } from "../chat/turn-loop.js";
 import { consumeBreakerTrip } from "../chat/circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 
@@ -147,11 +148,103 @@ Here is my decision:
       expect(calls[0]!.arguments).toEqual({ path: "e.ts", content: "hello minimax" });
     });
 
+    it("parses function_calls wrappers and parameter aliases without leaking wrapper calls", () => {
+      const text = `
+<function_calls>
+  <function_call name="read_file">
+    <parameter name="path">src/page.tsx</parameter>
+  </function_call>
+  <tool_call name="execute_command">
+    <parameter name="command">npm run build</parameter>
+  </tool_call>
+</function_calls>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toEqual({ name: "read_file", arguments: { path: "src/page.tsx" } });
+      expect(calls[1]).toEqual({ name: "execute_command", arguments: { command: "npm run build" } });
+    });
+
+    it("parses direct function_call tool calls when a name attribute is present", () => {
+      const text = `
+<function_call name="write_file">
+  <parameter name="path">src/out.ts</parameter>
+  <parameter name="content">hello</parameter>
+</function_call>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ name: "write_file", arguments: { path: "src/out.ts", content: "hello" } });
+    });
+
+    it("parses robust alternative XML tool call formats (nested name tag and malformed tag name)", () => {
+      const textNestedName = `
+<tool_call>
+  <name>list_dir</name>
+  <param name="path">D:\\\\FastFood</param>
+</tool_call>
+      `;
+      const calls1 = parseToolCalls(textNestedName);
+      expect(calls1).toHaveLength(1);
+      expect(calls1[0]!.name).toBe("list_dir");
+      expect(calls1[0]!.arguments).toEqual({ path: "D:\\\\FastFood" });
+
+      const textMalformed = `
+<tool_call>list_dir>
+  <path>D:\\\\FastFood</path>
+</tool_call>
+      `;
+      const calls2 = parseToolCalls(textMalformed);
+      expect(calls2).toHaveLength(1);
+      expect(calls2[0]!.name).toBe("list_dir");
+      expect(calls2[0]!.arguments).toEqual({ path: "D:\\\\FastFood" });
+
+      const textArgTag = `
+<tool_call>
+  <name>list_dir</name>
+  <arg name="path">D:\\\\FastFood</arg>
+</tool_call>
+      `;
+      const calls3 = parseToolCalls(textArgTag);
+      expect(calls3).toHaveLength(1);
+      expect(calls3[0]!.name).toBe("list_dir");
+      expect(calls3[0]!.arguments).toEqual({ path: "D:\\\\FastFood" });
+    });
+
     it("detects unclosed minimax:tool_call correctly", () => {
       const open = "<minimax:tool_call name=\"write_file\"><path>e.ts</path>";
       const closed = "<minimax:tool_call name=\"write_file\"><path>e.ts</path></minimax:tool_call>";
       expect(hasUnclosedToolCall(open)).toBe(true);
       expect(hasUnclosedToolCall(closed)).toBe(false);
+    });
+
+    it("salvages shell prompt lines (>cd && git status) into execute_command", () => {
+      const text =
+        "Tôi sẽ bắt tay vào việc ngay.\n>cd D:\\PizzaHoods && git status --short | head -50";
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({
+        name: "execute_command",
+        arguments: { command: "cd D:\\PizzaHoods && git status --short | head -50" },
+      });
+    });
+
+    it("salvages truncated _call name=\"git_summary\"> into git_summary", () => {
+      const text = "Check repo._call name=\"git_summary\">\nStill planning.";
+      const calls = parseToolCalls(text);
+      expect(calls.some((c) => c.name === "git_summary")).toBe(true);
+    });
+
+    it("salvages truncated _call name=\"file_info\"> with mangled path line", () => {
+      const text = `_call name="file_info">
+>D:\\\\FastFood\\\\node_modules\\\\next\\\\dist\\\\binpath>
+parameter>`;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({
+        name: "file_info",
+        arguments: { path: "D:\\\\FastFood\\\\node_modules\\\\next\\\\dist\\\\bin" },
+      });
     });
   });
 
@@ -186,6 +279,46 @@ Here is my decision:
         tempDir
       );
       expect(readResult).toBe("File: test.txt (1 lines total, showing 1-1)\n1: hello tool execution!");
+    });
+
+    it("read_file on a directory returns a directory listing", async () => {
+      mkdirSync(join(tempDir, "folder"));
+      writeFileSync(join(tempDir, "folder", "a.txt"), "x", "utf8");
+      const readResult = await executeTool(
+        "read_file",
+        { path: "folder" },
+        tempDir
+      );
+      expect(readResult).toContain("Directory: folder");
+      expect(readResult).toContain("Entries: 1");
+      expect(readResult).toContain("a.txt");
+    });
+
+    it("file_info resolves BUILD_ID to .next/BUILD_ID", async () => {
+      mkdirSync(join(tempDir, ".next"), { recursive: true });
+      writeFileSync(join(tempDir, ".next", "BUILD_ID"), "abc123-build", "utf8");
+      const info = await executeTool("file_info", { path: "BUILD_ID" }, tempDir);
+      expect(info).toContain("File: .next/BUILD_ID");
+      expect(info).toContain("Lines: 1");
+      expect(info).not.toMatch(/^Error:/);
+    });
+
+    it("file_info lists .next directory contents", async () => {
+      mkdirSync(join(tempDir, ".next"), { recursive: true });
+      writeFileSync(join(tempDir, ".next", "BUILD_ID"), "id", "utf8");
+      const info = await executeTool("file_info", { path: ".next" }, tempDir);
+      expect(info).toContain("Directory: .next");
+      expect(info).toContain("BUILD_ID");
+      expect(info).not.toMatch(/^Error:/);
+    });
+
+    it("dispatch_subagent validates unknown agent ids before spawning", async () => {
+      const result = await executeTool(
+        "dispatch_subagent",
+        { agentId: "not-a-real-agent", task: "do work" },
+        tempDir
+      );
+      expect(result).toBe('Error: Unknown agentId "not-a-real-agent" for dispatch_subagent.');
     });
 
     it("should edit file using search-and-replace block", async () => {
@@ -613,6 +746,47 @@ Here is my decision:
     });
   });
 
+  describe("executeTurnToolBatch dispatch fan-out", () => {
+    it("routes multi dispatch_subagent batches through the fan-out executor", async () => {
+      const singleToolCalls: string[] = [];
+      const fanoutCalls: any[] = [];
+
+      const output = await executeTurnToolBatch({
+        toolCalls: [
+          { name: "dispatch_subagent", arguments: { agentId: "planner", task: "plan A" } },
+          { name: "dispatch_subagent", arguments: { agentId: "planner", task: "plan B" } },
+        ],
+        projectRoot: process.cwd(),
+        skillsRoot: process.cwd(),
+        sessionId: "turn-1",
+        prompt: "fan out",
+        loopCount: 1,
+        breaker: null,
+        isFileWritingTool: () => false,
+        executeTool: async (name) => {
+          singleToolCalls.push(name);
+          return "single path";
+        },
+        truncateToolResult: (_name, result) => result,
+        executeDispatchSubagentFanout: async (calls) => {
+          fanoutCalls.push(...calls);
+          return [
+            "Exit Code: 0\nStdout:\nA\nStderr:\n",
+            "Exit Code: 0\nStdout:\nB\nStderr:\n",
+          ];
+        },
+      });
+
+      expect(singleToolCalls).toEqual([]);
+      expect(fanoutCalls).toHaveLength(2);
+      expect(fanoutCalls[0].arguments.dispatchId).toContain("planner-turn-1-");
+      expect(fanoutCalls[1].arguments.dispatchId).toContain("planner-turn-1-");
+      expect(fanoutCalls[0].arguments.dispatchId).not.toBe(fanoutCalls[1].arguments.dispatchId);
+      expect(output).toContain('[Tool Result for "dispatch_subagent":]\nExit Code: 0\nStdout:\nA');
+      expect(output).toContain('[Tool Result for "dispatch_subagent":]\nExit Code: 0\nStdout:\nB');
+    });
+  });
+
   describe("isFileWritingTool", () => {
     it("flags content-writing tools (incl. ast_edit + append_file), not read-only ones", () => {
       expect(isFileWritingTool("write_file")).toBe(true);
@@ -818,6 +992,14 @@ Here is my decision:
         category: "other",
         schema: z.object({ n: z.string() }),
         execute: async () => "Exit Code: 1\nbuild failed",
+        metadata: {
+          semanticAction: "Run fail tool",
+          targetExtractor: (args) => args.n,
+          resultSummarizer: () => "failed",
+          risk: "low",
+          prerequisite: "none",
+          recovery: "Try again.",
+        },
       } as any);
     });
 
@@ -855,6 +1037,14 @@ Here is my decision:
         category: "other",
         schema: z.object({ n: z.string() }),
         execute: async () => "Exit Code: 0\nok",
+        metadata: {
+          semanticAction: "Run ok tool",
+          targetExtractor: (args) => args.n,
+          resultSummarizer: () => "ok",
+          risk: "low",
+          prerequisite: "none",
+          recovery: "Try again.",
+        },
       } as any);
       await executeTool(FAILTOOL, { n: "a" }, "/tmp");
       await executeTool(FAILTOOL, { n: "b" }, "/tmp");
@@ -878,6 +1068,14 @@ Here is my decision:
         category: "other",
         schema: z.object({ n: z.string() }),
         execute: async () => "ok",
+        metadata: {
+          semanticAction: "Run scope tool",
+          targetExtractor: (args) => args.n,
+          resultSummarizer: () => "ok",
+          risk: "low",
+          prerequisite: "none",
+          recovery: "Try again.",
+        },
       } as any);
     });
 

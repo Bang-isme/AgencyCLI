@@ -97,7 +97,7 @@ function loadVersion(skillsRoot: string): string {
 export function PluginsOverlay({ theme, skillsRoot, maxVisible = 10, onClose }: PluginsOverlayProps) {
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 80, 45);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   // Synchronous initialization prevents first-frame flicker or layout shift glitches
@@ -198,7 +198,7 @@ export function PluginsOverlay({ theme, skillsRoot, maxVisible = 10, onClose }: 
             {visiblePlugins.map((p, vi) => {
               const realIdx = start + vi;
               const sel = realIdx === safeIndex;
-              const arrowStr = sel ? "▸  " : "   ";
+              const arrowStr = sel ? ">  " : "   ";
               const activeStr = p.active ? "●  " : "○  ";
 
               return (

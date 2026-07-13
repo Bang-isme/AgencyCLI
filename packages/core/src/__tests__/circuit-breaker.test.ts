@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   createCircuitBreaker,
   checkCircuitBreaker,
+  checkSemanticLoop,
   recordToolFailure,
   recordToolSuccess,
   resetCircuitBreaker,
@@ -61,5 +62,19 @@ describe("tool-loop circuit breaker", () => {
       checkCircuitBreaker(s, [{ name: "t", arguments: { i } }]); // each distinct
     }
     expect(s.toolCallHistory.length).toBeLessThanOrEqual(50);
+  });
+
+  it("semantic loop detection only trips for repeated edits to the same file", () => {
+    const s = createCircuitBreaker();
+    recordToolFailure(s);
+    recordToolFailure(s);
+    recordToolFailure(s);
+    s.lastModifiedFiles.push("src/a.ts");
+
+    expect(checkSemanticLoop(s, [{ name: "write_file", arguments: { path: "src/b.ts" } }])).toBe(false);
+    expect(s.hasInjectedReflection).toBe(false);
+
+    expect(checkSemanticLoop(s, [{ name: "write_file", arguments: { path: "src/a.ts" } }])).toBe(true);
+    expect(s.hasInjectedReflection).toBe(false);
   });
 });

@@ -8,17 +8,17 @@ describe("resolveMaxLoops (deduped iteration cap + AGENCY_MAX_LOOPS override)", 
     else process.env.AGENCY_MAX_LOOPS = prev;
   });
 
-  it("defaultMaxLoops: deep=15, normal=8, fast/other=3 (unchanged constants)", () => {
-    expect(defaultMaxLoops("deep")).toBe(15);
-    expect(defaultMaxLoops("normal")).toBe(8);
+  it("defaultMaxLoops: deep=25, normal=25, fast/other=3 (unchanged constants)", () => {
+    expect(defaultMaxLoops("deep")).toBe(25);
+    expect(defaultMaxLoops("normal")).toBe(25);
     expect(defaultMaxLoops("fast")).toBe(3);
     expect(defaultMaxLoops("whatever")).toBe(3);
   });
 
   it("env unset + no explicit → the per-budget default (byte-identical)", () => {
     delete process.env.AGENCY_MAX_LOOPS;
-    expect(resolveMaxLoops("deep")).toBe(15);
-    expect(resolveMaxLoops("normal")).toBe(8);
+    expect(resolveMaxLoops("deep")).toBe(25);
+    expect(resolveMaxLoops("normal")).toBe(25);
     expect(resolveMaxLoops("fast")).toBe(3);
   });
 
@@ -37,10 +37,10 @@ describe("resolveMaxLoops (deduped iteration cap + AGENCY_MAX_LOOPS override)", 
     process.env.AGENCY_MAX_LOOPS = "25.9";
     expect(resolveMaxLoops("deep")).toBe(25);
     process.env.AGENCY_MAX_LOOPS = "0";
-    expect(resolveMaxLoops("deep")).toBe(15);
+    expect(resolveMaxLoops("deep")).toBe(25);
     process.env.AGENCY_MAX_LOOPS = "-5";
-    expect(resolveMaxLoops("deep")).toBe(15);
+    expect(resolveMaxLoops("deep")).toBe(25);
     process.env.AGENCY_MAX_LOOPS = "abc";
-    expect(resolveMaxLoops("deep")).toBe(15);
+    expect(resolveMaxLoops("deep")).toBe(25);
   });
 });

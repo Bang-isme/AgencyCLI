@@ -5,12 +5,20 @@ export type {
   LlmProvider,
   ProviderId,
   ProviderProfile,
+  Transport,
+  TransportRequest,
+  TransportResponse,
 } from "./types.js";
+
+export { FetchTransport } from "./utils/transport.js";
+
 
 export {
   loadAgencyConfig,
   resolveApiKey,
   updateModelOverride,
+  clearModelOverride,
+  clearModelOverrideField,
   saveAgencyConfig,
   configFilePath,
   invalidateConfigCache,
@@ -32,6 +40,8 @@ export {
   getModelThinkingConfig,
   getModelSpec,
   resolveModelSpec,
+  resolveBaselineModelSpec,
+  getBaselineModelSpec,
   getRegisteredContextWindow,
   VARIANT_PERCENTAGES,
   MODEL_REGISTRY,

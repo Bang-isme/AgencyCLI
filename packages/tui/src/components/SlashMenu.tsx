@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Box, Text } from "ink";
+import { capabilityRegistry } from "@agency/core";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { SlashMenuItem } from "../presentation/slash-menu.js";
 import { truncateText } from "../layout/terminal-layout.js";
@@ -15,35 +16,7 @@ export interface SlashMenuProps {
 const NAME_WIDTH = 14;
 const MAX_VISIBLE = 6;
 
-const CMD_ICONS: Record<string, string> = {
-  help: "?",
-  new: "+",
-  connect: "◆",
-  models: "▣",
-  skills: "◇",
-  review: "△",
-  resume: "↺",
-  project: "◈",
-  status: "◎",
-  viewstatus: "◎",
-  mcp: "⊡",
-  theme: "◐",
-  themes: "◐",
-  index: "⊞",
-  compact: "⊟",
-  export: "↗",
-  exit: "×",
-  graph: "◈",
-  tasks: "☐",
-  goal: "⊕",
-  schedule: "◷",
-  agents: "⊞",
-  plugin: "p",
-  variant: "v",
-  route: "→",
-  dashboard: "▤",
-  memory: "▤",
-};
+
 
 export const SlashMenu = memo(function SlashMenu({
   theme,
@@ -73,12 +46,12 @@ export const SlashMenu = memo(function SlashMenu({
     if (item) {
       const realIndex = start + vi;
       const selected = realIndex === safe;
-      const icon = CMD_ICONS[item.name] ?? "·";
+      const icon = item.icon ?? capabilityRegistry.get(item.name)?.icon ?? "·";
       rows.push(
         <Box key={vi} flexDirection="row" height={1} overflow="hidden">
           <Box width={2}>
             <Text color={selected ? theme.accent : theme.muted}>
-              {selected ? "▸" : " "}
+              {selected ? ">" : " "}
             </Text>
           </Box>
           <Box width={2}>

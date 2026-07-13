@@ -201,11 +201,7 @@ describe("runChatTurn", () => {
     const result = await runChatTurn({ ...input, providerId: "openrouter" });
 
     expect(calls).toBe(2);
-    // §8.1: honour the provider's stated real limit (128000) and trim the body
-    // to fit it, instead of ratcheting the window down 20% on every retry.
-    expect(mockedUpdateModelOverride).toHaveBeenCalledWith("gpt-4o-mini", {
-      contextWindow: 128000,
-    });
+    expect(mockedUpdateModelOverride).not.toHaveBeenCalled();
     expect(result.assistantText).toBe("Success after healing in orchestrator");
   });
 

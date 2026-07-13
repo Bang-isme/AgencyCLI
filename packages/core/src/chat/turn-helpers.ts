@@ -54,7 +54,7 @@ export function resolveSessionId(explicit?: string): string {
 
 /** Per-budget default tool/continuation iteration cap for a turn. */
 export function defaultMaxLoops(budget: string): number {
-  return budget === "deep" ? 15 : budget === "normal" ? 8 : 3;
+  return budget === "deep" ? 25 : budget === "normal" ? 25 : 3;
 }
 
 /**
@@ -231,6 +231,9 @@ export function buildCircuitBreakerNotice(reason: string): string {
  */
 export const MAX_AUTO_CONTINUE = 3;
 
+/** Hard cap on auto-resumes across an entire turn (even when read-only tools reset the streak). */
+export const MAX_TOTAL_AUTO_CONTINUE = 8;
+
 /** Only the tail of a completion is tested for an end-anchored continuation
  *  promise, so a mid-message "next we'll need to handle X" (explanatory) cannot
  *  fire it. */
@@ -238,11 +241,36 @@ const INCOMPLETE_TAIL_CHARS = 280;
 
 /** First-person, present/future "I'll keep going on the task NOW" promises. */
 const CONTINUATION_PROMISE =
-  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|next,?\s+i(?:'|’)?ll|next,?\s+i will)\s+(now\s+)?(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do)\b/;
+  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|next,?\s+i(?:'|’)?ll|next,?\s+i will)\s+(now\s+)?(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do|inspect|explore|examine|check|verify|read|scan|look|kick off|launch|begin|start|scaffold|set up|run|execute|install|configure)\b|\b(tôi sẽ|bắt đầu|tiến hành|tiếp tục|tiếp theo sẽ)\s+(tạo|viết|triển khai|xây dựng|scaffold|thiết lập|cấu hình|cập nhật|hoàn thiện|làm|chạy|kiểm tra|đọc|khám phá)\b/i;
+
+/** Whole-message action intent — model narrates work it has not started via tools. */
+const START_BY_PROMISE = /\bi(?:'|’)?ll\s+start\s+by\b/i;
+
+/** Present-progress narration without a matching tool call in the same turn. */
+const IN_PROGRESS_NARRATION =
+  /\b(starting|creating|scaffolding|building|kicking off|setting up)\s+(the\s+)?[\w\s-]{0,40}?\b(now|in parallel|immediately|right away)\b/i;
+
+/** Narrates inspection/reading intent at the tail without emitting tools yet. */
+const READ_BEFORE_CONTINUE =
+  /\b(reading|checking|looking|inspecting|reviewing|scanning|examining)\b[\s\S]{0,160}\b(before continuing|so i know|to continue|then continue|where i left off)\b/i;
+
+/** Explicit "before I continue" tail — common MiniMax stop pattern. */
+const BEFORE_CONTINUING = /\bbefore\s+(?:i\s+)?continu/i;
+
+/** Vietnamese continuation intent — "before continuing", "read again before continuing". */
+const VIET_BEFORE_CONTINUE = /trước khi tiếp tục|để tiếp tục(?:\s|,|$)|rồi tiếp tục/i;
+const VIET_READ_BEFORE_CONTINUE =
+  /(?:tôi\s+)?(?:đọc|kiểm tra|xem)\s+lại[\s\S]{0,160}trước khi tiếp tục/i;
+
+/** "Starting now" / "get to work" narration without tools (screenshot stops). */
+const VIET_START_NOW = /\bbắt đầu ngay\s*:?\s*$/i;
+const VIET_GET_TO_WORK = /\b(?:tôi\s+)?(?:sẽ\s+)?bắt tay vào việc\b/i;
+const VIET_READ_THEN_WRITE =
+  /(?:đồng thời\s+)?(?:đọc|kiểm tra|xem)\s+[\s\S]{0,120}(?:để\s+viết|cho\s+đúng)\s*:\s*$/i;
 
 /** Explicit "to be continued" / "I'll send the rest" markers. */
 const EXPLICIT_INCOMPLETE =
-  /\b(to be continued|continued below|continuing below|more to come|i(?:'|’)?ll send the rest|rest to follow)\b/;
+  /\b(to be continued|continued below|continuing below|more to come|i(?:'|’)?ll send the rest|rest to follow)\b|\b(còn tiếp|tiếp tục bên dưới|tiếp tục ở dưới|phần tiếp theo|dưới đây là phần còn lại|phần còn lại)\b/i;
 
 /** Code-truncation / elision placeholders ("// ... rest of the code",
  *  "# ... existing code ...", "// ... unchanged ..."). Used on the model's
@@ -280,9 +308,19 @@ export function detectIncompleteCompletion(text: string): boolean {
   const trimmed = text.trimEnd();
   if (!trimmed) return false;
   if (CODE_PLACEHOLDER.test(trimmed)) return true;
+  if (trimmed.endsWith(":")) return true;
+  if (START_BY_PROMISE.test(trimmed)) return true;
+  if (IN_PROGRESS_NARRATION.test(trimmed)) return true;
+  if (VIET_GET_TO_WORK.test(trimmed)) return true;
   const tail = trimmed.slice(-INCOMPLETE_TAIL_CHARS).toLowerCase();
   if (USER_OFFER.test(tail)) return false;
   if (tail.endsWith("?")) return false;
+  if (BEFORE_CONTINUING.test(tail)) return true;
+  if (READ_BEFORE_CONTINUE.test(tail)) return true;
+  if (VIET_BEFORE_CONTINUE.test(tail)) return true;
+  if (VIET_READ_BEFORE_CONTINUE.test(trimmed)) return true;
+  if (VIET_START_NOW.test(tail)) return true;
+  if (VIET_READ_THEN_WRITE.test(tail)) return true;
   return CONTINUATION_PROMISE.test(tail) || EXPLICIT_INCOMPLETE.test(tail);
 }
 
@@ -325,16 +363,47 @@ export function detectTruncatedArtifact(
  */
 export function buildAutoContinueNudge(
   filesWritten: Iterable<string>,
-  projectRoot: string
+  projectRoot: string,
+  attempt = 1
 ): string {
   const detail = describeFilesWritten(filesWritten, projectRoot);
+  const urgency =
+    attempt >= 3
+      ? "FINAL auto-resume: respond with ONLY <tool_call> blocks in this turn — zero prose, zero promises."
+      : attempt >= 2
+        ? "You already stopped without tools twice. This response MUST include executable <tool_call> blocks — no narration."
+        : "";
   const base =
     "Continue the task — it looks unfinished: you stopped without calling a tool, but either your message said you would continue or a file you wrote still contains a \"...rest of the code\"-style placeholder. " +
+    "Do NOT narrate what you will do — output the required <tool_call> blocks NOW in this turn (read_file, write_file, update_plan, etc.). " +
     "Resume from where you left off: read the current on-disk contents with read_file, then fill in / continue the remaining parts with append_file/edit_file — do NOT rewrite a file from scratch (that discards work already saved). " +
-    "When the task is genuinely complete, stop WITHOUT any further \"I will continue\" promises.";
+    "When the task is genuinely complete, stop WITHOUT any further \"I will continue\" promises." +
+    (urgency ? `\n\n${urgency}` : "");
   return detail.length > 0
     ? `${base}\nFiles modified so far this turn:\n${detail.join("\n")}`
     : base;
+}
+
+/** Folded into assistant text when consecutive narration-only stops exhaust the cap. */
+export function buildAutoContinueExhaustedNotice(
+  maxAttempts: number,
+  filesWritten: Iterable<string>,
+  projectRoot: string
+): string {
+  const detail = describeFilesWritten(filesWritten, projectRoot);
+  const head =
+    `⚠ [SYSTEM: Turn paused — the model stopped ${maxAttempts} times in a row without calling tools. Send "continue" or "Tiếp tục" and I will resume from the on-disk state.]`;
+  return detail.length > 0 ? `${head}\nFiles modified this turn:\n${detail.join("\n")}` : head;
+}
+
+/** Subtle TUI signal — not a warning. Updates in place via continuation:started. */
+export function publishAutoContinueContinuation(attempt: number, maxAttempts: number): void {
+  void EventBus.getInstance().publish("continuation:started", {
+    reason: "auto-continue",
+    attempt,
+    maxAttempts,
+    timestamp: Date.now(),
+  });
 }
 
 /** Minimal provider surface the compactor needs (matches LlmProvider.complete). */
@@ -366,6 +435,8 @@ export interface CompactionOptions {
    * opt in byte-identical.
    */
   cacheKey?: string;
+  /** When true, emit "forced (overflow recovery)" instead of threshold wording. */
+  forced?: boolean;
 }
 
 /**
@@ -374,6 +445,14 @@ export interface CompactionOptions {
  * incrementally instead of re-summarizing the whole middle each turn.
  */
 const runningSummaryCache = new Map<string, { coveredCount: number; coveredContent: string; summary: string }>();
+
+export function clearRunningSummaryCache(sessionId?: string): void {
+  if (sessionId) {
+    runningSummaryCache.delete(sessionId);
+  } else {
+    runningSummaryCache.clear();
+  }
+}
 
 /** Render a turn list as the summarizer's plain-text input. */
 function renderForSummary(messages: ChatMessage[]): string {
@@ -560,8 +639,11 @@ export async function compactTurnHistory(
   };
 
   try {
+    const thresholdLabel = options.forced || thresholdRatio === 0
+      ? "forced (overflow recovery)"
+      : `${threshold} threshold`;
     void EventBus.getInstance().publish("system:warning", {
-      message: `⚠ Context compaction: summarized ${middle.length} older turn(s) (~${tokenCount} est tokens > ${threshold} threshold) to fit the model window.`,
+      message: `⚠ Context compaction: ${thresholdLabel} — summarized ${middle.length} older turn(s) (~${tokenCount} est tokens) to fit the model window.`,
     });
   } catch {
     /* observability is best-effort */
@@ -649,6 +731,7 @@ export async function reduceHistoryToFit(
     const compaction = await compactTurnHistory(history, ctx.provider, newLimit, {
       cacheKey: ctx.cacheKey,
       thresholdRatio: 0,
+      forced: true,
     });
     history = compaction.messages;
   } catch {
@@ -656,11 +739,16 @@ export async function reduceHistoryToFit(
   }
 
   // 3. Mechanical reduction until the estimate fits, protecting the system turn
-  //    (index 0) and the final/current message (last index).
+  //    (index 0) and the final/current message (last index). Keep at least 4
+  //    middle turns when possible to avoid brutal drops to ~13K tokens.
   let estimate = estimateMessagesTokens(history);
   let guard = 0;
+  const minMiddleTurns = 4;
   while (estimate > target && guard++ < 500) {
     const lastIdx = history.length - 1;
+    const middleCount = Math.max(0, lastIdx - 1);
+    if (middleCount === 0) break;
+
     let largestIdx = -1;
     let largestLen = 0;
     for (let i = 1; i < lastIdx; i++) {
@@ -670,21 +758,55 @@ export async function reduceHistoryToFit(
         largestIdx = i;
       }
     }
-    if (largestIdx === -1) break; // only system + final remain — cannot shrink further
+    if (largestIdx === -1) break;
 
-    if (largestLen > 2000) {
-      // Halve the largest body (keep the head — usually the salient part).
+    if (largestLen > 4000) {
       const c = history[largestIdx]!.content;
       history[largestIdx] = {
         ...history[largestIdx]!,
-        content: `${c.slice(0, Math.floor(c.length / 2))}\n…[trimmed to fit context]`,
+        content: `${c.slice(0, Math.floor(c.length * 0.6))}\n…[trimmed to fit context]`,
+      };
+    } else if (middleCount > minMiddleTurns) {
+      history.splice(largestIdx, 1);
+    } else if (estimate > target && largestLen > 500) {
+      const c = history[largestIdx]!.content;
+      history[largestIdx] = {
+        ...history[largestIdx]!,
+        content: `${c.slice(0, Math.max(200, Math.floor(c.length * 0.5)))}\n…[trimmed to fit context]`,
       };
     } else {
-      // Bodies already small → drop the oldest middle turn entirely.
-      history.splice(largestIdx, 1);
+      break;
     }
     estimate = estimateMessagesTokens(history);
   }
 
   return { messages: history, estimatedTokens: estimate, fits: estimate <= target };
+}
+
+const TOOL_RESULT_PRUNE_BYTES = 24_000;
+
+/**
+ * Prune older tool-result user messages in turn history, keeping recent turns intact.
+ * Reduces context pressure from large read_file / execute_command outputs.
+ */
+export function pruneToolResultsInHistory(
+  messages: ChatMessage[],
+  keepRecent = 6
+): ChatMessage[] {
+  if (messages.length <= keepRecent + 2) return messages;
+
+  const cutoff = messages.length - keepRecent;
+  return messages.map((msg, idx) => {
+    if (idx === 0 || idx >= cutoff) return msg;
+    if (msg.role !== "user") return msg;
+    const content = msg.content ?? "";
+    if (!content.includes("[Tool Result for")) return msg;
+    if (content.length <= TOOL_RESULT_PRUNE_BYTES) return msg;
+    const head = content.slice(0, 2000);
+    const tail = content.slice(-1500);
+    return {
+      ...msg,
+      content: `${head}\n…[tool output pruned — ${content.length} chars total. Use read_file/grep if needed.]\n${tail}`,
+    };
+  });
 }

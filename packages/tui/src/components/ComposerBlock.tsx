@@ -15,6 +15,7 @@ export interface ComposerBlockProps {
   /** Caret offset for cursor-editing mode; undefined → legacy end-pinned caret. */
   cursorPos?: number;
   onBufferChange: (next: string) => void;
+  onSlashExpand?: () => void;
   loading: boolean;
   showHelp: boolean;
   slashQuery: string | null;
@@ -52,6 +53,7 @@ export const ComposerBlock = memo(function ComposerBlock({
   buffer,
   cursorPos,
   onBufferChange,
+  onSlashExpand,
   loading,
   showHelp,
   slashQuery,
@@ -95,6 +97,7 @@ export const ComposerBlock = memo(function ComposerBlock({
     slashSuggestions,
     slashIndex,
     onBufferChange,
+    onSlashExpand,
     atOpen,
     atSuggestions,
     atIndex,
@@ -109,6 +112,7 @@ export const ComposerBlock = memo(function ComposerBlock({
       slashSuggestions,
       slashIndex,
       onBufferChange,
+      onSlashExpand,
       atOpen,
       atSuggestions,
       atIndex,
@@ -125,6 +129,7 @@ export const ComposerBlock = memo(function ComposerBlock({
         slashSuggestions,
         slashIndex,
         onBufferChange,
+        onSlashExpand,
         atOpen,
         atSuggestions,
         atIndex,
@@ -136,8 +141,21 @@ export const ComposerBlock = memo(function ComposerBlock({
       if (slashOpen) {
         if (key.tab || input === "\t") {
           const pick = slashSuggestions[slashIndex];
-          if (pick) onBufferChange(`/${pick.name}`);
+          if (pick) {
+            if (pick.isExpander) {
+              onSlashExpand?.();
+            } else {
+              onBufferChange(`/${pick.name}`);
+            }
+          }
           return;
+        }
+        if (key.rightArrow) {
+          const pick = slashSuggestions[slashIndex];
+          if (pick && pick.isExpander) {
+            onSlashExpand?.();
+            return;
+          }
         }
         if (key.upArrow) {
           setSlashIndex((i) => Math.max(0, i - 1));

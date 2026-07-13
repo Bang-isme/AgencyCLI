@@ -2,12 +2,15 @@ import { loadAgencyConfig } from "../config.js";
 import { getModelSpec } from "../thinking-spec.js";
 import { SmartRateLimiter } from "../rate-limiter.js";
 import { inferTaskIntent, optimizeForTask } from "../token-optimizer.js";
+import { FetchTransport } from "../utils/transport.js";
 import type {
   ChatMessage,
   CompleteOptions,
   LlmProvider,
   ProviderId,
   StreamCompleteOptions,
+  Transport,
+  TransportResponse,
 } from "../types.js";
 
 export interface OpenAiCompatibleOptions {
@@ -15,6 +18,7 @@ export interface OpenAiCompatibleOptions {
   apiKey?: string;
   baseUrl: string;
   defaultModel: string;
+  transport?: Transport;
   fetchImpl?: typeof fetch;
   extraHeaders?: Record<string, string>;
   /**
@@ -37,7 +41,9 @@ export interface OpenAiCompatibleOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-const DEFAULT_IDLE_TIMEOUT_MS = 90_000;
+// Thinking models and long tool-planning gaps can go 90s+ without a token; 3min
+// avoids false "stream stalled" aborts during legitimate subagent work.
+const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 
 /**
  * Build an AbortSignal that fires when either the caller cancels (opts.signal)
@@ -117,7 +123,7 @@ function enrichConnectionError(err: unknown, id: string, baseUrl: string): Error
   return err instanceof Error ? err : new Error(String(err));
 }
 
-async function parseLlmError(id: string, response: Response): Promise<Error> {
+async function parseLlmError(id: string, response: TransportResponse): Promise<Error> {
   const text = await response.text();
   try {
     const json = JSON.parse(text);
@@ -169,16 +175,17 @@ async function parseLlmError(id: string, response: Response): Promise<Error> {
 export function createOpenAiCompatibleProvider(
   options: OpenAiCompatibleOptions
 ): LlmProvider {
-  const doFetch = options.fetchImpl ?? globalThis.fetch;
+  const transport = options.transport ?? new FetchTransport(options.fetchImpl);
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const autoDetect = options.autoDetectModel ?? false;
 
-  const spec = getModelSpec(options.defaultModel);
+  const spec = getModelSpec(options.defaultModel, options.id);
   const limiter = new SmartRateLimiter({
     rpm: spec.freeRateLimit?.rpm ?? 60,
     tpm: spec.freeRateLimit?.tpm ?? 0,
+    providerId: options.id,
   });
 
   let resolvedDefaultModel = options.defaultModel;
@@ -198,7 +205,12 @@ export function createOpenAiCompatibleProvider(
         if (options.apiKey) {
           headers.Authorization = `Bearer ${options.apiKey}`;
         }
-        const res = await doFetch(url, { headers, signal: AbortSignal.timeout(3000) });
+        const res = await transport.request({
+          url,
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(3000),
+        });
         if (res.ok) {
           const json = (await res.json()) as any;
           const list: any[] = Array.isArray(json?.data) ? json.data : [];
@@ -225,7 +237,7 @@ export function createOpenAiCompatibleProvider(
     stream = false
   ): Record<string, unknown> {
     const model = resolvedModel;
-    const modelSpec = getModelSpec(model);
+    const modelSpec = getModelSpec(model, options.id);
 
     let maxTokens = opts?.maxTokens;
     let temperature = opts?.temperature;
@@ -341,9 +353,10 @@ export function createOpenAiCompatibleProvider(
       const resolvedModel = await resolveModel(opts);
       return limiter.retryWithBackoff(async () => {
         const { signal, cleanup, timedOut } = createTimeoutSignal(opts?.signal, timeoutMs);
-        let res: Response;
+        let res: TransportResponse;
         try {
-          res = await doFetch(`${baseUrl}/chat/completions`, {
+          res = await transport.request({
+            url: `${baseUrl}/chat/completions`,
             method: "POST",
             headers: authHeaders(),
             body: JSON.stringify(buildBody(resolvedModel, messages, opts, false)),
@@ -359,12 +372,24 @@ export function createOpenAiCompatibleProvider(
         }
 
         if (!res.ok) {
-          throw await parseLlmError(options.id, res);
+          const err = await parseLlmError(options.id, res);
+          (err as any).status = res.status;
+          (err as any).headers = res.headers;
+          throw err;
         }
+
+        limiter.updateLimitsFromHeaders(res.headers);
 
         const data = (await res.json()) as {
           choices?: Array<{
-            message?: { content?: string; reasoning_content?: string };
+            message?: {
+              content?: string;
+              reasoning_content?: string;
+              /** OpenRouter's canonical plaintext reasoning field. */
+              reasoning?: string;
+              /** OpenRouter may return one or more structured reasoning chunks. */
+              reasoning_details?: Array<{ text?: string; summary?: string }>;
+            };
             finish_reason?: string;
           }>;
           usage?: {
@@ -382,8 +407,13 @@ export function createOpenAiCompatibleProvider(
         }
 
         let thought = "";
-        const reasoningContent = data.choices?.[0]?.message?.reasoning_content;
-        if (typeof reasoningContent === "string" && reasoningContent) {
+        const message = data.choices?.[0]?.message;
+        const reasoningContent = [
+          message?.reasoning_content,
+          message?.reasoning,
+          ...(message?.reasoning_details ?? []).flatMap((detail) => [detail.text, detail.summary]),
+        ].filter((part): part is string => typeof part === "string" && part.length > 0).join("");
+        if (reasoningContent) {
           thought = reasoningContent;
           if (opts?.onThought) {
             opts.onThought(reasoningContent);
@@ -456,10 +486,11 @@ export function createOpenAiCompatibleProvider(
         if (opts.signal) signals.push(opts.signal);
         const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
 
-        let res: Response;
+        let res: TransportResponse;
         resetIdle();
         try {
-          res = await doFetch(`${baseUrl}/chat/completions`, {
+          res = await transport.request({
+            url: `${baseUrl}/chat/completions`,
             method: "POST",
             headers: authHeaders(),
             body: JSON.stringify(buildBody(resolvedModel, messages, opts, true)),
@@ -475,8 +506,13 @@ export function createOpenAiCompatibleProvider(
 
         if (!res.ok) {
           clearIdle();
-          throw await parseLlmError(options.id, res);
+          const err = await parseLlmError(options.id, res);
+          (err as any).status = res.status;
+          (err as any).headers = res.headers;
+          throw err;
         }
+
+        limiter.updateLimitsFromHeaders(res.headers);
 
         if (!res.body) {
           clearIdle();
@@ -508,25 +544,37 @@ export function createOpenAiCompatibleProvider(
             if (!trimmed.startsWith("data:")) continue;
             const payload = trimmed.slice(5).trim();
             if (!payload || payload === "[DONE]") continue;
-            try {
-              const json = JSON.parse(payload) as {
-                choices?: Array<{
-                  delta?: {
-                    content?: string;
-                    reasoning_content?: string;
-                  };
-                  finish_reason?: string;
-                }>;
-                usage?: {
-                  prompt_tokens: number;
-                  completion_tokens: number;
+
+            let json: {
+              choices?: Array<{
+                delta?: {
+                  content?: string;
+                  /** OpenAI-compatible alias used by several providers. */
+                  reasoning_content?: string;
+                  /** OpenRouter's canonical streaming reasoning field. */
+                  reasoning?: string;
+                  /** Structured OpenRouter reasoning fragments. */
+                  reasoning_details?: Array<{ text?: string; summary?: string }>;
+                };
+                finish_reason?: string;
+              }>;
+              usage?: {
+                prompt_tokens: number;
+                completion_tokens: number;
+                reasoning_tokens?: number;
+                completion_tokens_details?: {
                   reasoning_tokens?: number;
-                  completion_tokens_details?: {
-                    reasoning_tokens?: number;
-                  };
                 };
               };
+            } | null = null;
 
+            try {
+              json = JSON.parse(payload);
+            } catch {
+              // ignore malformed SSE frames
+            }
+
+            if (json) {
               if (json.usage && opts.onUsage) {
                 opts.onUsage({
                   promptTokens: json.usage.prompt_tokens,
@@ -541,18 +589,21 @@ export function createOpenAiCompatibleProvider(
                 opts.onFinishReason(json.choices[0].finish_reason);
               }
 
-              const reasoning = json.choices?.[0]?.delta?.reasoning_content;
-              if (typeof reasoning === "string" && reasoning.length > 0) {
+              const delta = json.choices?.[0]?.delta;
+              const reasoning = [
+                delta?.reasoning_content,
+                delta?.reasoning,
+                ...(delta?.reasoning_details ?? []).flatMap((detail) => [detail.text, detail.summary]),
+              ].filter((part): part is string => typeof part === "string" && part.length > 0).join("");
+              if (reasoning) {
                 fullThought += reasoning;
                 opts.onThought?.(reasoning);
               }
 
-              const contentPiece = json.choices?.[0]?.delta?.content;
+              const contentPiece = delta?.content;
               if (typeof contentPiece === "string" && contentPiece.length > 0) {
                 thinkFilter.feed(contentPiece);
               }
-            } catch {
-              // ignore malformed SSE frames
             }
           }
         }
@@ -575,6 +626,7 @@ export function createOpenAiCompatibleProvider(
         } finally {
           clearIdle();
           try {
+            await reader.cancel().catch(() => {});
             reader.releaseLock();
           } catch {
             // reader already released

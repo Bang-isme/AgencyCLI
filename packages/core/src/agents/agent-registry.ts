@@ -337,11 +337,14 @@ export class CapabilityAgentRegistry implements AgentRegistry {
 }
 
 /** Shared singleton used by the dispatch path and `agency status`. */
-export const capabilityRegistry = CapabilityAgentRegistry.getInstance();
+export const agentCapabilityRegistry = CapabilityAgentRegistry.getInstance();
+/** Alias for backwards compatibility within agent module */
+export const capabilityRegistry = agentCapabilityRegistry;
 
 /** Convenience accessor for the CLI/status layer. */
 export function getAgentRegistrySnapshot(): AgentCapabilityDescriptor[] {
-  return capabilityRegistry.snapshot();
+  return agentCapabilityRegistry.snapshot();
 }
 
 export { MANIFEST_AGENTS };
+

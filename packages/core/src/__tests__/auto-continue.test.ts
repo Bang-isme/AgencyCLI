@@ -61,6 +61,54 @@ describe("detectIncompleteCompletion (pure)", () => {
     expect(detectIncompleteCompletion("class A {\n  // ... existing code ...\n}")).toBe(true);
   });
 
+  it("fires when the model promises inspection/exploration without tools (screenshot case)", () => {
+    expect(
+      detectIncompleteCompletion(
+        "I'll start by exploring the current workspace to understand what exists, then plan the architecture. Let me inspect the project structure."
+      )
+    ).toBe(true);
+    expect(
+      detectIncompleteCompletion(
+        "Apologies — I should have jumped straight into action. Let me inspect the workspace and kick off the build now."
+      )
+    ).toBe(true);
+  });
+
+  it("fires on in-progress narration without a tool call", () => {
+    expect(
+      detectIncompleteCompletion(
+        "Starting the scaffold now — creating all config files in parallel."
+      )
+    ).toBe(true);
+  });
+
+  it("fires when the model narrates reading/checking before continuing (MiniMax stop pattern)", () => {
+    expect(
+      detectIncompleteCompletion(
+        "Hook useCart is done. Reading the on-disk state of the two files I just wrote so I know exactly what's there before continuing."
+      )
+    ).toBe(true);
+  });
+
+  it("fires on Vietnamese read-before-continue narration (screenshot case)", () => {
+    expect(
+      detectIncompleteCompletion(
+        "Tôi đọc lại trạng thái thật trên đĩa trước khi tiếp tục, để không lặp lại việc giả định file đã có."
+      )
+    ).toBe(true);
+  });
+
+  it("fires when Vietnamese narration ends with step intent and colon (screenshot case)", () => {
+    expect(
+      detectIncompleteCompletion(
+        "Bắt đầu ngay:\n## Step 1/3: Viết src/hooks/useCart.ts\nĐồng thời đọc các file còn lại để viết page.tsx đúng:"
+      )
+    ).toBe(true);
+    expect(detectIncompleteCompletion("Tôi sẽ bắt tay vào việc ngay. Trước tiên hãy xem git status.")).toBe(
+      true
+    );
+  });
+
   it("does NOT fire on a genuinely-complete turn", () => {
     expect(detectIncompleteCompletion("Here's the full solution. The implementation is complete.")).toBe(false);
     expect(detectIncompleteCompletion("Done — all files created and the build passes.")).toBe(false);
@@ -79,6 +127,13 @@ describe("detectIncompleteCompletion (pure)", () => {
         "I refactored the parser. Next we should consider caching, but that is optional and out of scope here."
       )
     ).toBe(false);
+  });
+
+  it("fires on Vietnamese continuation promises, explicit incomplete markers, and colon endings", () => {
+    expect(detectIncompleteCompletion("Bắt đầu tạo files config:")).toBe(true);
+    expect(detectIncompleteCompletion("Workspace trống, tôi sẽ scaffold toàn bộ từ đầu! Bắt đầu tạo config files + source code:")).toBe(true);
+    expect(detectIncompleteCompletion("Tôi sẽ tiếp tục triển khai các component khác.")).toBe(true);
+    expect(detectIncompleteCompletion("Dưới đây là phần còn lại của file layout.tsx")).toBe(true);
   });
 });
 
@@ -230,6 +285,33 @@ describe("auto-continue wiring (unfinished natural stop)", () => {
     );
 
     // write-stub + "Done"(triggers) + write-fix + "Done"(no trigger → break) = 4.
+    expect(provider.complete).toHaveBeenCalledTimes(4);
+  });
+
+  it("flag ON: resets the consecutive cap after a productive tool batch", async () => {
+    process.env.AGENCY_AUTO_CONTINUE = "1";
+    let calls = 0;
+    const provider = {
+      id: "openrouter" as const,
+      complete: vi.fn(async () => {
+        calls++;
+        if (calls === 1) return "I'll write the hook now.";
+        if (calls === 2) {
+          return 'Writing:\n<tool_call name="write_file">\n  <path>useCart.ts</path>\n  <content>export {}</content>\n</tool_call>';
+        }
+        if (calls === 3) return "Hook saved. I'll continue with the registry next.";
+        if (calls === 4) return "All done — registry and hook are complete.";
+        return "Done.";
+      }),
+    };
+    mockedGetProvider.mockReturnValue(provider);
+
+    await runChatTurnWithStream(
+      { prompt: "write useCart and registry", projectRoot: root, skillsRoot: "/skills", sessionId: "s-reset", maxLoops: 10, noVerify: true },
+      { onRoute: () => {}, onDelta: () => {} }
+    );
+
+    // promise → auto-continue → write tool (resets cap) → promise → auto-continue → done
     expect(provider.complete).toHaveBeenCalledTimes(4);
   });
 });

@@ -141,7 +141,7 @@ export class EventBus {
   public async publish(
     action: string,
     payload: any,
-    meta?: { agentId?: string; taskId?: string; durationMs?: number; costUsd?: number }
+    meta?: { agentId?: string; dispatchId?: string; taskId?: string; durationMs?: number; costUsd?: number }
   ): Promise<boolean> {
     // Never let a non-serialisable payload (circular ref / BigInt) make publish
     // reject: most callers use `void eventBus.publish(...)`, and an unhandled
@@ -217,6 +217,7 @@ export class EventBus {
       payloadHash: hash,
       payload: finalPayload,
       ...(meta?.agentId !== undefined ? { agentId: meta.agentId } : {}),
+      ...(meta?.dispatchId !== undefined ? { dispatchId: meta.dispatchId } : {}),
       ...(meta?.taskId !== undefined ? { taskId: meta.taskId } : {}),
       ...(meta?.durationMs !== undefined ? { durationMs: meta.durationMs } : {}),
       ...(meta?.costUsd !== undefined ? { costUsd: meta.costUsd } : {}),
@@ -286,6 +287,9 @@ export class EventBus {
     const act = action.toLowerCase();
     if (act.includes("cancel") || act.includes("exit") || act.includes("error") || act.includes("abort") || act.includes("approval")) {
       return "CRITICAL";
+    }
+    if (act.startsWith("loop:")) {
+      return "HIGH";
     }
     if (act.includes("started") || act.includes("completed") || act.includes("failed")) {
       return "HIGH";

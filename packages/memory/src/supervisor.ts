@@ -1,4 +1,9 @@
 import { MemoryStorageBackend } from "./storage-backend.js";
+import { RevisionMismatch } from "./types.js";
+
+export function yieldNow(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 export class Supervisor {
   private backend: MemoryStorageBackend;
@@ -24,6 +29,46 @@ export class Supervisor {
         }
         // Synchronous sleep blocking to coordinate write locks
         this.sleep(delay);
+        delay *= 2; // exponential backoff
+      }
+    }
+
+    throw new Error("Supervisor transaction failed unreachably.");
+  }
+
+  /**
+   * Safe retrying write transactions asynchronously with backoff and yielding
+   */
+  public async safeWriteAsync<T>(
+    action: () => T,
+    maxRetries = 5,
+    initialDelayMs = 50
+  ): Promise<T> {
+    let attempts = 0;
+    let delay = initialDelayMs;
+
+    while (attempts < maxRetries) {
+      try {
+        return this.backend.runTransaction(action);
+      } catch (err: any) {
+        const isRevisionMismatch = err instanceof RevisionMismatch;
+        const isSqliteBusy =
+          err?.code === "SQLITE_BUSY" ||
+          (err?.message && err.message.includes("SQLITE_BUSY"));
+
+        if (!isRevisionMismatch && !isSqliteBusy) {
+          throw err;
+        }
+
+        attempts++;
+        if (attempts >= maxRetries) {
+          throw new Error(
+            `Write transaction failed after ${maxRetries} attempts. Source error: ${err.message}`
+          );
+        }
+
+        await yieldNow();
+        await new Promise((resolve) => setTimeout(resolve, delay));
         delay *= 2; // exponential backoff
       }
     }

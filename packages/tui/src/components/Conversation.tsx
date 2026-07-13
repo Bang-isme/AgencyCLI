@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import type { ThemeTokens } from "../themes/registry.js";
 import type { SessionMessage } from "../state/messages.js";
 import type { SubagentStatus } from "../state/subagent-status.js";
-import { parseToolCalls, getRuntimeFlags } from "@agency/core";
+import { parseToolCalls, getRuntimeFlags, sanitizeAssistantTranscript } from "@agency/core";
 import { EmptyChat } from "./EmptyChat.js";
 import { contentWidth as measureContentWidth } from "../layout/terminal-layout.js";
 
@@ -60,6 +60,17 @@ export function extractFileChanges(rawContent: string): FileChange[] {
     out.push({ verb, path });
   }
   return out;
+}
+
+export function reasoningSummary(thought: string): { title: string; body: string } {
+  if (!thought) return { title: "", body: "" };
+  const match = thought.match(/^\s*\*\*([^*]+)\*\*(?:[ \t]*:[ \t]*|[ \t]*\r?\n|\s*$)([\s\S]*)$/);
+  if (match) {
+    const title = match[1].trim();
+    const body = match[2].trim();
+    return { title, body };
+  }
+  return { title: "", body: thought.trim() };
 }
 
 export interface VirtualLine {
@@ -142,57 +153,7 @@ export interface AssistantBlock {
 }
 
 export function stripToolCalls(text: string): string {
-  // Assistant message content can be `undefined` at runtime even though the type
-  // says `string`: App patches `content: turn.body || undefined`, and a
-  // `Partial<SessionMessage>` widens `content` to `string | undefined`. This
-  // helper runs in the render-time line-measurement pass
-  // (`calculateFormattedLines`), so a non-string here threw "Cannot read
-  // properties of undefined (reading 'indexOf')" and crashed the whole App
-  // render into the error-boundary recovery loop. Coerce defensively, exactly
-  // like the sibling `parseAssistantContent` already does with `safeContent`.
-  let result = typeof text === "string" ? text : "";
-  const tags = ["tool_call", "invoke", "invoke_call", "minimax:tool_call"];
-
-  while (true) {
-    let firstStartIndex = -1;
-
-    for (const tag of tags) {
-      const idx = result.indexOf(`<${tag}`);
-      if (idx !== -1 && (firstStartIndex === -1 || idx < firstStartIndex)) {
-        firstStartIndex = idx;
-      }
-    }
-
-    if (firstStartIndex === -1) {
-      break;
-    }
-
-    let firstEndIndex = -1;
-    let closingTagLength = 0;
-
-    for (const tag of tags) {
-      const idx = result.indexOf(`</${tag}>`, firstStartIndex);
-      if (idx !== -1 && (firstEndIndex === -1 || idx < firstEndIndex)) {
-        firstEndIndex = idx;
-        closingTagLength = `</${tag}>`.length;
-      }
-    }
-
-    if (firstEndIndex !== -1) {
-      result = result.slice(0, firstStartIndex) + result.slice(firstEndIndex + closingTagLength);
-    } else {
-      result = result.slice(0, firstStartIndex);
-      break;
-    }
-  }
-
-  // Strip any stray closing tags (handles continuations where opening tag was in a previous message)
-  result = result.replace(/<\/\s*(tool_call|invoke|invoke_call|minimax:tool_call)\s*>/g, "");
-
-  // Clean up minimax tag lookalikes or repetition loop garbage like ]<]minimax[>[]
-  result = result.replace(/\]?<?\]?minimax\[>[\][]*/gi, "");
-
-  return result;
+  return sanitizeAssistantTranscript(text);
 }
 
 export function parseAssistantContent(content: string): AssistantBlock[] {
@@ -305,6 +266,7 @@ interface RenderPartsContext {
   theme: ThemeTokens;
   isStreamingActive: boolean;
   tick: number;
+  expandedTui: boolean;
 }
 
 /**
@@ -317,7 +279,7 @@ interface RenderPartsContext {
  * dumps). Flat lines only — fits the line-pool, never a bordered card.
  */
 function renderConversationParts(parts: ConversationPart[], ctx: RenderPartsContext): FormattedLine[] {
-  const { mId, innerWidth, prefixColor, theme, isStreamingActive, tick } = ctx;
+  const { mId, innerWidth, prefixColor, theme, isStreamingActive, tick, expandedTui } = ctx;
   const out: FormattedLine[] = [];
   const wrapWidth = Math.max(4, innerWidth - 2);
   const lastPartIdx = parts.length - 1;
@@ -347,7 +309,13 @@ function renderConversationParts(parts: ConversationPart[], ctx: RenderPartsCont
           (
             <Box flexDirection="row" width={innerWidth}>
               <Text color={theme.muted}>│ </Text>
-              <Box flexGrow={1} overflow="hidden">{toConciseTelemetry(line, theme, isActive, tick)}</Box>
+              <Box flexGrow={1} overflow="hidden">
+                {expandedTui ? (
+                  <SystemActivityLine line={line} theme={theme} isActive={isActive} expandedTui={true} />
+                ) : (
+                  toConciseTelemetry(line, theme, isActive, tick)
+                )}
+              </Box>
             </Box>
           ),
           "HIGH"
@@ -485,14 +453,34 @@ interface ThoughtHeaderProps {
   showSpinner: boolean;
   shouldExpandThought: boolean;
   theme: ThemeTokens;
+  title: string;
+  durationMs?: number;
 }
 
-const ThoughtHeader = memo(function ThoughtHeader({ showSpinner, shouldExpandThought, theme }: ThoughtHeaderProps) {
+const ThoughtHeader = memo(function ThoughtHeader({
+  showSpinner,
+  shouldExpandThought,
+  theme,
+  title,
+  durationMs,
+}: ThoughtHeaderProps) {
   const tick = useTick(showSpinner, 120);
   const spinFrame = showSpinner ? frameAt(SPINNER_FRAMES, tick) + " " : "";
+
+  const parts: string[] = [];
+  if (title) {
+    parts.push(title);
+  }
+  if (durationMs !== undefined) {
+    parts.push(`${(durationMs / 1000).toFixed(1)}s`);
+  }
+  const joined = parts.length > 0 ? " " + parts.join(" ") : "";
+
   return (
     <Text color={theme.accent}>
-      {spinFrame}→ Thinking{shouldExpandThought ? "" : " [ctrl+o to view]"}
+      {spinFrame}
+      {shouldExpandThought ? "-" : "+"} Thought:{joined}
+      {!shouldExpandThought ? " [ctrl+o to view]" : ""}
     </Text>
   );
 });
@@ -680,7 +668,8 @@ export function calculateFormattedLines(
     maxDuration?: number;
     startIndex?: number;
     existingLines?: FormattedLine[];
-  }
+  },
+  delegationBanner?: { batchLabel?: string; synthesizing?: boolean }
 ): FormattedLine[] & {
   completed?: boolean;
   lastIndex?: number;
@@ -1008,6 +997,7 @@ export function calculateFormattedLines(
 
       // Render Thought block if present
       if (m.thought) {
+        const { title, body } = reasoningSummary(m.thought);
         const showSpinner = !!(isLastMessage && loading);
         const shouldExpandThought = resolveThoughtExpansion(!!expandedTui, isLastMessage, !!m.streaming, autoExpandThinking);
 
@@ -1019,6 +1009,8 @@ export function calculateFormattedLines(
                 showSpinner={showSpinner}
                 shouldExpandThought={shouldExpandThought}
                 theme={theme}
+                title={title}
+                durationMs={m.thoughtDurationMs}
               />
             </Box>
           ),
@@ -1027,7 +1019,7 @@ export function calculateFormattedLines(
 
         if (shouldExpandThought) {
           const wrapWidth = Math.max(4, innerWidth - 4);
-          const wrappedThought = wrapText(m.thought.trim(), wrapWidth);
+          const wrappedThought = wrapText(body.trim(), wrapWidth);
 
           wrappedThought.forEach((thoughtLineText: string, tIdx: number) => {
             pushBodyLine(
@@ -1073,6 +1065,7 @@ export function calculateFormattedLines(
             theme,
             isStreamingActive: !!isStreamingActive,
             tick: _tick || 0,
+            expandedTui: !!expandedTui,
           }
         ));
       } else if (m.role === "assistant" && m.streaming) {
@@ -1563,7 +1556,7 @@ export function calculateFormattedLines(
                           <Text color={prefixColor}>│ </Text>
                           <Text color={theme.muted}>  │ {lineIdx === 0 ? bullet : "   "}</Text>
                           <Box flexGrow={1} overflow="hidden">
-                            <SystemActivityLine line={line} theme={theme} isActive={false} expandedTui={true} />
+                            <SystemActivityLine line={line} theme={theme} isActive={false} expandedTui={!!expandedTui} />
                           </Box>
                         </Box>
                       ),
@@ -1702,8 +1695,10 @@ export function calculateFormattedLines(
     const workerLifecycle = getRuntimeFlags().workerPanelLifecycle;
     const doneCount = subagents.filter((a) => a.status === "done").length;
     const errCount = subagents.filter((a) => a.status === "error").length;
+    const incompleteCount = subagents.filter((a) => a.status === "incomplete").length;
     const runCount = subagents.filter((a) => a.status === "running").length;
     const queuedCount = subagents.filter((a) => a.status === "queued").length;
+    const skippedCount = subagents.filter((a) => a.status === "skipped").length;
     const interruptedCount = subagents.filter((a) => a.status === "interrupted").length;
 
     // Smart collapse: once the turn is idle and no worker is still active, fold the
@@ -1715,6 +1710,8 @@ export function calculateFormattedLines(
       const parts: string[] = [];
       if (doneCount > 0) parts.push(`${doneCount} done`);
       if (errCount > 0) parts.push(`${errCount} failed`);
+      if (incompleteCount > 0) parts.push(`${incompleteCount} needs continuation`);
+      if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
       if (interruptedCount > 0) parts.push(`${interruptedCount} stopped`);
       const summary = parts.length > 0 ? parts.join(" · ") : `${subagents.length} finished`;
       lines.push(linePool.acquire(
@@ -1744,13 +1741,16 @@ export function calculateFormattedLines(
         <Box flexDirection="row" marginLeft={2} marginBottom={0} marginTop={0}>
           <Text color={theme.text} bold>
             Workers
+            {delegationBanner?.batchLabel ? ` · ${delegationBanner.batchLabel}` : ""}
           </Text>
           <Text color={theme.muted}>
             {"  "}{runCount} active
             {doneCount > 0 ? ` · ${doneCount} done` : ""}
             {queuedCount > 0 ? ` · ${queuedCount} queued` : ""}
             {errCount > 0 ? ` · ${errCount} failed` : ""}
+            {skippedCount > 0 ? ` · ${skippedCount} skipped` : ""}
             {interruptedCount > 0 ? ` · ${interruptedCount} stopped` : ""}
+            {delegationBanner?.synthesizing ? " · synthesizing…" : ""}
           </Text>
         </Box>
       ),
@@ -1758,11 +1758,11 @@ export function calculateFormattedLines(
     ));
 
     const sortedSubagents = [...subagents].sort((a, b) => {
-      const statusPriority = { running: 0, error: 1, interrupted: 2, done: 3, queued: 4 };
+      const statusPriority = { running: 0, error: 1, incomplete: 2, skipped: 3, interrupted: 4, done: 5, queued: 6 };
       const pA = statusPriority[a.status] ?? 5;
       const pB = statusPriority[b.status] ?? 5;
       if (pA !== pB) return pA - pB;
-      return a.agentId.localeCompare(b.agentId);
+      return (a.dispatchId ?? a.agentId).localeCompare(b.dispatchId ?? b.agentId);
     });
 
     const maxVisibleWorkers = 5;
@@ -1772,17 +1772,22 @@ export function calculateFormattedLines(
     visibleSubagents.forEach((agent) => {
       const isActive = agent.status === "running";
       const name = `worker.${agent.agentId}`;
+      const workerKey = agent.dispatchId ?? agent.agentId;
+      const taskLabel = agent.task?.trim();
+      const shortTask = taskLabel && taskLabel.length > 48 ? `${taskLabel.slice(0, 47)}…` : taskLabel;
 
       // Worker Status label & color
       let statusColor = theme.muted;
       if (agent.status === "done") statusColor = theme.success;
       else if (agent.status === "running") statusColor = theme.accent;
       else if (agent.status === "error") statusColor = theme.danger;
+      else if (agent.status === "incomplete") statusColor = theme.warning;
+      else if (agent.status === "skipped") statusColor = theme.warning;
       else if (agent.status === "interrupted") statusColor = theme.warning;
 
       const elapsedSec = agent.elapsedMs !== undefined ? `${(agent.elapsedMs / 1000).toFixed(0)}s` : "";
       const timingInfo = elapsedSec ? ` | ${elapsedSec}` : "";
-      const statusWord = agent.status === "interrupted" ? "stopped" : agent.status;
+      const statusWord = agent.status === "interrupted" ? "stopped" : agent.status === "incomplete" ? "needs continuation" : agent.status;
       const statusLabel = `[${statusWord}${timingInfo}]`;
 
       // Smart runtime view: show WHAT a running worker is doing right now on its
@@ -1792,22 +1797,28 @@ export function calculateFormattedLines(
       // running workers — a terminal row stays terse on just its status. Gated by
       // workerPanelLifecycle; legacy row is byte-identical when off.
       const rawPhase = isActive ? (agent.phase ?? "").trim() : "";
+      const rawResult = !isActive && agent.result ? agent.result.trim() : "";
+      const detailText = isActive
+        ? rawPhase
+        : (agent.status === "error" || agent.status === "incomplete" || agent.status === "skipped" || agent.status === "interrupted") && rawResult
+          ? rawResult
+          : "";
       const phaseText =
-        workerLifecycle && rawPhase
-          ? rawPhase.length > 40
-            ? `${rawPhase.slice(0, 39)}…`
-            : rawPhase
+        workerLifecycle && detailText
+          ? detailText.length > 40
+            ? `${detailText.slice(0, 39)}…`
+            : detailText
           : "";
 
       if (!expandedTui) {
         // Collapsed Workers
         lines.push(linePool.acquire(
-          `subagent-row-${agent.agentId}`,
+          `subagent-row-${workerKey}`,
           (
             <Box flexDirection="row" marginLeft={2} marginTop={0}>
               <Text color={theme.accent}>▶ </Text>
               <Text color={theme.text} bold={isActive} wrap="truncate">
-                {name}{" "}
+                {name}{shortTask ? ` — ${shortTask}` : ""}{" "}
               </Text>
               <Text color={statusColor} bold={isActive}>
                 {statusLabel}{" "}
@@ -1827,7 +1838,7 @@ export function calculateFormattedLines(
       } else {
         // Expanded Workers
         lines.push(linePool.acquire(
-          `subagent-row-${agent.agentId}`,
+          `subagent-row-${workerKey}`,
           (
             <Box flexDirection="row" marginLeft={2} marginTop={0}>
               <Text color={theme.accent}>▼ </Text>
@@ -1850,7 +1861,7 @@ export function calculateFormattedLines(
             const treeConnector = isLastStep ? "   └─ " : "   ├─ ";
 
             lines.push(linePool.acquire(
-              `subagent-${agent.agentId}-step-${sIdx}`,
+              `subagent-${workerKey}-step-${sIdx}`,
               (
                 <SubagentStepRow
                   treeConnector={treeConnector}
@@ -1925,37 +1936,68 @@ function diagnosticsEnabled(): boolean {
   return process.env.AGENCY_TUI_DIAGNOSTICS === "1" || process.env.AGENCY_TUI_DIAGNOSTICS === "true";
 }
 
-function rotateTelemetryLogIfNeeded(logFile: string) {
-  try {
-    if (!fs.existsSync(logFile)) return;
-    const stats = fs.statSync(logFile);
-    if (stats.size > 1024 * 1024) { // 1MB
-      const content = fs.readFileSync(logFile, "utf8");
-      const lines = content.split("\n");
-      if (lines.length > 1000) {
-        const keptLines = lines.slice(-1000).join("\n");
-        fs.writeFileSync(logFile, keptLines, "utf8");
+function rotateTelemetryLogIfNeeded(logFile: string): void {
+  if (typeof process !== "undefined" && process.env.VITEST) {
+    try {
+      if (!fs.existsSync(logFile)) return;
+      const stats = fs.statSync(logFile);
+      if (stats.size > 1024 * 1024) { // 1MB
+        const content = fs.readFileSync(logFile, "utf8");
+        const lines = content.split("\n");
+        if (lines.length > 1000) {
+          const keptLines = lines.slice(-1000).join("\n");
+          fs.writeFileSync(logFile, keptLines, "utf8");
+        }
       }
-    }
-  } catch {}
+    } catch {}
+    return;
+  }
+  // Async version for production
+  fs.promises.stat(logFile)
+    .then((stats) => {
+      if (stats.size > 1024 * 1024) { // 1MB
+        return fs.promises.readFile(logFile, "utf8").then((content) => {
+          const lines = content.split("\n");
+          if (lines.length > 1000) {
+            const keptLines = lines.slice(-1000).join("\n");
+            return fs.promises.writeFile(logFile, keptLines, "utf8");
+          }
+        });
+      }
+    })
+    .catch(() => {});
 }
 
-function logInvariantViolation(invariant: string, correction: string) {
+function logInvariantViolation(invariant: string, correction: string): void {
   if (!diagnosticsEnabled()) return;
   violationCount++;
   const logDir = path.join(process.cwd(), ".agency");
   const logFile = path.join(logDir, "tui-diagnostics.log");
 
-  try {
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
+  if (typeof process !== "undefined" && process.env.VITEST) {
+    try {
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      const logMsg = `[${new Date().toISOString()}] INVARIANT VIOLATION: ${invariant} - Self-Correction Action: ${correction} - Total Violations: ${violationCount}\n`;
+      fs.appendFileSync(logFile, logMsg, "utf8");
+      rotateTelemetryLogIfNeeded(logFile);
+    } catch (err) {
+      console.error("Failed to write to tui-diagnostics.log:", err);
     }
-    const logMsg = `[${new Date().toISOString()}] INVARIANT VIOLATION: ${invariant} - Self-Correction Action: ${correction} - Total Violations: ${violationCount}\n`;
-    fs.appendFileSync(logFile, logMsg, "utf8");
-    rotateTelemetryLogIfNeeded(logFile);
-  } catch (err) {
-    console.error("Failed to write to tui-diagnostics.log:", err);
+    return;
   }
+
+  // Async version for production
+  fs.promises.mkdir(logDir, { recursive: true })
+    .then(() => {
+      const logMsg = `[${new Date().toISOString()}] INVARIANT VIOLATION: ${invariant} - Self-Correction Action: ${correction} - Total Violations: ${violationCount}\n`;
+      return fs.promises.appendFile(logFile, logMsg, "utf8");
+    })
+    .then(() => rotateTelemetryLogIfNeeded(logFile))
+    .catch((err) => {
+      console.error("Failed to write to tui-diagnostics.log:", err);
+    });
 }
 
 let lastLoggedFrameTime = 0;
@@ -1970,7 +2012,7 @@ function traceFrameTimeline(
   violationType = "NONE",
   reconciliationDuration = 0,
   dirtyRowsComputed = 0
-) {
+): void {
   if (!diagnosticsEnabled()) return;
   const now = Date.now();
   const lag = getLoopLag();
@@ -2001,15 +2043,28 @@ function traceFrameTimeline(
   const logDir = path.join(process.cwd(), ".agency");
   const logFile = path.join(logDir, "tui-diagnostics.log");
 
-  try {
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-    const heapUsed = typeof process !== "undefined" ? (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1) : "0.0";
-    const logMsg = `[${new Date().toISOString()}] FRAME_COMMIT - Latency: ${latencyMs.toFixed(1)}ms - Jitter: ${variance.toFixed(1)}ms^2 - Heap: ${heapUsed}MB - Messages: ${messagesCount} - TotalLines: ${totalLinesCount} - VisibleLines: ${visibleLinesCount} - DirtyRows: ${dirtyRowsComputed} - Violations: ${violationType} - RecCost: ${reconciliationDuration.toFixed(1)}ms - Lag: ${lag}ms\n`;
-    fs.appendFileSync(logFile, logMsg, "utf8");
-    rotateTelemetryLogIfNeeded(logFile);
-  } catch {}
+  if (typeof process !== "undefined" && process.env.VITEST) {
+    try {
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      const heapUsed = typeof process !== "undefined" ? (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1) : "0.0";
+      const logMsg = `[${new Date().toISOString()}] FRAME_COMMIT - Latency: ${latencyMs.toFixed(1)}ms - Jitter: ${variance.toFixed(1)}ms^2 - Heap: ${heapUsed}MB - Messages: ${messagesCount} - TotalLines: ${totalLinesCount} - VisibleLines: ${visibleLinesCount} - DirtyRows: ${dirtyRowsComputed} - Violations: ${violationType} - RecCost: ${reconciliationDuration.toFixed(1)}ms - Lag: ${lag}ms\n`;
+      fs.appendFileSync(logFile, logMsg, "utf8");
+      rotateTelemetryLogIfNeeded(logFile);
+    } catch {}
+    return;
+  }
+
+  // Async version for production
+  fs.promises.mkdir(logDir, { recursive: true })
+    .then(() => {
+      const heapUsed = typeof process !== "undefined" ? (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1) : "0.0";
+      const logMsg = `[${new Date().toISOString()}] FRAME_COMMIT - Latency: ${latencyMs.toFixed(1)}ms - Jitter: ${variance.toFixed(1)}ms^2 - Heap: ${heapUsed}MB - Messages: ${messagesCount} - TotalLines: ${totalLinesCount} - VisibleLines: ${visibleLinesCount} - DirtyRows: ${dirtyRowsComputed} - Violations: ${violationType} - RecCost: ${reconciliationDuration.toFixed(1)}ms - Lag: ${lag}ms\n`;
+      return fs.promises.appendFile(logFile, logMsg, "utf8");
+    })
+    .then(() => rotateTelemetryLogIfNeeded(logFile))
+    .catch(() => {});
 }
 
 
@@ -2031,6 +2086,7 @@ export interface ConversationProps {
   subagents?: SubagentStatus[];
   expandedTui?: boolean;
   goalActive?: boolean;
+  delegationBanner?: { batchLabel?: string; synthesizing?: boolean };
   /** Id of the message holding the transcript-nav focus highlight (flag `transcriptNav`). */
   focusedMessageId?: string | null;
 }
@@ -2054,6 +2110,7 @@ export const Conversation = memo(
     expandedTui = false,
     goalActive = false,
     focusedMessageId = null,
+    delegationBanner,
   }: ConversationProps) {
     const degradationTier = getDegradationTier(messages.length);
     const survivalModeActive = degradationTier === 3;
@@ -2087,7 +2144,7 @@ export const Conversation = memo(
     const allLines = useMemo(() => {
       const msgs = messagesToProcess;
       if (isSmallSession) {
-        return calculateFormattedLines(msgs, cols, theme, latestAssistantId, subagents, loading, expandedTui, undefined, goalActive, focusedMessageId);
+        return calculateFormattedLines(msgs, cols, theme, latestAssistantId, subagents, loading, expandedTui, undefined, goalActive, focusedMessageId, undefined, delegationBanner);
       }
       if (linesState && linesState.messages === msgs && linesState.completed) {
         return linesState.lines;
@@ -2104,10 +2161,11 @@ export const Conversation = memo(
         undefined,
         goalActive,
         focusedMessageId,
-        { maxDuration: 12, startIndex: 0 }
+        { maxDuration: 12, startIndex: 0 },
+        delegationBanner
       );
       return initialChunk;
-    }, [messagesToProcess, cols, theme, latestAssistantId, subagents, loading, expandedTui, goalActive, focusedMessageId, isSmallSession, linesState]);
+    }, [messagesToProcess, cols, theme, latestAssistantId, subagents, loading, expandedTui, goalActive, focusedMessageId, isSmallSession, linesState, delegationBanner]);
 
     useEffect(() => {
       if (isSmallSession) {
@@ -2139,7 +2197,8 @@ export const Conversation = memo(
                   maxDuration: 12,
                   startIndex,
                   existingLines: currentLines
-                }
+                },
+                delegationBanner
               );
 
               if (chunk.completed) {
@@ -2176,7 +2235,8 @@ export const Conversation = memo(
                   maxDuration: 12,
                   startIndex,
                   existingLines: currentLines
-                }
+                },
+                delegationBanner
               );
 
               if (chunk.completed) {
@@ -2432,6 +2492,7 @@ export const Conversation = memo(
         const s2 = nextProps.subagents[i]!;
         if (
           s1.agentId !== s2.agentId ||
+          s1.dispatchId !== s2.dispatchId ||
           s1.status !== s2.status ||
           s1.phase !== s2.phase ||
           s1.result !== s2.result

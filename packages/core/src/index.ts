@@ -1,4 +1,53 @@
 export { getWorkspaceRoot } from "./project.js";
+export {
+  CAPABILITIES,
+  CapabilityRegistry,
+  capabilityRegistry,
+  describeToolCapability,
+  findCapability,
+  listCapabilities,
+  type CapabilityCategory,
+  type CapabilityDescriptor,
+  type CapabilityFilterOptions,
+  type CapabilityPrerequisite,
+  type CapabilityRisk,
+  type CapabilitySurface,
+  type CapabilityTier,
+  type PrerequisiteCheckResult,
+} from "./product/capabilities.js";
+export {
+  lifecycleFromToolEvent,
+  isOpaqueRuntimeTarget,
+  publishActionLifecycle,
+  ACTION_LIFECYCLE_TOPIC,
+  ACTION_QUEUED_TOPIC,
+  ACTION_RUNNING_TOPIC,
+  ACTION_SUCCEEDED_TOPIC,
+  ACTION_FAILED_TOPIC,
+  ACTION_INCOMPLETE_TOPIC,
+  ACTION_CANCELLED_TOPIC,
+  type ActionLifecycleEvent,
+  type ActionLifecycleState,
+  type ActionSemanticCategory,
+  type ActionSemanticDetail,
+  type ActionSemanticOperation,
+  type ActionVerificationState,
+  type ActionVerificationStatus,
+  type ActionRecoveryHint,
+} from "./product/action-lifecycle.js";
+export {
+  getWorkspaceReadiness,
+  providerIsUsable,
+  type ReadinessState,
+  type WorkspaceReadinessCheck,
+} from "./product/workspace-readiness.js";
+export {
+  runVerification,
+  type VerificationCommandRunner,
+  type VerificationGateResult,
+  type VerificationGateState,
+  type VerificationResult,
+} from "./product/verification.js";
 export { resolveSkillsRoot } from "./skills-root.js";
 export {
   loadAgencyConfig,
@@ -67,11 +116,47 @@ export {
   type RouteChip,
 } from "./chat/presentation.js";
 export {
+  collapseRepetitiveWaitLines,
+  isLeakedToolMarkupDelta,
+  isProviderToolLeakLine,
+  sanitizeAssistantTranscript,
+  sanitizeStreamingPreview,
+  stripToolMarkup,
+} from "./chat/transcript-sanitize.js";
+export {
   runChatTurnWithStream,
   type ChatRouteEvent,
   type ChatStreamHandlers,
   type ChatStreamInput,
 } from "./chat/stream.js";
+export {
+  resolveContextRetryLimit,
+  computeEffectiveContextBudget,
+  getCatalogContextWindow,
+  clearSessionContextLimits,
+} from "./chat/context-retry.js";
+export {
+  estimateContextBreakdown,
+  estimateTextTokens,
+  decomposeSystemPrompt,
+  mergeInflightContext,
+  type ContextBreakdown,
+  type ContextSegment,
+  type ContextSegmentId,
+} from "./chat/context-meter.js";
+export {
+  needsDelegationSynthesis,
+  buildSynthesisUserMessage,
+  markDelegationSynthesisComplete,
+  isSynthesisBlockedTool,
+  type DelegationPhase,
+} from "./chat/delegation-cycle.js";
+export {
+  buildParallelDispatchReport,
+  formatReportForModel,
+  formatReportForUser,
+  type ParallelDispatchReport,
+} from "./agents/dispatch-report.js";
 export { runChatTurnWithVerify, runChatTurnWithVerifyResult } from "./chat/verify-turn.js";
 export {
   applyWeightsToRoute,
@@ -156,8 +241,23 @@ export {
 } from "./browser/mcp-hint.js";
 export {
   getGitSummary,
+  getGitDiff,
   type GitSummary,
+  type GitDiffResult,
 } from "./git/intelligence.js";
+export {
+  GitReviewService,
+  type ReviewOptions,
+  type ReviewContext,
+} from "./git/review-service.js";
+export {
+  SessionService,
+  type AgencySession,
+  type SessionSummary,
+  type SessionMessage,
+  type MessageRole,
+  type MessagePresentation,
+} from "./session/service.js";
 export {
   loadKnowledgeGraph,
   type GraphEdge,
@@ -272,6 +372,7 @@ export {
 } from "./agents/workspace-isolation.js";
 export { EventBus, type EventCallback, type DurableEventSink } from "./events/event-bus.js";
 export { EventJournal } from "./events/event-journal.js";
+export { compactTurnHistory, clearRunningSummaryCache } from "./chat/turn-helpers.js";
 export {
   ReplayEngine,
   verifyJournalReplay,
@@ -307,6 +408,7 @@ export {
   generateHandover,
   type HandoverResult,
 } from "./runtime/handover.js";
+export { SessionRunCoordinator } from "./runtime/session-run-coordinator.js";
 export {
   DeterministicClock,
   DeterministicEntropy,
@@ -337,7 +439,7 @@ export {
 } from "./index/incremental-indexer.js";
 export {
   CapabilityAgentRegistry,
-  capabilityRegistry,
+  agentCapabilityRegistry,
   getAgentRegistrySnapshot,
   inferCapabilities,
   CLEARANCE_RANK,
@@ -348,8 +450,6 @@ export {
   type TaskNeed,
   type RouteResolution,
 } from "./agents/agent-registry.js";
-
-
 export {  
   OutputEngine,  
   applyOutputFilter,  
@@ -378,4 +478,4 @@ export {
   type OutputWorkerStatus,  
   type OutputTrustBadge,  
   type OutputEngineConfig,  
-} from "./output/index.js"; 
+} from "./output/index.js";

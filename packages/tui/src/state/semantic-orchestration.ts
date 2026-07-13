@@ -9,6 +9,9 @@ export type WorkerState =
   | "CONSOLIDATING"
   | "COMPLETED"
   | "FAILED"
+  | "INCOMPLETE"
+  | "SKIPPED"
+  | "QUEUED"
   // Terminal, but distinct from FAILED: the worker was still mid-flight when its
   // owning turn ended (halted by the circuit breaker / a rate-limit retry loop)
   // and never received a finished/error event. Finalizing it here stops the panel
@@ -17,11 +20,14 @@ export type WorkerState =
 
 export interface WorkerLifecycleState {
   agentId: string;
+  dispatchId?: string;
   state: WorkerState;
   lastStateChange: number;
   task: string;
   targetFile?: string;
   elapsedMs: number;
+  /** Terminal outcome message (error reason, skip reason, etc.). */
+  result?: string;
   timeline: { timestamp: number; state: WorkerState; label: string }[];
   steps: { label: string; status: "done" | "active" | "pending" }[];
   activeStepIndex: number;
@@ -93,6 +99,8 @@ export class SemanticTranslator {
       case "consolidating": return "Consolidating…";
       case "completed": return "Done";
       case "failed": return "Failed";
+      case "incomplete": return "Needs continuation";
+      case "skipped": return "Skipped";
       case "interrupted": return "Stopped";
     }
     if (p.includes("routing")) return `Routing…`;
@@ -151,13 +159,47 @@ export class WorkerLifecycleTracker {
     return Array.from(this.workers.values());
   }
 
-  public registerWorker(agentId: string, task: string) {
+  private keyFor(agentId: string, dispatchId?: string): string {
+    return dispatchId && dispatchId.trim() ? dispatchId : agentId;
+  }
+
+  public registerQueuedWorker(agentId: string, task: string, dispatchId?: string, label?: string) {
+    const displayTask = label?.trim() || task;
     const now = Date.now();
-    this.workers.set(agentId, {
+    this.workers.set(this.keyFor(agentId, dispatchId), {
       agentId,
+      dispatchId,
+      state: "QUEUED",
+      lastStateChange: now,
+      task: displayTask,
+      elapsedMs: 0,
+      timeline: [{ timestamp: now, state: "QUEUED", label: "Queued — waiting for slot" }],
+      steps: [{ label: "Waiting for concurrency slot", status: "pending" }],
+      activeStepIndex: 0,
+    });
+    this.notify();
+  }
+
+  public registerWorker(agentId: string, task: string, dispatchId?: string, label?: string) {
+    const key = this.keyFor(agentId, dispatchId);
+    const existing = this.workers.get(key);
+    if (existing?.state === "QUEUED") {
+      existing.state = "SPAWNING";
+      existing.task = label?.trim() || task || existing.task;
+      existing.lastStateChange = Date.now();
+      existing.timeline.push({ timestamp: Date.now(), state: "SPAWNING", label: "Spawning autonomous worker" });
+      existing.steps = [{ label: "Spawning specialist thread", status: "done" }];
+      existing.activeStepIndex = 0;
+      this.notify();
+      return;
+    }
+    const now = Date.now();
+    this.workers.set(key, {
+      agentId,
+      dispatchId,
       state: "SPAWNING",
       lastStateChange: now,
-      task,
+      task: label?.trim() || task,
       elapsedMs: 0,
       timeline: [{ timestamp: now, state: "SPAWNING", label: "Spawning autonomous worker" }],
       steps: [
@@ -196,38 +238,48 @@ export class WorkerLifecycleTracker {
     nextState: WorkerState,
     label: string,
     targetFile = "",
-    step?: { label: string; status: "done" | "active" | "pending" }
+    step?: { label: string; status: "done" | "active" | "pending" },
+    dispatchId?: string
   ) {
-    const w = this.workers.get(agentId);
+    const key = this.keyFor(agentId, dispatchId);
+    const w = this.workers.get(key);
     if (!w) return;
 
     if (w.state === nextState && !step) return;
 
     // Check for pending transition cancellation
-    const pending = this.pendingTransitions.get(agentId);
+    const pending = this.pendingTransitions.get(key);
     if (pending) {
       clearTimeout(pending.timeout);
-      this.pendingTransitions.delete(agentId);
+      this.pendingTransitions.delete(key);
     }
 
     const transition = () => {
-      const current = this.workers.get(agentId);
+      const current = this.workers.get(key);
       if (!current) return;
       
       const realNow = Date.now();
       current.state = nextState;
       current.lastStateChange = realNow;
       current.targetFile = targetFile || current.targetFile;
+      if (nextState === "FAILED" || nextState === "INCOMPLETE" || nextState === "SKIPPED" || nextState === "COMPLETED") {
+        current.result = label;
+      }
       current.timeline.push({ timestamp: realNow, state: nextState, label });
       
       // Update steps dynamically
       if (nextState === "COMPLETED") {
         current.steps.forEach(s => s.status = "done");
-      } else if (nextState === "FAILED") {
+      } else if (nextState === "FAILED" || nextState === "INCOMPLETE") {
         current.steps.forEach(s => {
           if (s.status === "active") s.status = "pending";
         });
-        current.steps.push({ label: `Execution failed: ${label}`, status: "pending" });
+        current.steps.push({ label: `${nextState === "INCOMPLETE" ? "Needs continuation" : "Execution failed"}: ${label}`, status: "pending" });
+      } else if (nextState === "SKIPPED") {
+        current.steps.forEach(s => {
+          if (s.status === "active") s.status = "pending";
+        });
+        current.steps.push({ label: `Skipped: ${label}`, status: "pending" });
       } else if (step) {
         const existing = current.steps.find(s => s.label === step.label);
         if (existing) {
@@ -251,8 +303,8 @@ export class WorkerLifecycleTracker {
       }
       
       current.steps = this.capSteps(current.steps);
-      this.workers.set(agentId, current);
-      this.pendingTransitions.delete(agentId);
+      this.workers.set(key, current);
+      this.pendingTransitions.delete(key);
       this.notify();
     };
 
@@ -261,12 +313,12 @@ export class WorkerLifecycleTracker {
     } else {
       const delay = this.transitionController.getDelayRemaining(w.lastStateChange);
       const timeout = setTimeout(transition, delay);
-      this.pendingTransitions.set(agentId, { nextState, label, timeout });
+      this.pendingTransitions.set(key, { nextState, label, timeout });
     }
   }
 
-  public updateProgress(agentId: string, elapsedMs: number) {
-    const w = this.workers.get(agentId);
+  public updateProgress(agentId: string, elapsedMs: number, dispatchId?: string) {
+    const w = this.workers.get(this.keyFor(agentId, dispatchId));
     if (w) {
       w.elapsedMs = elapsedMs;
       this.notify();
@@ -285,17 +337,18 @@ export class WorkerLifecycleTracker {
     const now = Date.now();
     let changed = false;
     for (const w of this.workers.values()) {
-      if (w.state === "COMPLETED" || w.state === "FAILED" || w.state === "INTERRUPTED") continue;
+      if (w.state === "COMPLETED" || w.state === "FAILED" || w.state === "INCOMPLETE" || w.state === "SKIPPED" || w.state === "INTERRUPTED") continue;
       // A debounced terminal transition (the 800ms minimum-dwell delay) may still
       // be queued — honour it rather than clobbering a worker that actually
       // finished/failed with an "interrupted" verdict.
-      const pending = this.pendingTransitions.get(w.agentId);
+      const key = this.keyFor(w.agentId, w.dispatchId);
+      const pending = this.pendingTransitions.get(key);
       if (pending) {
         clearTimeout(pending.timeout);
-        this.pendingTransitions.delete(w.agentId);
+        this.pendingTransitions.delete(key);
       }
       const terminal: WorkerState =
-        pending && (pending.nextState === "COMPLETED" || pending.nextState === "FAILED")
+        pending && (pending.nextState === "COMPLETED" || pending.nextState === "FAILED" || pending.nextState === "INCOMPLETE" || pending.nextState === "SKIPPED")
           ? pending.nextState
           : "INTERRUPTED";
       w.state = terminal;

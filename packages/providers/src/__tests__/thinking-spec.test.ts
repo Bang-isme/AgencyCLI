@@ -29,7 +29,7 @@ describe("getModelSpec", () => {
   it("returns spec for known models", () => {
     const spec = getModelSpec("deepseek-v4-pro");
     expect(spec.maxOutputTokens).toBe(384000);
-    expect(spec.thinkingType).toBe("none");
+    expect(spec.thinkingType).toBe("effort");
   });
 
   it("returns sensible defaults for unknown models", () => {
@@ -95,6 +95,40 @@ describe("getModelSpec", () => {
     // Standard raw numbers in name
     const specRaw32k = getModelSpec("provider/custom-model-32768");
     expect(specRaw32k.contextWindow).toBe(32_768);
+
+    // GLM-5.2 family fallback and exact registry matches
+    const specGlm52 = getModelSpec("z-ai/glm-5.2-free");
+    expect(specGlm52.contextWindow).toBe(1_000_000);
+    expect(specGlm52.maxOutputTokens).toBe(131072);
+    expect(specGlm52.thinkingType).toBe("effort");
+    expect(specGlm52.effortLevels).toEqual(["low", "medium", "high", "max"]);
+    expect(specGlm52.freeRateLimit).toEqual({ rpm: 15, tpm: 1_000_000 });
+
+    // Minimax and DeepSeek v4 models
+    const specM3 = getModelSpec("minimax-m3");
+    expect(specM3.contextWindow).toBe(1_000_000);
+    expect(specM3.maxOutputTokens).toBe(8192);
+    expect(specM3.thinkingType).toBe("effort");
+
+    const specM27 = getModelSpec("minimax-m2.7");
+    expect(specM27.contextWindow).toBe(204_800);
+    expect(specM27.maxOutputTokens).toBe(131072);
+    expect(specM27.thinkingType).toBe("none");
+
+    const specDsV4Flash = getModelSpec("deepseek-v4-flash");
+    expect(specDsV4Flash.contextWindow).toBe(1_048_576);
+    expect(specDsV4Flash.thinkingType).toBe("effort");
+
+    const specDsV4Pro = getModelSpec("deepseek-v4-pro");
+    expect(specDsV4Pro.contextWindow).toBe(1_048_576);
+    expect(specDsV4Pro.thinkingType).toBe("effort");
+
+    // Provider-aware rate limiting checks
+    const specNvidiaModelDirect = getModelSpec("nvidia/minimax-m3", "nvidia");
+    expect(specNvidiaModelDirect.freeRateLimit).toEqual({ rpm: 5, tpm: 200_000 });
+
+    const specNvidiaModelOnOpenRouter = getModelSpec("nvidia/minimax-m3", "openrouter");
+    expect(specNvidiaModelOnOpenRouter.freeRateLimit).toBeUndefined();
   });
 });
 

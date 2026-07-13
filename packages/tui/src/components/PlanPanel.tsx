@@ -30,6 +30,61 @@ function statusColor(status: string, theme: ThemeTokens): string {
   return theme.muted;
 }
 
+export function selectPlanRows(
+  todos: PlanTodo[],
+  maxVisible?: number,
+  compact = true
+): { rows: Array<{ todo: PlanTodo; index: number }>; aboveCount: number; belowCount: number; truncated: boolean } {
+  const total = todos.length;
+  if (total === 0) return { rows: [], aboveCount: 0, belowCount: 0, truncated: false };
+
+  const cap = Math.max(1, Math.min(maxVisible && maxVisible > 0 ? maxVisible : (compact ? 4 : total), compact ? 4 : total));
+  const inProgress = todos.findIndex((t) => t.status === "in_progress");
+  const firstUnfinished = todos.findIndex((t) => t.status !== "completed");
+  const focus = inProgress >= 0 ? inProgress : Math.max(0, firstUnfinished);
+
+  if (!compact) {
+    const truncated = total > cap;
+    const start = truncated ? Math.max(0, Math.min(focus - 1, total - cap)) : 0;
+    const end = Math.min(total, start + cap);
+    return {
+      rows: todos.slice(start, end).map((todo, offset) => ({ todo, index: start + offset })),
+      aboveCount: start,
+      belowCount: total - end,
+      truncated,
+    };
+  }
+
+  const indices: number[] = [];
+  const add = (idx: number) => {
+    if (idx >= 0 && idx < total && !indices.includes(idx) && indices.length < cap) {
+      indices.push(idx);
+    }
+  };
+
+  for (let i = focus - 1; i >= 0; i--) {
+    if (todos[i]!.status === "completed") {
+      add(i);
+      break;
+    }
+  }
+  add(focus);
+  for (let i = focus + 1; i < total && indices.length < cap; i++) {
+    if (todos[i]!.status !== "completed") add(i);
+  }
+  for (let i = focus + 1; i < total && indices.length < cap; i++) add(i);
+
+  indices.sort((a, b) => a - b);
+  const first = indices[0] ?? 0;
+  const last = indices[indices.length - 1] ?? -1;
+  return {
+    rows: indices.map((index) => ({ todo: todos[index]!, index })),
+    aboveCount: first,
+    belowCount: Math.max(0, total - last - 1),
+    truncated: indices.length < total,
+  };
+}
+
 /**
  * The live plan / todo list for the current turn, driven by the `plan:updated`
  * event the `update_plan` tool publishes. Each item's status is exactly what the
@@ -42,6 +97,7 @@ export const PlanPanel = memo(function PlanPanel({
   todos,
   theme,
   maxVisible,
+  compact = true,
 }: {
   todos: PlanTodo[];
   theme: ThemeTokens;
@@ -52,24 +108,12 @@ export const PlanPanel = memo(function PlanPanel({
    * the bottom, so a "0/6" plan showed only 3-4 rows).
    */
   maxVisible?: number;
+  compact?: boolean;
 }) {
   if (todos.length === 0 || todos.every((t) => t.status === "completed")) return null;
   const total = todos.length;
   const done = todos.filter((t) => t.status === "completed").length;
-
-  // Window the list when it exceeds the budget, anchored so the active (or
-  // first unfinished) step stays visible — completed steps scroll off the top.
-  const cap = maxVisible && maxVisible > 0 ? maxVisible : total;
-  const truncated = total > cap;
-  let start = 0;
-  if (truncated) {
-    const inProgress = todos.findIndex((t) => t.status === "in_progress");
-    const focus = inProgress >= 0 ? inProgress : Math.max(0, todos.findIndex((t) => t.status !== "completed"));
-    start = Math.max(0, Math.min(focus - 1, total - cap));
-  }
-  const end = Math.min(total, start + cap);
-  const aboveCount = start;
-  const belowCount = total - end;
+  const { rows, aboveCount, belowCount, truncated } = selectPlanRows(todos, maxVisible, compact);
 
   return (
     <Box
@@ -81,14 +125,16 @@ export const PlanPanel = memo(function PlanPanel({
       width="100%"
       overflow="hidden"
     >
-      <Text color={theme.muted}>
-        Plan{"  "}
-        <Text color={done === total ? theme.success : theme.accent}>
-          {done}/{total}
+      <Box flexDirection="row" marginBottom={0}>
+        <Text color={theme.muted} bold>
+          Plan{"  "}
+          <Text color={done === total ? theme.success : theme.accent} bold={false}>
+            {done}/{total}
+          </Text>
         </Text>
-      </Text>
-      {todos.slice(start, end).map((t, i) => (
-        <Box key={start + i} flexDirection="row" overflow="hidden">
+      </Box>
+      {rows.map(({ todo: t, index }) => (
+        <Box key={index} flexDirection="row" overflow="hidden" marginLeft={1}>
           <Text color={statusColor(t.status, theme)}>{statusGlyph(t.status)} </Text>
           <Box flexGrow={1} overflow="hidden">
             <Text
@@ -102,10 +148,12 @@ export const PlanPanel = memo(function PlanPanel({
         </Box>
       ))}
       {truncated ? (
-        <Text color={theme.muted} dimColor>
-          {aboveCount > 0 ? `↑ ${aboveCount} done  ` : ""}
-          {belowCount > 0 ? `↓ ${belowCount} more` : ""}
-        </Text>
+        <Box marginLeft={1}>
+          <Text color={theme.muted} dimColor>
+            {aboveCount > 0 ? `↑ ${aboveCount} done  ` : ""}
+            {belowCount > 0 ? `↓ ${belowCount} more` : ""}
+          </Text>
+        </Box>
       ) : null}
     </Box>
   );

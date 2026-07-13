@@ -17,5 +17,21 @@ export function isErrorResult(result: string): boolean {
 
 /** A command/dispatch result whose reported exit code is non-zero. */
 export function isNonZeroExitResult(result: string): boolean {
-  return /^Exit Code:\s*[1-9]/.test(result);
+  const match = /^Exit Code:\s*(-?\d+)/.exec(result);
+  return match ? Number.parseInt(match[1]!, 10) !== 0 : false;
+}
+
+/** Grep/search tools that succeeded with zero matches — not a failure. */
+export function isBenignEmptyResult(result: string): boolean {
+  return (
+    /^No matches found\b/i.test(result) ||
+    /^No files found\b/i.test(result) ||
+    /^Found 0 match/i.test(result)
+  );
+}
+
+/** Whether a tool result should count as failure for the circuit breaker. */
+export function toolResultCountsAsFailure(result: string): boolean {
+  if (isBenignEmptyResult(result)) return false;
+  return isErrorResult(result) || isNonZeroExitResult(result);
 }

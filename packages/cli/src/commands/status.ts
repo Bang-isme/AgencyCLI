@@ -8,6 +8,7 @@ import {
   loadRuntimeState,
   type RuntimeState,
   EventBus,
+  getWorkspaceReadiness,
 } from "@agency/core";
 import { resolveProjectRoot } from "../resolve-project.js";
 
@@ -28,6 +29,7 @@ interface StatusReport {
     recoverable: ReturnType<typeof discoverRecoverableTasks>;
   };
   agents: ReturnType<typeof getAgentRegistrySnapshot>;
+  readiness: Awaited<ReturnType<typeof getWorkspaceReadiness>>;
   /**
    * Journal-derived RuntimeState (K1). Only present when `runtimeState` is on, so
    * the report shape (and `--json`) is byte-identical to legacy when the flag is off.
@@ -35,7 +37,7 @@ interface StatusReport {
   runtime?: RuntimeState;
 }
 
-function buildReport(projectRoot: string): StatusReport {
+async function buildReport(projectRoot: string): Promise<StatusReport> {
   const flags = getRuntimeFlags();
   const bus = EventBus.getInstance();
   const checkpoints = listCheckpoints(projectRoot);
@@ -66,6 +68,7 @@ function buildReport(projectRoot: string): StatusReport {
       recoverable: discoverRecoverableTasks(projectRoot),
     },
     agents: getAgentRegistrySnapshot(),
+    readiness: await getWorkspaceReadiness(projectRoot),
   };
   // K1: fold the durable journal into RuntimeState (read-only). Gated so legacy
   // status output stays byte-identical apart from the flag row.
@@ -126,6 +129,11 @@ export function buildFlagRows(f: Flags): { label: string; value: string; keys: (
     { label: "Auto-expand thinking", value: f.autoExpandThinking ? "on (expand live thought while streaming, collapse when done)" : "off (manual ctrl+o only)", keys: ["autoExpandThinking"] },
     { label: "Worker panel lifecycle", value: f.workerPanelLifecycle ? "on (finalize orphans, reset between turns, collapse when idle)" : "off (verbatim always-on panel)", keys: ["workerPanelLifecycle"] },
     { label: "Mouse support", value: f.mouseSupport ? "on (click/drag/hover + owned wheel)" : "off (keyboard-only, native wheel)", keys: ["mouseSupport"] },
+    { label: "Forced delegation synthesis", value: onOff(f.forcedDelegationSynthesis), keys: ["forcedDelegationSynthesis"] },
+    { label: "Parent parallel orchestration", value: onOff(f.parentParallelOrchestration), keys: ["parentParallelOrchestration"] },
+    { label: "Skip subagent verify on parallel", value: onOff(f.skipSubagentVerifyOnParallel), keys: ["skipSubagentVerifyOnParallel"] },
+    { label: "Subagent always isolated", value: onOff(f.subagentAlwaysIsolated), keys: ["subagentAlwaysIsolated"] },
+    { label: "Subagent execution budget", value: f.subagentExecutionBudgetMs > 0 ? `${f.subagentExecutionBudgetMs}ms` : "off", keys: ["subagentExecutionBudgetMs"] },
   ];
 }
 
@@ -134,6 +142,12 @@ function printHuman(r: StatusReport): void {
   const reset = "\x1b[0m";
   const dim = "\x1b[90m";
   console.log(`${bold}AgencyCLI runtime status${reset}  ${dim}(${r.projectRoot})${reset}`);
+  console.log("");
+  console.log(`  ${bold}Readiness${reset}`);
+  for (const check of r.readiness) {
+    const marker = check.state === "ready" ? "✓" : check.state === "attention" ? "!" : "○";
+    console.log(`    ${marker} ${check.label.padEnd(16)} ${check.detail}${check.recovery ? ` ${dim}→ ${check.recovery}${reset}` : ""}`);
+  }
   console.log("");
   console.log(`  ${bold}Profile${reset}              ${r.profile}`);
   for (const row of buildFlagRows(r.flags)) {
@@ -216,9 +230,9 @@ export function registerStatus(program: Command) {
     .description("Inspect runtime state: flags, events, tasks, and resumable work")
     .option("--project-root <path>", "Project root directory")
     .option("--json", "Emit machine-readable JSON")
-    .action((options: { projectRoot?: string; json?: boolean }) => {
+    .action(async (options: { projectRoot?: string; json?: boolean }) => {
       const projectRoot = resolveProjectRoot(options.projectRoot);
-      const report = buildReport(projectRoot);
+      const report = await buildReport(projectRoot);
       if (options.json) {
         console.log(JSON.stringify(report, null, 2));
       } else {

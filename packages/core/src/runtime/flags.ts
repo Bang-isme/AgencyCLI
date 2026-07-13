@@ -34,6 +34,12 @@ export interface RuntimeFlags {
   maxCrashLoops: number;
   /** Per-agent wall-clock deadline in ms (0 = disabled). Aborts a hung dispatch. */
   executionBudgetMs: number;
+  /**
+   * Wall-clock deadline (ms) for specialist subagent dispatches. When 0, falls
+   * back to {@link executionBudgetMs}. Subagents often need longer than the main
+   * turn (multi-file edits, verify rounds, thinking gaps) — default 10min hardened.
+   */
+  subagentExecutionBudgetMs: number;
   /** Max agents running concurrently in a parallel dispatch. */
   maxParallelAgents: number;
   /** Run a memory GC/dedup/quota maintenance pass to bound store growth. */
@@ -85,6 +91,14 @@ export interface RuntimeFlags {
    * on in hardened.
    */
   contextCompaction: boolean;
+  /** Use parent-orchestrated `dispatch_parallel` for multi-task delegation (OpenCode-style). */
+  parentParallelOrchestration: boolean;
+  /** After `dispatch_parallel`, force a read-only synthesis turn before answering the user. */
+  forcedDelegationSynthesis: boolean;
+  /** Route single `dispatch_subagent` through isolated workspace (not shared root). */
+  subagentAlwaysIsolated: boolean;
+  /** Skip per-worker verify during parallel batch; parent verifies after merge. */
+  skipSubagentVerifyOnParallel: boolean;
   /**
    * Record a per-session {@link DeterministicExecutionTrace} (turn timings +
    * tool I/O) to `.agency/traces/` for behaviour-level replay regression
@@ -424,6 +438,12 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
       const n = parseInt(raw, 10);
       return Number.isFinite(n) && n >= 0 ? n : hardened ? 300_000 : 0;
     })(),
+    subagentExecutionBudgetMs: (() => {
+      const raw = env.AGENCY_SUBAGENT_EXECUTION_BUDGET_MS;
+      if (raw === undefined || raw === "") return hardened ? 600_000 : 0;
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) && n >= 0 ? n : hardened ? 600_000 : 0;
+    })(),
     maxParallelAgents: parseInt10(env.AGENCY_MAX_PARALLEL_AGENTS, 3),
     // Behaviour-changing (opens the memory DB at startup) → hardened-only default.
     memoryGc: parseBool(env.AGENCY_MEMORY_GC, hardened),
@@ -464,6 +484,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // extra summarisation call when it triggers) → off in legacy (verbatim
     // history), on in hardened.
     contextCompaction: parseBool(env.AGENCY_CONTEXT_COMPACTION, hardened),
+    parentParallelOrchestration: parseBool(env.AGENCY_PARENT_PARALLEL_ORCHESTRATION, hardened),
+    forcedDelegationSynthesis: parseBool(env.AGENCY_FORCED_DELEGATION_SYNTHESIS, hardened),
+    subagentAlwaysIsolated: parseBool(env.AGENCY_SUBAGENT_ALWAYS_ISOLATED, hardened),
+    skipSubagentVerifyOnParallel: parseBool(env.AGENCY_SKIP_SUBAGENT_VERIFY_PARALLEL, hardened),
     // Behaviour-recording for §2.5 replay regression; per-tool overhead → opt-in
     // (off by default even in hardened, like verifyTests).
     traceRecord: parseBool(env.AGENCY_TRACE_RECORD, false),
@@ -555,9 +579,10 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Additive read-only (folds the durable journal into a status section) → off
     // in legacy (status byte-identical apart from the flag row), on in hardened.
     runtimeState: parseBool(env.AGENCY_RUNTIME_STATE, hardened),
-    // TUI-render only: auto-expand the live thought while streaming, auto-collapse
-    // when it ends → off in legacy (manual ctrl+o only, byte-identical), on in hardened.
-    autoExpandThinking: parseBool(env.AGENCY_AUTO_EXPAND_THINKING, hardened),
+    // TUI-render only: reasoning remains a compact, explicit disclosure by default.
+    // A large live thought stream competes with the action timeline and pushes the
+    // composer out of view. Operators can opt into it with AGENCY_AUTO_EXPAND_THINKING.
+    autoExpandThinking: parseBool(env.AGENCY_AUTO_EXPAND_THINKING, false),
     // TUI-render only: lifecycle-correct the Workers panel → on by default in BOTH
     // profiles (user-reported breakage: fake "running | 1014s" orphans + the panel
     // never clearing). Opt out with AGENCY_WORKER_LIFECYCLE=0 to restore the legacy

@@ -34,7 +34,7 @@ export function RouteOverlay({
 }: RouteOverlayProps) {
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 72, 40);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
 
   // Step 1: Enter prompt (if lastPrompt is null). Step 2: Select intent.
@@ -149,7 +149,7 @@ export function RouteOverlay({
             <Text color={theme.text}>Please enter the sample prompt or keywords you want to train:</Text>
           </Box>
           <Box flexDirection="row" marginTop={1} borderStyle="single" borderColor={theme.dimBorder} paddingX={1} width="100%">
-            <Text color={theme.accent}>▸ </Text>
+            <Text color={theme.accent}>{"> "}</Text>
             <Text color={theme.text} bold>{typedPrompt}</Text>
             <Text color={theme.accent}>█</Text>
           </Box>
@@ -174,7 +174,7 @@ export function RouteOverlay({
             <Box flexDirection="column" marginY={1} overflow="hidden">
               <Text color={theme.accent} bold>✏️ Enter custom intent label:</Text>
               <Box flexDirection="row" marginTop={1}>
-                <Text color={theme.accent}>▸ </Text>
+                <Text color={theme.accent}>{"> "}</Text>
                 <Text color={theme.text} bold>{customIntent}</Text>
                 <Text color={theme.accent}>█</Text>
               </Box>
@@ -190,7 +190,7 @@ export function RouteOverlay({
                   <Box key={item.name} flexDirection="row" alignItems="center" height={1} overflow="hidden">
                     <Box width={3}>
                       <Text color={sel ? theme.accent : theme.muted}>
-                        {sel ? "▸" : " "}
+                        {sel ? ">" : " "}
                       </Text>
                     </Box>
                     <Box width={12}>

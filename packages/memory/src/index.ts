@@ -10,6 +10,7 @@ export {
   RetrievalProfile,
   StorageTelemetry,
   Explanation,
+  RevisionMismatch,
 } from "./types.js";
 
 export {

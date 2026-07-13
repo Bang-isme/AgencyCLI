@@ -3,6 +3,7 @@ import { getDb, closeAllDbs } from "../db.js";
 import { EpisodicStore } from "../episodic-store.js";
 import { WriteQueue } from "../write-queue.js";
 import { Supervisor } from "../supervisor.js";
+import { RevisionMismatch } from "../types.js";
 
 describe("Database Concurrency & Queue Stress Tests", () => {
   it("should serialize writes and prevent lock conflicts during concurrent transactions", async () => {
@@ -41,6 +42,86 @@ describe("Database Concurrency & Queue Stress Tests", () => {
     for (let i = 0; i < count; i++) {
       expect(episodes[i]!.turn_index).toBe(i);
     }
+
+    closeAllDbs();
+  });
+
+  it("should throw RevisionMismatch on incorrect expected revision and retry via safeWriteAsync", async () => {
+    const backend = getDb(":memory:", ":memory:");
+    const store = new EpisodicStore(backend);
+    const supervisor = new Supervisor(backend);
+
+    // Initial episode
+    store.addEpisode("session-occ", "Initial Goal", 0, "run", "Initial Content");
+
+    // The current revision in DB should be 1.
+    // Try to insert with expectedRevision = 0 (mismatch).
+    expect(() => {
+      store.addEpisode(
+        "session-occ",
+        "Goal 2",
+        1,
+        "run",
+        "Content 2",
+        {},
+        "default",
+        "episodic",
+        0 // expectedRevision
+      );
+    }).toThrow(RevisionMismatch);
+
+    // Try to insert with expectedRevision = 1 (match).
+    // This should succeed.
+    store.addEpisode(
+      "session-occ",
+      "Goal 2",
+      1,
+      "run",
+      "Content 2",
+      {},
+      "default",
+      "episodic",
+      1 // expectedRevision
+    );
+
+    // Now test retries with safeWriteAsync.
+    let attemptCount = 0;
+    const staleRevision = 2;
+
+    await supervisor.safeWriteAsync(() => {
+      attemptCount++;
+      if (attemptCount === 1) {
+        // First attempt: try to insert with stale revision 1, but actual is 2.
+        // This will throw RevisionMismatch.
+        store.addEpisode(
+          "session-occ",
+          "Goal A",
+          2,
+          "run",
+          `Content A (attempt ${attemptCount})`,
+          {},
+          "default",
+          "episodic",
+          staleRevision - 1
+        );
+      } else {
+        // Second attempt: read correct max revision (2) and succeed.
+        const currentMaxRev = store.getEpisodes("session-occ").length;
+        store.addEpisode(
+          "session-occ",
+          "Goal A",
+          2,
+          "run",
+          `Content A (attempt ${attemptCount})`,
+          {},
+          "default",
+          "episodic",
+          currentMaxRev
+        );
+      }
+    }, 5, 20);
+
+    expect(attemptCount).toBe(2);
 
     closeAllDbs();
   });

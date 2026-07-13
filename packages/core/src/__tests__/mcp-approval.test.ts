@@ -36,6 +36,14 @@ describe("MCP tools in the approval gate", () => {
       execute: async () => "MCP_OK",
       // The marker the MCP client attaches; the gate keys off this.
       mcpSchema: { type: "object" },
+      metadata: {
+        semanticAction: "Run fake MCP tool",
+        targetExtractor: () => "fake",
+        resultSummarizer: () => "fake",
+        risk: "medium",
+        prerequisite: "none",
+        recovery: "Try again.",
+      },
     } as any);
   }
 

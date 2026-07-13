@@ -6,11 +6,12 @@ import { createNvidiaProvider } from "./nvidia.js";
 import { createOpenAiProvider } from "./openai.js";
 import { createOpenRouterProvider } from "./openrouter.js";
 import { createOpenAiCompatibleProvider } from "./adapters/openai-compatible.js";
-import type { AgencyConfig, LlmProvider, ProviderId } from "./types.js";
+import type { AgencyConfig, LlmProvider, ProviderId, Transport } from "./types.js";
+import { FetchTransport } from "./utils/transport.js";
 
 type ProviderFactory = (
   profile: { apiKey?: string; baseUrl?: string; model?: string },
-  fetchImpl?: typeof fetch
+  transport?: Transport
 ) => LlmProvider;
 
 const FACTORIES: Record<string, ProviderFactory> = {
@@ -37,9 +38,10 @@ export function createProvider(
     ...profile,
     apiKey: resolveApiKey(profile),
   };
+  const transport = new FetchTransport(fetchImpl);
   const factory = FACTORIES[id];
   if (factory) {
-    return factory(resolved, fetchImpl);
+    return factory(resolved, transport);
   }
 
   if (!resolved.baseUrl) {
@@ -52,7 +54,7 @@ export function createProvider(
     apiKey: resolved.apiKey,
     baseUrl: resolved.baseUrl,
     defaultModel: resolved.model ?? "gpt-4o",
-    fetchImpl,
+    transport,
   });
 }
 

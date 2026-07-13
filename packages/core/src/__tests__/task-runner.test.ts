@@ -240,4 +240,38 @@ describe("runPlan checkpoints", () => {
     expect(resumedWithOverrides.maxAttempts).toBe(9);
     expect(resumedWithOverrides.gateEvery).toBe(4);
   });
+
+  it("transitions task to FAILED when timeoutMs is exceeded", async () => {
+    projectRoot = makeTempProject();
+    const planPath = join(projectRoot, "plan.md");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(planPath, SAMPLE_PLAN, "utf8");
+
+    const runId = "timeout-task-test";
+    saveCheckpoint(projectRoot, {
+      id: runId,
+      planPath,
+      currentTask: 2,
+      completed: [1],
+      status: "paused",
+      updatedAt: new Date().toISOString(),
+      harness: false,
+      dagState: {
+        nodes: {
+          "task-1": { state: "COMPLETED", attempts: 1 },
+          "task-2": { state: "PENDING", attempts: 0, timeoutMs: 10 },
+          "task-3": { state: "PENDING", attempts: 0 }
+        }
+      }
+    });
+
+    const planRunPromise = runPlan(projectRoot, "", {
+      taskId: runId,
+      onTask: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      },
+    });
+
+    await expect(planRunPromise).rejects.toThrow("timeout limit");
+  });
 });

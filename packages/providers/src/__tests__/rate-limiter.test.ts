@@ -137,4 +137,165 @@ describe("SmartRateLimiter", () => {
     expect(result4).toBe("done-4");
     expect(calls).toBe(2);
   });
+
+  it("recovers adapted RPM limit on successful recordUsage and resets after 30s", async () => {
+    vi.useFakeTimers();
+    try {
+      const limiter = new SmartRateLimiter({ rpm: 10 });
+      expect(limiter.getAdaptedRpm()).toBe(10);
+
+      // Trigger 429 to lower the limit
+      limiter.recordRateLimit();
+      expect(limiter.getAdaptedRpm()).toBe(8);
+
+      // Record successful usage: adaptedRpm should increase by 1
+      limiter.recordUsage(100);
+      expect(limiter.getAdaptedRpm()).toBe(9);
+
+      // Trigger 429 to lower the limit again
+      limiter.recordRateLimit();
+      expect(limiter.getAdaptedRpm()).toBe(7);
+
+      // Move forward by 10s: should NOT reset yet
+      vi.advanceTimersByTime(10_000);
+      await limiter.waitForSlot(0);
+      expect(limiter.getAdaptedRpm()).toBe(7);
+
+      // Move forward by another 25s (total 35s since last 429): should reset to config.rpm
+      vi.advanceTimersByTime(25_000);
+      await limiter.waitForSlot(0);
+      expect(limiter.getAdaptedRpm()).toBe(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe("R4 Upgrades: updateLimitsFromHeaders", () => {
+    it("parses Anthropic rate limit headers and updates limits", () => {
+      const limiter = new SmartRateLimiter({ rpm: 10, tpm: 1000 });
+      const headers = new Map<string, string>([
+        ["anthropic-ratelimit-requests-limit", "150"],
+        ["anthropic-ratelimit-tokens-limit", "5000"],
+      ]);
+      limiter.updateLimitsFromHeaders(headers);
+      
+      expect(limiter.getAdaptedRpm()).toBe(150);
+      limiter.recordUsage(500); // 500 / 5000 = 10%
+      expect(limiter.getUtilization().tpmPercent).toBe(10);
+    });
+
+    it("parses OpenAI/standard rate limit headers and updates limits", () => {
+      const limiter = new SmartRateLimiter({ rpm: 10, tpm: 1000 });
+      const headers = {
+        "X-RateLimit-Limit-Requests": "80",
+        "x-ratelimit-limit-tokens": "2000",
+      };
+      limiter.updateLimitsFromHeaders(headers);
+      
+      expect(limiter.getAdaptedRpm()).toBe(80);
+      limiter.recordUsage(200); // 200 / 2000 = 10%
+      expect(limiter.getUtilization().tpmPercent).toBe(10);
+    });
+
+    it("limits adaptedRpm when limits are adjusted downwards", () => {
+      const limiter = new SmartRateLimiter({ rpm: 50 });
+      expect(limiter.getAdaptedRpm()).toBe(50);
+      
+      const headers = {
+        "x-ratelimit-limit-requests": "30",
+      };
+      limiter.updateLimitsFromHeaders(headers);
+      expect(limiter.getAdaptedRpm()).toBe(30);
+    });
+  });
+
+  describe("R4 Upgrades: retry-after header parsing and blocking", () => {
+    it("respects numeric retry-after in seconds", async () => {
+      vi.useFakeTimers();
+      try {
+        const limiter = new SmartRateLimiter({
+          rpm: 10,
+          retryMaxAttempts: 1,
+          retryBaseDelayMs: 1,
+        });
+
+        let calls = 0;
+
+        const promise = limiter.retryWithBackoff(async () => {
+          calls++;
+          if (calls === 1) {
+            const err = new Error("429 Rate Limit") as any;
+            err.status = 429;
+            err.headers = {
+              "retry-after": "5", // 5 seconds
+            };
+            throw err;
+          }
+          return "success";
+        });
+
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const result = await promise;
+        expect(result).toBe("success");
+        expect(calls).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("respects HTTP date format in retry-after", async () => {
+      vi.useFakeTimers();
+      try {
+        const limiter = new SmartRateLimiter({
+          rpm: 10,
+          retryMaxAttempts: 1,
+          retryBaseDelayMs: 1,
+        });
+
+        // Set system time to a clean second boundary
+        const now = 1718987700000;
+        vi.setSystemTime(new Date(now));
+        
+        // 2 seconds in the future
+        const targetTime = new Date(now + 2000);
+        const httpDateStr = targetTime.toUTCString();
+        let calls = 0;
+
+        const promise = limiter.retryWithBackoff(async () => {
+          calls++;
+          if (calls === 1) {
+            const err = new Error("429 Rate Limit") as any;
+            err.status = 429;
+            err.headers = new Map([
+              ["retry-after", httpDateStr],
+            ]);
+            throw err;
+          }
+          return "success";
+        });
+
+        await vi.advanceTimersByTimeAsync(2000);
+
+        const result = await promise;
+        expect(result).toBe("success");
+        expect(calls).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("R4 Upgrades: Global limiter registry", () => {
+    it("registers the limiter in global registry when providerId is passed", () => {
+      const limiter = new SmartRateLimiter({
+        rpm: 10,
+        providerId: "test-provider",
+      });
+
+      const registry = (globalThis as any).agencyProviderLimiters;
+      expect(registry).toBeDefined();
+      expect(registry.get("test-provider")).toBe(limiter);
+    });
+  });
 });

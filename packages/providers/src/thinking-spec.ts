@@ -31,34 +31,31 @@ export interface ModelSpec {
   capabilities?: CatalogCapabilities;
 }
 
+function mergeConfigOverride(model: string, o: import("./types.js").ModelOverride): ModelSpec {
+  const key = matchModelKey(model, MODEL_REGISTRY_KEYS);
+  const registry = key ? MODEL_REGISTRY[key]! : null;
+  return {
+    contextWindow: o.contextWindow ?? registry?.contextWindow ?? 128_000,
+    maxOutputTokens: o.maxOutputTokens ?? registry?.maxOutputTokens ?? 4096,
+    thinkingType: o.thinkingType ?? registry?.thinkingType ?? "none",
+    effortLevels: o.effortLevels ?? registry?.effortLevels,
+    effortDescriptions: o.effortDescriptions ?? registry?.effortDescriptions,
+    specSource: "override",
+  };
+}
+
 function getOverrideSpec(model: string): ModelSpec | null {
   try {
     const config = loadAgencyConfig();
     if (config.modelOverrides) {
       // 1. Exact match
       if (config.modelOverrides[model]) {
-        const o = config.modelOverrides[model]!;
-        return {
-          contextWindow: o.contextWindow ?? 128_000,
-          maxOutputTokens: o.maxOutputTokens ?? 4096,
-          thinkingType: o.thinkingType ?? "none",
-          effortLevels: o.effortLevels,
-          effortDescriptions: o.effortDescriptions,
-          specSource: "override",
-        };
+        return mergeConfigOverride(model, config.modelOverrides[model]!);
       }
       // 2. Base match
       const base = model.split("/").pop() ?? model;
       if (config.modelOverrides[base]) {
-        const o = config.modelOverrides[base]!;
-        return {
-          contextWindow: o.contextWindow ?? 128_000,
-          maxOutputTokens: o.maxOutputTokens ?? 4096,
-          thinkingType: o.thinkingType ?? "none",
-          effortLevels: o.effortLevels,
-          effortDescriptions: o.effortDescriptions,
-          specSource: "override",
-        };
+        return mergeConfigOverride(model, config.modelOverrides[base]!);
       }
       // 3. Substring match (avoid loose matches with provider names or short keys)
       const providers = ["openai", "anthropic", "google", "openrouter", "nvidia", "local"];
@@ -67,14 +64,7 @@ function getOverrideSpec(model: string): ModelSpec | null {
         const normalizedKey = key.toLowerCase();
         const normalizedModel = model.toLowerCase();
         if (normalizedModel.includes(normalizedKey) || normalizedKey.includes(normalizedModel)) {
-          return {
-            contextWindow: o.contextWindow ?? 128_000,
-            maxOutputTokens: o.maxOutputTokens ?? 4096,
-            thinkingType: o.thinkingType ?? "none",
-            effortLevels: o.effortLevels,
-            effortDescriptions: o.effortDescriptions,
-            specSource: "override",
-          };
+          return mergeConfigOverride(model, o);
         }
       }
     }
@@ -122,50 +112,79 @@ function getHeuristicsSpec(model: string): ModelSpec | null {
   }
 
   // Family-based context heuristics if no explicit match is found in model ID
+  let familyDetected = false;
   if (!contextDetected) {
     if (id.includes("gemini-3") || id.includes("gemini-2.5") || id.includes("gemini-2.0")) {
       contextWindow = 1_048_576;
+      familyDetected = true;
     } else if (id.includes("gemini")) {
       contextWindow = 1_000_000;
+      familyDetected = true;
     } else if (id.includes("kimi-2.6") || id.includes("k2.6") || id.includes("kimi-k2.6")) {
       contextWindow = 262_144;
+      familyDetected = true;
     } else if (id.includes("minimax-2.7") || id.includes("minimax-m2.7")) {
       contextWindow = 204_800;
+      familyDetected = true;
     } else if (id.includes("llama-3.1") || id.includes("llama-3.2") || id.includes("llama-3.3") || id.includes("llama3.1") || id.includes("llama3.2") || id.includes("llama3.3")) {
       contextWindow = 131_072;
+      familyDetected = true;
     } else if (id.includes("llama-3") || id.includes("llama3")) {
       contextWindow = 8_192;
+      familyDetected = true;
     } else if (id.includes("claude-3-7") || id.includes("claude-sonnet-4") || id.includes("claude-3.7")) {
       contextWindow = 200_000;
+      familyDetected = true;
     } else if (id.includes("claude-3-5") || id.includes("claude-3.5") || id.includes("claude-3")) {
       contextWindow = 200_000;
+      familyDetected = true;
     } else if (id.includes("deepseek-v4")) {
       contextWindow = 1_048_576;
+      familyDetected = true;
     } else if (id.includes("deepseek")) {
       contextWindow = 128_000;
+      familyDetected = true;
     } else if (id.includes("qwen3")) {
       contextWindow = 1_000_000;
+      familyDetected = true;
     } else if (id.includes("qwen")) {
       contextWindow = 128_000;
+      familyDetected = true;
     } else if (id.includes("kimi") || id.includes("moonshot")) {
       contextWindow = 131_072;
+      familyDetected = true;
     } else if (id.includes("minimax")) {
       contextWindow = 128_000;
+      familyDetected = true;
     } else if (id.includes("gpt-5")) {
       contextWindow = 400_000;
+      familyDetected = true;
     } else if (id.includes("gpt-4.1") || id.includes("gpt-4.5")) {
       contextWindow = 1_048_576;
+      familyDetected = true;
     } else if (id.includes("gpt-4")) {
       contextWindow = 128_000;
+      familyDetected = true;
     } else if (id.includes("gpt-3")) {
       contextWindow = 16_384;
+      familyDetected = true;
     } else if (id.includes("nemotron-4-340b")) {
       contextWindow = 4_096;
+      familyDetected = true;
+    } else if (id.includes("glm-5.2")) {
+      contextWindow = 1_000_000;
+      familyDetected = true;
     } else if (id.includes("glm-5")) {
       contextWindow = 202_752;
+      familyDetected = true;
     } else if (id.includes("glm-4")) {
       contextWindow = 128_000;
+      familyDetected = true;
     }
+  }
+
+  if (!contextDetected && !familyDetected) {
+    return null;
   }
 
   // 2. Reasoning / Thinking capability detection using robust regex
@@ -179,6 +198,11 @@ function getHeuristicsSpec(model: string): ModelSpec | null {
     maxOutputTokens = 65536;
     effortLevels = ["low", "medium", "high"];
     effortDescriptions = ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort"];
+  } else if (id.includes("glm-5.2")) {
+    thinkingType = "effort";
+    maxOutputTokens = 131072;
+    effortLevels = ["low", "medium", "high", "max"];
+    effortDescriptions = ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"];
   } else if (id.includes("gpt-5.5")) {
     thinkingType = "effort";
     maxOutputTokens = 128000;
@@ -371,9 +395,27 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "deepseek-v3.2": { maxOutputTokens: 65536, contextWindow: 131072, thinkingType: "none" },
   "deepseek-v3.2-exp": { maxOutputTokens: 65536, contextWindow: 163840, thinkingType: "none" },
   "deepseek-v3.2-speciale": { maxOutputTokens: 163840, contextWindow: 163840, thinkingType: "none" },
-  "deepseek-v4-flash": { maxOutputTokens: 16384, contextWindow: 1048576, thinkingType: "none" },
-  "deepseek-v4-flash:free": { maxOutputTokens: 384000, contextWindow: 1048576, thinkingType: "none" },
-  "deepseek-v4-pro": { maxOutputTokens: 384000, contextWindow: 1048576, thinkingType: "none" },
+  "deepseek-v4-flash": {
+    maxOutputTokens: 16384,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"]
+  },
+  "deepseek-v4-flash:free": {
+    maxOutputTokens: 384000,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"]
+  },
+  "deepseek-v4-pro": {
+    maxOutputTokens: 384000,
+    contextWindow: 1048576,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"]
+  },
   "deepseek/deepseek-chat": { maxOutputTokens: 8192, contextWindow: 128000, thinkingType: "none" },
   "deepseek/deepseek-chat-v3-0324": { maxOutputTokens: 16384, contextWindow: 163840, thinkingType: "none" },
   "deepseek/deepseek-chat-v3.1": { maxOutputTokens: 32768, contextWindow: 163840, thinkingType: "none" },
@@ -485,6 +527,13 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "glm-5": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
   "glm-5-turbo": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
   "glm-5.1": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
+  "glm-5.2": {
+    maxOutputTokens: 131072,
+    contextWindow: 1000000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"],
+  },
   "glm-5v-turbo": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
   "google/gemini-1.5-flash": { maxOutputTokens: 8192, contextWindow: 1048576, thinkingType: "none" },
   "google/gemini-1.5-pro": { maxOutputTokens: 8192, contextWindow: 2097152, thinkingType: "none" },
@@ -1117,6 +1166,21 @@ export const MODEL_REGISTRY: Record<string, ModelSpec> = {
   "z-ai/glm-5": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
   "z-ai/glm-5-turbo": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
   "z-ai/glm-5.1": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
+  "z-ai/glm-5.2": {
+    maxOutputTokens: 131072,
+    contextWindow: 1000000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"],
+  },
+  "z-ai/glm-5.2-free": {
+    maxOutputTokens: 131072,
+    contextWindow: 1000000,
+    thinkingType: "effort",
+    effortLevels: ["low", "medium", "high", "max"],
+    effortDescriptions: ["Low reasoning effort", "Medium reasoning effort", "High reasoning effort", "Maximum reasoning effort"],
+    freeRateLimit: { rpm: 15, tpm: 1000000 }
+  },
   "z-ai/glm-5v-turbo": { maxOutputTokens: 131072, contextWindow: 202752, thinkingType: "none" },
   "~anthropic/claude-haiku-latest": { maxOutputTokens: 64000, contextWindow: 200000, thinkingType: "none" },
   "~anthropic/claude-opus-latest": { maxOutputTokens: 128000, contextWindow: 1000000, thinkingType: "none" },
@@ -1145,12 +1209,26 @@ export function resolveModelSpec(model: string): ModelSpec | null {
   const override = getOverrideSpec(model);
   if (override) return override;
 
-  // 1–4. exact → strip-prefix → longest-prefix → substring, via the matcher
-  // shared with the catalog (one matching algorithm, not two).
+  return resolveBaselineModelSpec(model);
+}
+
+/** Registry/heuristics spec without user config overrides (for meters + retry trim). */
+export function resolveBaselineModelSpec(model: string): ModelSpec | null {
+  if (!model || typeof model !== "string") return null;
+
   const key = matchModelKey(model, MODEL_REGISTRY_KEYS);
   if (key) return { ...MODEL_REGISTRY[key]! };
 
-  return null;
+  return getHeuristicsSpec(model);
+}
+
+export function getBaselineModelSpec(model: string, providerId?: string): ModelSpec {
+  const resolved = resolveBaselineModelSpec(model);
+  if (resolved) {
+    const copy = { ...resolved, specSource: "registry" as const };
+    return enrichWithCatalog(copy, model, providerId);
+  }
+  return getModelSpec(model, providerId);
 }
 
 /** Get the raw spec or a sensible default. */
@@ -1212,10 +1290,14 @@ export function getModelSpec(model: string, providerId?: string): ModelSpec {
     const copy = { ...resolved };
     copy.specSource = copy.specSource ?? "registry";
     if (!copy.freeRateLimit) {
-      if (model.toLowerCase().includes("gemini")) {
+      const lowerModel = model.toLowerCase();
+      const lowerProv = providerId?.toLowerCase() ?? "";
+      if (lowerModel.includes("gemini") || lowerProv === "google") {
         copy.freeRateLimit = { rpm: 15, tpm: 1_000_000 };
-      } else if (model.toLowerCase().includes("nvidia") || model.toLowerCase().includes("nim")) {
+      } else if (lowerProv === "nvidia" || (lowerModel.includes("nvidia") && !providerId)) {
         copy.freeRateLimit = { rpm: 5, tpm: 200_000 };
+      } else if (lowerModel.includes("free") || lowerModel.includes("zenmux") || lowerProv === "zenmux") {
+        copy.freeRateLimit = { rpm: 15, tpm: 1_000_000 };
       }
     }
     if (model.toLowerCase().includes("minimax") && copy.thinkingType === "effort") {
@@ -1236,15 +1318,21 @@ export function getModelSpec(model: string, providerId?: string): ModelSpec {
   // Heuristics fallback
   const heur = getHeuristicsSpec(model);
   if (heur) {
-    const isNvidia = model.toLowerCase().includes("nvidia") || model.toLowerCase().includes("nim");
-    const isGemini = model.toLowerCase().includes("gemini");
+    const lowerModel = model.toLowerCase();
+    const lowerProv = providerId?.toLowerCase() ?? "";
+    const isNvidia = lowerProv === "nvidia" || (lowerModel.includes("nvidia") && !providerId);
+    const isGemini = lowerModel.includes("gemini") || lowerProv === "google";
+    const isFree = lowerModel.includes("free") || lowerModel.includes("zenmux") || lowerProv === "zenmux";
+
     const copy = {
       ...heur,
       freeRateLimit: isNvidia
         ? { rpm: 5, tpm: 200_000 }
         : isGemini
           ? { rpm: 15, tpm: 1_000_000 }
-          : undefined,
+          : isFree
+            ? { rpm: 15, tpm: 1_000_000 }
+            : undefined,
     };
     if (model.toLowerCase().includes("minimax") && copy.thinkingType === "effort") {
       if (!copy.effortLevels) {
@@ -1261,8 +1349,12 @@ export function getModelSpec(model: string, providerId?: string): ModelSpec {
     return enrichWithCatalog(copy, model, providerId);
   }
 
-  const isNvidia = model.toLowerCase().includes("nvidia") || model.toLowerCase().includes("nim");
-  const isGemini = model.toLowerCase().includes("gemini");
+  const lowerModel = model.toLowerCase();
+  const lowerProv = providerId?.toLowerCase() ?? "";
+  const isNvidia = lowerProv === "nvidia" || (lowerModel.includes("nvidia") && !providerId);
+  const isGemini = lowerModel.includes("gemini") || lowerProv === "google";
+  const isFree = lowerModel.includes("free") || lowerModel.includes("zenmux") || lowerProv === "zenmux";
+
   const copy: ModelSpec = {
     maxOutputTokens: 4096,
     contextWindow: 128_000,
@@ -1272,7 +1364,9 @@ export function getModelSpec(model: string, providerId?: string): ModelSpec {
       ? { rpm: 5, tpm: 200_000 }
       : isGemini
         ? { rpm: 15, tpm: 1_000_000 }
-        : undefined,
+        : isFree
+          ? { rpm: 15, tpm: 1_000_000 }
+          : undefined,
   };
   if (model.toLowerCase().includes("minimax") && copy.thinkingType === "effort") {
     if (!copy.effortLevels) {
@@ -1369,8 +1463,7 @@ export function getModelThinkingConfig(_provider: string, model: string): ModelT
   };
 }
 
-/** Expose registry for context-tracker sync. */
-export function getRegisteredContextWindow(model: string): number | null {
-  const spec = getModelSpec(model);
-  return spec.contextWindow;
+/** Expose catalog baseline for context meters (ignores stale overrides). */
+export function getRegisteredContextWindow(model: string, providerId?: string): number | null {
+  return getBaselineModelSpec(model, providerId).contextWindow;
 }

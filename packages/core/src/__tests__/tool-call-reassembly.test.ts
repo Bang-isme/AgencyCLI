@@ -153,4 +153,32 @@ describe("§8.10 tool-call reassembly across token-limit continuations", () => {
     expect(existsSync(target)).toBe(true);
     expect(readFileSync(target, "utf8")).toBe("PART1PART2");
   });
+
+  it("flag ON (stream): same reassembly when the cut-off is silent (finishReason is 'stop')", async () => {
+    process.env.AGENCY_TOOLCALL_REASSEMBLY = "1";
+    let call = 0;
+    const head = `Writing the file:\n<tool_call name="write_file">\n  <path>silent.txt</path>\n  <content>PART1`;
+    const tail = `PART2</content>\n</tool_call>`;
+    const gen = (opts: any): string => {
+      call += 1;
+      opts.onFinishReason?.("stop");
+      return call === 1 ? head : tail;
+    };
+    mockedGetProvider.mockReturnValue({
+      id: "openrouter",
+      streamComplete: vi.fn(async (_history: any, opts: any) => {
+        opts.onDelta(gen(opts));
+      }),
+      complete: vi.fn(async (_history: any, opts: any) => gen(opts)),
+    } as any);
+
+    await runChatTurnWithStream(
+      { prompt: "write a big file", projectRoot: root, skillsRoot: "/skills", sessionId: "s-silent", maxLoops: 2, noVerify: true },
+      { onRoute: () => {}, onDelta: () => {} }
+    );
+
+    const target = join(root, "silent.txt");
+    expect(existsSync(target)).toBe(true);
+    expect(readFileSync(target, "utf8")).toBe("PART1PART2");
+  });
 });

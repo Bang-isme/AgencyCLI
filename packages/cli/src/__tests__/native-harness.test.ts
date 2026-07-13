@@ -122,6 +122,7 @@ describe("CLI Native Harness - Comprehensive Suite (500+ tests)", () => {
         it(`dispatches task to ${agentId}: "${task}"`, async () => {
           vi.mocked(dispatchAgent).mockResolvedValue({
             agentId,
+            dispatchId: `${agentId}-mock`,
             exitCode: 0,
             stdout: `Mock success from ${agentId} on task: ${task}`,
             stderr: "",
@@ -157,8 +158,8 @@ describe("CLI Native Harness - Comprehensive Suite (500+ tests)", () => {
         vi.mocked(dispatchAgentsParallel).mockResolvedValue({
           success: true,
           results: [
-            { agentId: "planner", exitCode: 0, stdout: "ok", stderr: "", isolatedEnv: {} },
-            { agentId: "debugger", exitCode: 0, stdout: "ok", stderr: "", isolatedEnv: {} },
+            { agentId: "planner", dispatchId: `planner-${i}`, exitCode: 0, stdout: "ok", stderr: "", isolatedEnv: {} },
+            { agentId: "debugger", dispatchId: `debugger-${i}`, exitCode: 0, stdout: "ok", stderr: "", isolatedEnv: {} },
           ],
           mergeResult: {
             success: true,

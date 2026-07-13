@@ -41,16 +41,18 @@ const { baseRoute, compactSpy } = vi.hoisted(() => ({
 vi.mock("../chat/turn-helpers.js", () => ({
   resolveSessionId: (explicit?: string) => explicit ?? "sess-test",
   resolveMaxLoops: (budget: string, explicit?: number) =>
-    explicit ?? (budget === "deep" ? 15 : budget === "normal" ? 8 : 3),
+    explicit ?? (budget === "deep" ? 25 : budget === "normal" ? 25 : 3),
   resolveRoute: vi.fn(async () => ({ route: baseRoute, fromCache: false })),
   providerHasKey: () => true,
   repackContextAndSystemPrompt: () => "system",
   recordTurnTokenCost: () => {},
   compactTurnHistory: compactSpy,
+  pruneToolResultsInHistory: (msgs: unknown[]) => msgs,
   // Auto-continue completion check (off in this test's legacy profile, so these are
   // never actually called — but the no-tool-call branch references them, so the
   // mocked module must export them).
   MAX_AUTO_CONTINUE: 3,
+  MAX_TOTAL_AUTO_CONTINUE: 10,
   detectIncompleteCompletion: () => false,
   detectTruncatedArtifact: () => false,
   buildAutoContinueNudge: () => "",

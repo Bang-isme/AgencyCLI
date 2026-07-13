@@ -5,15 +5,18 @@
  * Real tokenizers vary, but this gives a useful gauge for the status bar.
  */
 
-const CHARS_PER_TOKEN = 4;
+import { getRegisteredContextWindow } from "@agency/providers";
+import {
+  estimateContextBreakdown,
+  mergeInflightContext,
+  type ContextBreakdown,
+} from "@agency/core";
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 
 const LOCAL_CONTEXT_WINDOWS: Record<string, number> = {
   "meta/llama-3.1-70b-instruct": 128_000,
 };
-
-import { getRegisteredContextWindow } from "@agency/providers";
 
 function getProviderContextWindow(model: string): number | null {
   try {
@@ -46,27 +49,69 @@ export function getModelContextWindow(model?: string): number {
 export interface ContextUsage {
   /** Total characters across all session messages */
   totalChars: number;
-  /** Estimated token count */
+  /** Estimated token count (full turn payload) */
   estimatedTokens: number;
-  /** Model's context window size in tokens */
+  /** Session transcript only (excludes system prompt / tools) */
+  sessionOnlyTokens: number;
+  /** Model's context window size in tokens (catalog) */
   contextWindow: number;
-  /** Usage percentage (0-100) */
+  /** Usage percentage (0-100) against catalog window */
   percent: number;
+  /** Detailed segment breakdown */
+  breakdown: ContextBreakdown;
+}
+
+export type { ContextBreakdown };
+
+export interface EstimateContextOptions {
+  projectRoot?: string;
+  userPrompt?: string;
+  contextPack?: string;
+  providerId?: string;
+  liveBreakdown?: ContextBreakdown | null;
+  /** Local streaming buffer — merged when fresher than the last EventBus meter. */
+  inflightAssistantText?: string;
+  inflightThoughtText?: string;
 }
 
 export function estimateContextUsage(
-  messages: Array<{ content: string }>,
-  model?: string
+  messages: Array<{ role?: string; content: string }>,
+  model?: string,
+  options: EstimateContextOptions = {}
 ): ContextUsage {
-  const totalChars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
-  const estimatedTokens = Math.ceil(totalChars / CHARS_PER_TOKEN);
-  const contextWindow = getModelContextWindow(model);
-  // Guard against a 0/undefined context window (unknown model) → never NaN%.
-  const percent = contextWindow > 0
-    ? Math.min(100, Math.round((estimatedTokens / contextWindow) * 100))
-    : 0;
+  const parts = model?.split("/") ?? [];
+  const providerId = options.providerId ?? (parts.length > 1 ? parts[0] : undefined);
+  const bareModel = parts.length > 1 ? parts.slice(1).join("/") : model;
 
-  return { totalChars, estimatedTokens, contextWindow, percent };
+  let breakdown =
+    options.liveBreakdown ??
+    estimateContextBreakdown({
+      model: bareModel,
+      providerId,
+      sessionMessages: messages,
+      userPrompt: options.userPrompt,
+      contextPack: options.contextPack,
+      projectRoot: options.projectRoot,
+    });
+
+  if (options.inflightAssistantText || options.inflightThoughtText) {
+    breakdown = mergeInflightContext(
+      breakdown,
+      options.inflightAssistantText,
+      options.inflightThoughtText
+    );
+  }
+
+  const totalChars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
+
+  return {
+    totalChars,
+    estimatedTokens: breakdown.totalTokens,
+    sessionOnlyTokens: breakdown.sessionOnlyTokens,
+    contextWindow: breakdown.contextWindow,
+    percent: breakdown.percent,
+    breakdown,
+  };
 }
 
 export type ActivityPhase =

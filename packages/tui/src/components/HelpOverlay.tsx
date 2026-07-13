@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
-import { getRuntimeFlags } from "@agency/core";
+import { getRuntimeFlags, listCapabilities } from "@agency/core";
+import { useState } from "react";
 import type { ThemeTokens } from "../themes/registry.js";
-import { SLASH_MENU } from "../presentation/slash-menu.js";
 import {
   dividerRepeat,
   measureTerminal,
@@ -13,46 +13,89 @@ export interface HelpOverlayProps {
   onClose: () => void;
 }
 
-const SHORT_DESCS: Record<string, string> = {
-  help: "Shortcuts overlay",
-  new: "New session",
-  connect: "Setup API keys",
-  models: "Select model",
-  skills: "Browse/inject skills",
-  plugin: "View skills pack",
-  review: "Review commit/PR/CI",
-  sessions: "Manage sessions",
-  project: "Switch/add project",
-  viewstatus: "System status",
-  mcp: "Manage MCP servers",
-  theme: "Switch theme",
-  variant: "Model thinking budget",
-  index: "Refresh @file index",
-  compact: "Compact context",
-  goal: "Long-running task",
-  schedule: "Recurring cron task",
-  agents: "View subagents",
-  export: "Export session",
-  exit: "Quit TUI",
-};
-
 export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isAdvancedExpanded, setIsAdvancedExpanded] = useState(false);
+
   useInput((input, key) => {
     if (key.escape || input === "?") {
       onClose();
+      return;
+    }
+    if (key.return || input === "\r" || input === "\n") {
+      return;
+    }
+    if (key.tab || input === " ") {
+      setIsAdvancedExpanded((prev) => !prev);
+      return;
+    }
+    if (key.backspace) {
+      setSearchQuery((q) => q.slice(0, -1));
+      return;
+    }
+    if (input && input.length === 1 && !key.ctrl && !key.meta) {
+      setSearchQuery((q) => q + input);
     }
   });
 
   const layout = measureTerminal(cols);
   const overlayWidth = Math.min(layout.contentWidth, 76);
-  const dividerLength = Math.max(2, overlayWidth - 4);
+  const dividerLength = Math.max(2, overlayWidth - 6);
   const useTwoColumns = layout.cols >= 74;
 
   const renderCommands = () => {
+    const core = listCapabilities("tui", "core");
+    const advanced = listCapabilities("tui", "advanced");
+
+    const filteredCore = core.filter((item) =>
+      item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.aliases?.some((a) => a.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const filteredAdvanced = advanced.filter((item) =>
+      item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.aliases?.some((a) => a.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const showAdvanced = isAdvancedExpanded || searchQuery !== "";
+
+    const commands: any[] = [...filteredCore];
+    if (showAdvanced) {
+      commands.push(...filteredAdvanced);
+    }
+
+    if (commands.length === 0) {
+      return <Text color={theme.muted}>No matching commands found.</Text>;
+    }
+
+    const renderLine = (item: any) => {
+      const isCore = item.tier === "core";
+      const prereqs = item.prerequisites && item.prerequisites.length > 0 ? ` [${item.prerequisites.join(", ")}]` : "";
+      return (
+        <Text color={theme.muted} wrap="truncate">
+          <Text color={isCore ? theme.accent : theme.muted}>/{item.id.padEnd(12)}</Text>
+          {item.description}{prereqs}
+        </Text>
+      );
+    };
+
+    const renderAdvancedBanner = () => {
+      if (showAdvanced || searchQuery !== "") return null;
+      return (
+        <Box marginTop={1}>
+          <Text color={theme.accent}>
+            {`[+] Press Tab / Space to reveal ${advanced.length} Advanced commands (MCP, skills, agents, workflows, schedule, browser, eval, etc.)`}
+          </Text>
+        </Box>
+      );
+    };
+
     if (useTwoColumns) {
-      const half = Math.ceil(SLASH_MENU.length / 2);
-      const leftItems = SLASH_MENU.slice(0, half);
-      const rightItems = SLASH_MENU.slice(half);
+      const half = Math.ceil(commands.length / 2);
+      const leftItems = commands.slice(0, half);
+      const rightItems = commands.slice(half);
 
       const rows: JSX.Element[] = [];
       for (let i = 0; i < half; i++) {
@@ -62,35 +105,30 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
         rows.push(
           <Box key={i} flexDirection="row" justifyContent="space-between" overflow="hidden">
             <Box width="50%" overflow="hidden">
-              {left && (
-                <Text color={theme.muted} wrap="truncate">
-                  <Text color={theme.accent}>/{left.name.padEnd(12)}</Text>
-                  {SHORT_DESCS[left.name] ?? left.desc}
-                </Text>
-              )}
+              {left && renderLine(left)}
             </Box>
             <Box width="50%" overflow="hidden">
-              {right && (
-                <Text color={theme.muted} wrap="truncate">
-                  <Text color={theme.accent}>/{right.name.padEnd(12)}</Text>
-                  {SHORT_DESCS[right.name] ?? right.desc}
-                </Text>
-              )}
+              {right && renderLine(right)}
             </Box>
           </Box>
         );
       }
-      return <Box flexDirection="column">{rows}</Box>;
+      return (
+        <Box flexDirection="column">
+          {rows}
+          {renderAdvancedBanner()}
+        </Box>
+      );
     }
 
     return (
       <Box flexDirection="column">
-        {SLASH_MENU.map((item) => (
-          <Text key={item.name} color={theme.muted} wrap="truncate">
-            <Text color={theme.accent}>/{item.name.padEnd(12)}</Text>
-            {SHORT_DESCS[item.name] ?? item.desc}
-          </Text>
+        {commands.map((item) => (
+          <Box key={item.id}>
+            {renderLine(item)}
+          </Box>
         ))}
+        {renderAdvancedBanner()}
       </Box>
     );
   };
@@ -118,8 +156,6 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
       { keys: "Ctrl+Q", desc: "Quit application" },
       { keys: "Ctrl+C", desc: "Force exit" },
     ]},
-    // Only shown when transcript navigation is enabled (flag transcriptNav) —
-    // otherwise these keys keep their legacy meaning.
     ...(getRuntimeFlags().transcriptNav ? [{ category: "Transcript focus", items: [
       { keys: "Ctrl+T", desc: "Focus the latest turn (Ctrl+T / Esc to exit)" },
       { keys: "↑ / ↓", desc: "Move focus between turns" },
@@ -128,10 +164,21 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
     ]}] : []),
   ];
 
+  const filteredShortcuts = shortcuts.map((group) => {
+    const matchedItems = group.items.filter((item) =>
+      item.keys.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.desc.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    if (group.category.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return group;
+    }
+    return { ...group, items: matchedItems };
+  }).filter((group) => group.items.length > 0);
+
   const renderShortcuts = () => {
     return (
       <Box flexDirection="column">
-        {shortcuts.map((group) => (
+        {filteredShortcuts.map((group) => (
           <Box key={group.category} flexDirection="column" marginBottom={1}>
             <Text color={theme.warning} bold>{group.category}</Text>
             {group.items.map((item, idx) => (
@@ -161,7 +208,7 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
     >
       <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
         <Text bold color={theme.accent}>
-          ✦ Help & Shortcuts
+          ✦ Help & Capability Explorer | Filter: [ {searchQuery || "Type to search..."} ]
         </Text>
       </Box>
       <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
@@ -189,7 +236,7 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
       <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
       <Box marginBottom={1} overflow="hidden">
         <Text color={theme.muted} wrap="truncate">
-          Press <Text color={theme.text} bold>?</Text> or <Text color={theme.text} bold>Esc</Text> to close
+          Press <Text color={theme.text} bold>?</Text> or <Text color={theme.text} bold>Esc</Text> to exit | <Text color={theme.text} bold>Tab/Space</Text> to toggle Advanced tools | Type to filter
         </Text>
       </Box>
     </Box>

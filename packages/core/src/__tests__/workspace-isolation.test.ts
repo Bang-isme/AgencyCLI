@@ -81,8 +81,8 @@ describe("workspace-isolation", () => {
     expect(existsSync(join(ws.tempDir, "package.json"))).toBe(true);
     expect(existsSync(join(ws.tempDir, "file1.txt"))).toBe(true);
     
-    // Should exclude node_modules and .agency
-    expect(existsSync(join(ws.tempDir, "node_modules"))).toBe(false);
+    // Should bridge node_modules for isolated verification and exclude .agency
+    expect(existsSync(join(ws.tempDir, "node_modules"))).toBe(true);
     expect(existsSync(join(ws.tempDir, ".agency"))).toBe(false);
 
     cleanIsolatedWorkspace(ws);

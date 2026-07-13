@@ -1,6 +1,7 @@
 import { execa } from "execa";
 
 export interface GitSummary {
+  available: boolean;
   branch: string;
   isClean: boolean;
   staged: number;
@@ -8,6 +9,14 @@ export interface GitSummary {
   untracked: number;
   recentCommits: { hash: string; subject: string }[];
   ghAvailable: boolean;
+}
+
+export interface GitDiffResult {
+  available: boolean;
+  diff: string;
+  staged: boolean;
+  truncated: boolean;
+  error?: string;
 }
 
 function parseStatusPorcelain(output: string): {
@@ -64,6 +73,20 @@ export async function getGitSummary(projectRoot: string): Promise<GitSummary> {
     execa("gh", ["--version"], { reject: false, timeout: 2000 }),
   ]);
 
+  const available = statusResult.exitCode === 0;
+  if (!available) {
+    return {
+      available: false,
+      branch: "not a repository",
+      isClean: false,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      recentCommits: [],
+      ghAvailable: ghResult.exitCode === 0,
+    };
+  }
+
   let branch: string;
   if (branchResult.exitCode === 0 && branchResult.stdout.trim()) {
     branch = branchResult.stdout.trim();
@@ -85,6 +108,7 @@ export async function getGitSummary(projectRoot: string): Promise<GitSummary> {
     logResult.exitCode === 0 ? parseRecentCommits(logResult.stdout) : [];
 
   return {
+    available,
     branch,
     isClean: statusText.trim().length === 0,
     staged,
@@ -92,5 +116,34 @@ export async function getGitSummary(projectRoot: string): Promise<GitSummary> {
     untracked,
     recentCommits,
     ghAvailable: ghResult.exitCode === 0,
+  };
+}
+
+/** One reusable git-diff boundary for TUI, tool harness, and future CLI review. */
+export async function getGitDiff(
+  projectRoot: string,
+  staged = false,
+  maxChars = 16_000
+): Promise<GitDiffResult> {
+  const result = await execa("git", ["diff", ...(staged ? ["--staged"] : [])], {
+    cwd: projectRoot,
+    reject: false,
+    timeout: 5_000,
+  });
+  if (result.exitCode !== 0) {
+    return {
+      available: false,
+      diff: "",
+      staged,
+      truncated: false,
+      error: result.stderr.trim() || "Git diff is unavailable for this workspace.",
+    };
+  }
+  const diff = result.stdout;
+  return {
+    available: true,
+    diff: diff.slice(0, maxChars),
+    staged,
+    truncated: diff.length > maxChars,
   };
 }

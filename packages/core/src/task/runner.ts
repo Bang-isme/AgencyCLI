@@ -541,6 +541,9 @@ export async function runPlan(
         }
         nodes[nodeId]!.state = state;
         nodes[nodeId]!.attempts = restored.attempts;
+        if (typeof (restored as any).timeoutMs === "number") {
+          nodes[nodeId]!.timeoutMs = (restored as any).timeoutMs;
+        }
       }
     }
   }
@@ -656,9 +659,23 @@ export async function runPlan(
         const startTime = performance.now();
         const taskPromise = (async () => {
           let heartbeatInterval: NodeJS.Timeout | null = null;
+          let timeoutTimer: NodeJS.Timeout | null = null;
+          const taskAbortController = new AbortController();
+
+          if (node.timeoutMs && node.timeoutMs > 0) {
+            timeoutTimer = setTimeout(() => {
+              taskAbortController.abort(new Error(`Task exceeded timeout limit of ${node.timeoutMs}ms`));
+            }, node.timeoutMs);
+            timeoutTimer.unref?.();
+          }
+
           try {
             // Heartbeat lease renewals
             heartbeatInterval = setInterval(() => {
+              if (taskAbortController.signal.aborted) {
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                return;
+              }
               globalLeaseManager.renewLease(nodeId, leaseId, node.action);
             }, 5000);
 
@@ -667,6 +684,9 @@ export async function runPlan(
             let lastErrorMsg = "";
 
             while (attempts < resolvedMaxAttempts) {
+              if (taskAbortController.signal.aborted) {
+                throw taskAbortController.signal.reason || new Error("Task timed out");
+              }
               attempts++;
               node.attempts = attempts;
 
@@ -765,6 +785,9 @@ export async function runPlan(
 
               if (opts.onTask) {
                 await opts.onTask(planTask);
+                if (taskAbortController.signal.aborted) {
+                  throw taskAbortController.signal.reason || new Error("Task timed out");
+                }
                 TaskStateMachine.transition(node, "VERIFYING");
                 TaskStateMachine.transition(node, "COMPLETED");
                 success = true;
@@ -785,15 +808,21 @@ export async function runPlan(
               const agentId: AgentId = coerceAgentId(route.suggested_agent, "planner");
 
               const dispatchStart = performance.now();
+              if (taskAbortController.signal.aborted) {
+                throw taskAbortController.signal.reason || new Error("Task timed out");
+              }
               const res = await dispatchAgent(
                 {
                   agentId,
                   task: taskPrompt,
                   projectRoot,
                 },
-                { skillsRoot }
+                { skillsRoot, signal: taskAbortController.signal }
               );
               const elapsed = performance.now() - dispatchStart;
+              if (taskAbortController.signal.aborted) {
+                throw taskAbortController.signal.reason || new Error("Task timed out");
+              }
 
               let toolcallsCount = 1;
               if (res.payload?.llmResponse) {
@@ -919,6 +948,7 @@ export async function runPlan(
             }
           } finally {
             if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (timeoutTimer) clearTimeout(timeoutTimer);
             globalLeaseManager.reclaimLease(nodeId);
             activePromises.delete(nodeId);
             

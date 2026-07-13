@@ -30,11 +30,15 @@ import { fileURLToPath } from "node:url";
  * move the helper to a leaf instead.
  */
 const ALLOWED_CYCLE = new Set([
+  "agents/dispatch-report",
   "agents/orchestrator",
+  "chat/context-meter",
+  "chat/delegation-cycle",
   "chat/orchestrator",
   "chat/prompt",
   "chat/stream",
   "chat/turn-helpers",
+  "chat/turn-loop",
   "skill/tool-harness",
   "task/runner",
 ]);

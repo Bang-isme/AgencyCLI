@@ -216,7 +216,7 @@ export function McpOverlay({
 }: McpOverlayProps) {
   const { cols, rows } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 80, 45);
-  const innerWidth = overlayWidth - 4;
+  const innerWidth = overlayWidth - 6;
   const dividerStr = "─".repeat(Math.max(0, innerWidth));
   const isSmallScreen = cols < 75;
   const leftPanelWidth = isSmallScreen ? "100%" : Math.min(32, Math.max(12, Math.floor(innerWidth * 0.4)));
@@ -788,7 +788,7 @@ export function McpOverlay({
                 <Box key={t.id} flexDirection="column" marginY={0}>
                   <Text wrap="wrap">
                     <Text color={isSelected ? theme.accent : theme.muted}>
-                      {isSelected ? "▸ " : "  "}
+                      {isSelected ? "> " : "  "}
                     </Text>
                     <Text color={isSelected ? theme.text : theme.muted} bold={isSelected}>
                       {t.name}
@@ -1026,7 +1026,7 @@ export function McpOverlay({
                 <Box key={k.key} height={1} overflow="hidden">
                   <Text wrap="truncate">
                     <Text color={isSelected ? theme.accent : theme.muted}>
-                      {isSelected ? "▸ " : "  "}
+                      {isSelected ? "> " : "  "}
                     </Text>
                     <Text color={theme.text} bold={isSelected}>
                       {k.key}
@@ -1126,7 +1126,7 @@ export function McpOverlay({
                   <Box key={s.name} height={1} overflow="hidden">
                     <Text wrap="wrap">
                       <Text color={isSelected ? theme.accent : theme.muted}>
-                        {isSelected ? "▸ " : "  "}
+                        {isSelected ? "> " : "  "}
                       </Text>
                       <Text color={isConf ? theme.success : theme.danger}>
                         {isConf ? "■ " : "□ "}

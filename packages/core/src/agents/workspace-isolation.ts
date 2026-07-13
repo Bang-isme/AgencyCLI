@@ -1,4 +1,4 @@
-import { cpSync, rmSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync } from "node:fs";
+import { cpSync, rmSync, existsSync, mkdirSync, readdirSync, statSync, readFileSync, symlinkSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -59,7 +59,21 @@ export function createIsolatedWorkspace(
     },
   });
 
+  bridgeDirectory(projectRoot, tempDir, "node_modules");
+
   return { tempDir, projectRoot };
+}
+
+function bridgeDirectory(projectRoot: string, tempDir: string, name: string): void {
+  const source = join(projectRoot, name);
+  const target = join(tempDir, name);
+  if (!existsSync(source) || existsSync(target)) return;
+  try {
+    symlinkSync(source, target, process.platform === "win32" ? "junction" : "dir");
+  } catch {
+    // Dependency bridging is an optimization for isolated verification. If the
+    // platform refuses symlinks/junctions, leave the workspace copy intact.
+  }
 }
 
 export function detectWorkspaceChanges(ws: WorkspaceIsolation): WorkspaceChanges {

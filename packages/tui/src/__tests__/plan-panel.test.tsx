@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { getTheme, DEFAULT_THEME_ID } from "../themes/registry.js";
-import { PlanPanel, cleanPlanStep } from "../components/PlanPanel.js";
+import { PlanPanel, cleanPlanStep, selectPlanRows } from "../components/PlanPanel.js";
 
 const theme = getTheme(DEFAULT_THEME_ID);
 
@@ -115,5 +115,29 @@ describe("PlanPanel", () => {
       />
     );
     expect((lastFrame() ?? "").trim()).toBe("");
+  });
+
+  it("compact mode collapses older completed rows while keeping active and next pending visible", () => {
+    const todos = [
+      { step: "old done one", status: "completed" },
+      { step: "old done two", status: "completed" },
+      { step: "active now", status: "in_progress" },
+      { step: "next pending", status: "pending" },
+      { step: "later pending", status: "pending" },
+    ];
+    const selected = selectPlanRows(todos, 4, true);
+    expect(selected.rows.map((r) => r.todo.step)).toEqual([
+      "old done two",
+      "active now",
+      "next pending",
+      "later pending",
+    ]);
+
+    const { lastFrame } = render(<PlanPanel theme={theme} todos={todos} maxVisible={4} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("old done one");
+    expect(frame).toContain("old done two");
+    expect(frame).toContain("active now");
+    expect(frame).toContain("next pending");
   });
 });

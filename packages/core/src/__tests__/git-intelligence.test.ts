@@ -28,6 +28,7 @@ describe("getGitSummary", () => {
       const summary = await getGitSummary(REPO_ROOT);
 
       expect(summary.branch).toBeTruthy();
+      expect(summary.available).toBe(true);
       expect(typeof summary.isClean).toBe("boolean");
       expect(summary.staged).toBeGreaterThanOrEqual(0);
       expect(summary.unstaged).toBeGreaterThanOrEqual(0);
@@ -60,6 +61,7 @@ describe("getGitSummary", () => {
 
         expect(summary.branch).toBe("probe-branch");
         expect(summary.recentCommits).toEqual([]);
+        expect(summary.available).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

@@ -182,4 +182,80 @@ describe("createOpenAiCompatibleProvider", () => {
     const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
     expect(body.thinking).toBeUndefined(); // 'high' maps to 'enabled', which is omitted for compatibility
   });
+
+  describe("stream complete exception recovery", () => {
+    it("releases lock and cancels reader if read() throws", async () => {
+      const mockReader = {
+        read: vi.fn().mockRejectedValue(new Error("Read error")),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        releaseLock: vi.fn(),
+      };
+      const mockBody = {
+        getReader: () => mockReader,
+      };
+      const fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: mockBody,
+      });
+
+      const provider = createOpenAiCompatibleProvider({
+        id: "openai",
+        apiKey: "test-key",
+        baseUrl: "https://api.example.com/v1",
+        defaultModel: "gpt-test",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+
+      const onDelta = vi.fn();
+      await expect(
+        provider.streamComplete([{ role: "user", content: "Hi" }], { onDelta })
+      ).rejects.toThrow("Read error");
+
+      expect(mockReader.cancel).toHaveBeenCalled();
+      expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+
+    it("releases lock and cancels reader if onDelta throws", async () => {
+      const encoder = new TextEncoder();
+      const mockReader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: encoder.encode('data: {"choices": [{"delta": {"content": "hello"}}]}\n\n'),
+          })
+          .mockResolvedValueOnce({ done: true }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        releaseLock: vi.fn(),
+      };
+      const mockBody = {
+        getReader: () => mockReader,
+      };
+      const fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: mockBody,
+      });
+
+      const provider = createOpenAiCompatibleProvider({
+        id: "openai",
+        apiKey: "test-key",
+        baseUrl: "https://api.example.com/v1",
+        defaultModel: "gpt-test",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+
+      const onDelta = vi.fn().mockImplementation(() => {
+        throw new Error("Callback error");
+      });
+
+      await expect(
+        provider.streamComplete([{ role: "user", content: "Hi" }], { onDelta })
+      ).rejects.toThrow("Callback error");
+
+      expect(mockReader.cancel).toHaveBeenCalled();
+      expect(mockReader.releaseLock).toHaveBeenCalled();
+    });
+  });
 });

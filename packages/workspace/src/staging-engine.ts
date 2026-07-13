@@ -2,6 +2,7 @@ import { existsSync, writeFileSync, mkdirSync, rmSync, cpSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { execa } from "execa";
 import { WorkspaceTransaction, StagedChange } from "./types.js";
 import { commitMutationsAtomic, type MutationEntry } from "./mutation-journal.js";
@@ -71,7 +72,8 @@ export class StagingEngine {
   public async verifyTransaction(
     txId: string,
     projectRoot: string,
-    verifyCommands: string[][] = [["pnpm", "build"]]
+    verifyCommands: string[][] = [["pnpm", "build"]],
+    signal?: AbortSignal
   ): Promise<{ success: boolean; errors: string[] }> {
     const tx = this.transactions.get(txId);
     if (!tx || tx.status !== "active") {
@@ -134,10 +136,42 @@ export class StagingEngine {
         if (cmdArgs.length === 0) continue;
         const [bin, ...args] = cmdArgs;
 
-        const res = await execa(bin!, args, {
+        if (signal?.aborted) {
+          throw signal.reason || new Error("Canceled");
+        }
+
+        const proc = execa(bin!, args, {
           cwd: tempWorkspace,
           reject: false,
+          cancelSignal: signal,
         });
+
+        const onAbort = () => {
+          if (proc.pid && !proc.killed) {
+            try {
+              if (process.platform === "win32") {
+                spawnSync("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" });
+              }
+            } catch {}
+          }
+        };
+
+        if (signal) {
+          signal.addEventListener("abort", onAbort);
+        }
+
+        let res;
+        try {
+          res = await proc;
+        } finally {
+          if (signal) {
+            signal.removeEventListener("abort", onAbort);
+          }
+        }
+
+        if (signal?.aborted) {
+          throw signal.reason || new Error("Canceled");
+        }
 
         if (res.exitCode !== 0) {
           errors.push(

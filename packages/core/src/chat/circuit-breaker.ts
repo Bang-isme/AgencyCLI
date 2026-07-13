@@ -14,6 +14,9 @@ export interface CircuitBreakerState {
    * its own trip reason and concurrent turns can't clobber each other's.
    */
   trippedReason: string | null;
+  consecutiveWarningCount: number;
+  lastModifiedFiles: string[];
+  hasInjectedReflection: boolean;
 }
 
 export interface CircuitBreakerResult {
@@ -30,6 +33,9 @@ export function createCircuitBreaker(): CircuitBreakerState {
     toolCallHistory: [],
     consecutiveFailures: 0,
     trippedReason: null,
+    consecutiveWarningCount: 0,
+    lastModifiedFiles: [],
+    hasInjectedReflection: false,
   };
 }
 
@@ -39,6 +45,9 @@ export function resetCircuitBreaker(state: CircuitBreakerState): void {
   state.toolCallHistory = [];
   state.consecutiveFailures = 0;
   state.trippedReason = null;
+  state.consecutiveWarningCount = 0;
+  state.lastModifiedFiles = [];
+  state.hasInjectedReflection = false;
 }
 
 /** Read-and-clear this breaker's latched trip reason (null if it hasn't tripped
@@ -64,10 +73,14 @@ export function checkCircuitBreaker(
     const signatures = toolCalls.map(getToolSignature);
     const lastSignature = signatures[signatures.length - 1];
     
-    // Count consecutive identical calls
+    // Count consecutive identical calls across the retained history AND the
+    // current batch. Without including the batch, a model can emit many
+    // identical calls in a single completion and all of them pass before history
+    // is updated.
     let repeatCount = 0;
-    for (let i = state.toolCallHistory.length - 1; i >= 0; i--) {
-      if (state.toolCallHistory[i] === lastSignature) {
+    const recent = [...state.toolCallHistory, ...signatures];
+    for (let i = recent.length - 2; i >= 0; i--) {
+      if (recent[i] === lastSignature) {
         repeatCount++;
       } else {
         break;
@@ -105,4 +118,30 @@ export function recordToolFailure(state: CircuitBreakerState): void {
 
 export function recordToolSuccess(state: CircuitBreakerState): void {
   state.consecutiveFailures = 0;
+  state.consecutiveWarningCount = 0;
 }
+
+export function checkSemanticLoop(
+  state: CircuitBreakerState,
+  toolCalls: { name: string; arguments: Record<string, any> }[]
+): boolean {
+  if (state.consecutiveFailures >= 3 && !state.hasInjectedReflection) {
+    const editTools = ["write_file", "append_file", "edit_file", "batch_edit", "ast_edit"];
+    const currentFiles = toolCalls
+      .filter(tc => editTools.includes(tc.name))
+      .map(tc => tc.arguments?.path || tc.arguments?.filePath || tc.arguments?.source || "")
+      .filter(Boolean);
+
+    const isSameFileEdited = currentFiles.some(file => 
+      state.lastModifiedFiles.some(lastFile => lastFile.includes(file) || file.includes(lastFile))
+    );
+
+    if (isSameFileEdited) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
+

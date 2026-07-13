@@ -16,7 +16,8 @@ export class EpisodicStore {
     content: string,
     metadata: any = {},
     tenantId = "default",
-    memoryType = "episodic"
+    memoryType = "episodic",
+    expectedRevision?: number
   ): void {
     if (!sessionId || !goal || turnIndex === undefined || !actionSignature || !content) {
       throw new Error("Missing mandatory episode fields.");
@@ -39,7 +40,7 @@ export class EpisodicStore {
       lamport_timestamp: 0,
     };
 
-    this.backend.addEpisode(episode);
+    this.backend.addEpisode(episode, expectedRevision);
   }
 
   public getEpisodes(sessionId: string, tenantId = "default"): Episode[] {

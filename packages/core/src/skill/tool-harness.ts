@@ -8,12 +8,16 @@ import {
   insertFunction,
 } from "../utils/ast-compiler.js";
 import { resolve, join, relative, dirname, isAbsolute } from "node:path";
+import { randomUUID } from "node:crypto";
 import { runShellCommand } from "../terminal/sandbox.js";
-import { dispatchAgent } from "../agents/orchestrator.js";
+import { dispatchAgent, dispatchAgentsParallel, isAgentId, type AgentId, type AgentDispatchResult } from "../agents/orchestrator.js";
+import { parseDispatchParallelTasks } from "../skill/dispatch-parallel-args.js";
+import { startDelegationBatch, completeDelegationBatch } from "../chat/delegation-cycle.js";
+import { buildParallelDispatchReport, persistBatchReport, formatReportForModel } from "../agents/dispatch-report.js";
 import { resolveSkillsRoot } from "../skills-root.js";
 import { loadIgnoreFilter } from "../index/gitignore-parser.js";
 import { createCircuitBreaker, checkCircuitBreaker, recordToolSuccess, recordToolFailure, resetCircuitBreaker, consumeBreakerTrip, type CircuitBreakerState } from "../chat/circuit-breaker.js";
-import { isErrorResult, isNonZeroExitResult } from "../chat/tool-result-status.js";
+import { isErrorResult, isNonZeroExitResult, isBenignEmptyResult } from "../chat/tool-result-status.js";
 import { z } from "zod";
 import { getModelSpec } from "@agency/providers";
 import { MarkdownMemoryStore, type MemoryType } from "@agency/memory";
@@ -46,32 +50,96 @@ export interface ToolCall {
  */
 export function parseToolCalls(text: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
-  const regex = /<(tool_call|invoke|invoke_call|minimax:tool_call)\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/\s*(tool_call|invoke|invoke_call|minimax:tool_call)\s*>/g;
+
+  // 1. Standard XML-like tool calls
+  const regex = /<(tool_call|invoke|invoke_call|function_call|minimax:tool_call)(?:\s+name\s*=\s*["']([^"']+)["']\s*|\s*)>([\s\S]*?)<\/\s*(?:tool_call|invoke|invoke_call|function_call|minimax:tool_call)\s*>/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
-    const name = match[2]!;
-    const body = match[3]!;
+    let name = match[2] || "";
+    let body = match[3] || "";
+    
+    // Check if the body starts with something like "list_dir>" (malformed tag name)
+    const malformedMatch = body.match(/^\s*([a-zA-Z0-9_-]+)>\s*/);
+    if (malformedMatch) {
+      name = malformedMatch[1]!;
+      body = body.slice(malformedMatch[0].length);
+    }
+
+    // Check if name is nested inside <name>...</name>
+    if (!name) {
+      const nameMatch = body.match(/<name>([\s\S]*?)<\/name>/);
+      if (nameMatch) {
+        name = nameMatch[1]!.trim();
+      }
+    }
+
+    if (!name) continue;
+
     const args: Record<string, string> = {};
     
-    // 1. Match <param name="parameter_name">parameter_value</param> (support single/double quotes, spaces)
-    const paramWithNameRegex = /<param\s+name\s*=\s*['"]([^'"]+)['"]\s*>([\s\S]*?)<\/param>/g;
-    let pwnMatch;
-    while ((pwnMatch = paramWithNameRegex.exec(body)) !== null) {
-      args[pwnMatch[1]!] = pwnMatch[2]!.trim();
+    // Match parameters
+    const paramRegex = /<(?:parameter|param|arg)\s+name\s*=\s*['"]([^'"]+)['"]\s*>([\s\S]*?)<\/\s*(?:parameter|param|arg)\s*>/g;
+    let pMatch;
+    while ((pMatch = paramRegex.exec(body)) !== null) {
+      args[pMatch[1]!] = pMatch[2]!.trim();
     }
     
-    // 2. Match standard XML tags like <path>value</path>
+    // Match standard XML tags
     const argRegex = /<([^>\s/]+)>([\s\S]*?)<\/\1>/g;
     let argMatch;
     while ((argMatch = argRegex.exec(body)) !== null) {
       const tagName = argMatch[1]!;
-      if (tagName !== "param" && tagName !== "tool_call" && tagName !== "invoke" && tagName !== "invoke_call") {
+      if (!["parameter", "param", "arg", "name", "tool_call", "invoke", "invoke_call", "function_call", "function_calls"].includes(tagName)) {
         args[tagName] = argMatch[2]!.trim();
       }
     }
     
     toolCalls.push({ name, arguments: args });
   }
+
+  // 2. If no calls found, check for salvage cases
+  if (toolCalls.length === 0) {
+    // A. Check for truncated _call name="..." style
+    const truncatedRegex = /\b_call\s+name\s*=\s*["']([^"']+)["']\s*>/g;
+    let truncMatch;
+    while ((truncMatch = truncatedRegex.exec(text)) !== null) {
+      const name = truncMatch[1]!;
+      const args: Record<string, string> = {};
+      if (name === "file_info") {
+        // extract path
+        const pathMatch = text.match(/([a-zA-Z]:\\[^\s<]+?)(?:path)?\s*>/);
+        if (pathMatch) {
+          args.path = pathMatch[1].trim();
+        }
+      } else if (name === "dispatch_parallel") {
+        const blMatch = text.match(/Label>([\s\S]*?)Label>/i) || text.match(/<batchLabel>([\s\S]*?)<\/batchLabel>/i);
+        if (blMatch) {
+          args.batchLabel = blMatch[1]!.trim();
+        }
+        const arrayMatch = text.indexOf("[");
+        if (arrayMatch !== -1) {
+          const extracted = text.slice(arrayMatch);
+          args.tasks = extracted.trim();
+        }
+      }
+      toolCalls.push({ name, arguments: args });
+    }
+  }
+
+  if (toolCalls.length === 0) {
+    // B. Check for >shell commands
+    const lines = text.split("\n");
+    for (const line of lines) {
+      const shellMatch = line.match(/^\s*>\s*(cd\b.*|git\b.*|pnpm\b.*|npm\b.*|node\b.*|python\b.*|cargo\b.*)$/);
+      if (shellMatch) {
+        toolCalls.push({
+          name: "execute_command",
+          arguments: { command: shellMatch[1]!.trim() }
+        });
+      }
+    }
+  }
+
   return toolCalls;
 }
 
@@ -84,8 +152,8 @@ export function parseToolCalls(text: string): ToolCall[] {
  * length-continuations instead of silently losing the write.
  */
 export function hasUnclosedToolCall(text: string): boolean {
-  const opens = (text.match(/<(?:tool_call|invoke|invoke_call|minimax:tool_call)\b/g) || []).length;
-  const closes = (text.match(/<\/\s*(?:tool_call|invoke|invoke_call|minimax:tool_call)\s*>/g) || []).length;
+  const opens = (text.match(/<(?:tool_call|invoke|invoke_call|minimax:tool_call|function_call|function_calls)\b/g) || []).length;
+  const closes = (text.match(/<\/\s*(?:tool_call|invoke|invoke_call|minimax:tool_call|function_call|function_calls)\s*>/g) || []).length;
   return opens > closes;
 }
 
@@ -315,6 +383,15 @@ registry.register({
       return `Error: File not found at path "${pathArg}"`;
     }
     try {
+      const stat = statSync(filePath);
+      if (stat.isDirectory()) {
+        const entries = readdirSync(filePath);
+        return [
+          `Directory: ${pathArg}`,
+          `Entries: ${entries.length}`,
+          ...entries.map(e => `  - ${e}`)
+        ].join("\n");
+      }
       const content = readFileSync(filePath, "utf8");
       const lines = content.split("\n");
       const totalLines = lines.length;
@@ -352,7 +429,20 @@ registry.register({
     } catch (err: any) {
       return `Error reading file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Read file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const m = r.match(/\((\d+) lines total/);
+      const lineCount = m ? m[1]! : String(r.split("\n").length);
+      return `${lineCount} ${lineCount === "1" ? "line" : "lines"}`;
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Ensure the file path is correct and the file exists.",
+  },
 });
 
 // 2. write_file
@@ -388,7 +478,25 @@ registry.register({
     } catch (err: any) {
       return `Error writing file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Write file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const m = r.match(/(\d+) bytes/);
+      if (m) {
+        const n = parseInt(m[1]!, 10);
+        return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+          : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+          : `${n} B`;
+      }
+      return "saved";
+    },
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Verify write permissions in the workspace.",
+  },
 });
 
 // 2b. append_file — build a large file incrementally without shell escaping
@@ -427,7 +535,25 @@ registry.register({
     } catch (err: any) {
       return `Error appending to file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Append to file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const m = r.match(/(\d+) bytes/);
+      if (m) {
+        const n = parseInt(m[1]!, 10);
+        return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+          : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+          : `${n} B`;
+      }
+      return "saved";
+    },
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Verify write permissions in the workspace.",
+  },
 });
 
 // 2c. remember — save a durable fact to curated cross-session markdown memory
@@ -460,7 +586,21 @@ registry.register({
     } catch (err: any) {
       return `Error saving memory: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Remember",
+    targetExtractor: (args: any) => args.name || args.description || "",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify skills-root configuration and permissions.",
+  },
 });
 
 // 2d. forget — remove a stale/incorrect memory from curated cross-session memory
@@ -485,7 +625,21 @@ registry.register({
     } catch (err: any) {
       return `Error removing memory: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Forget",
+    targetExtractor: (args: any) => args.name,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Ensure the memory slot exists and is writable.",
+  },
 });
 
 // 2e. update_plan — maintain the visible plan / todo list for a multi-step task.
@@ -527,6 +681,20 @@ registry.register({
     const glyph = (s: string) => (s === "completed" ? "[x]" : s === "in_progress" ? "[~]" : "[ ]");
     const lines = todos.map((t) => `${glyph(t.status)} ${t.step}`);
     return `Plan updated (${done}/${todos.length} done):\n${lines.join("\n")}`;
+  },
+  metadata: {
+    semanticAction: "Update plan",
+    targetExtractor: () => "",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify write permissions for task.md.",
   },
 });
 
@@ -619,7 +787,15 @@ registry.register({
     } catch (err: any) {
       return `Error editing file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Edit file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: () => "edited",
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Verify that target content exists in the file and matches exactly.",
+  },
 });
 
 // 3b. ast_edit — precise structural edits via the TypeScript AST
@@ -696,6 +872,14 @@ registry.register({
       return `Error in ast_edit (${operation}): ${err.message || String(err)}`;
     }
   },
+  metadata: {
+    semanticAction: "AST Edit",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: () => "edited",
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Ensure the file is valid TypeScript/JavaScript code.",
+  },
 });
 
 // 4. list_dir
@@ -735,7 +919,20 @@ registry.register({
     } catch (err: any) {
       return `Error listing directory: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "List directory",
+    targetExtractor: (args: any) => args.path || ".",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const m = r.match(/\((\d+) entries\)/);
+      const itemCount = m ? m[1]! : String(r.split("\n").filter(Boolean).length);
+      return `${itemCount} ${itemCount === "1" ? "item" : "items"}`;
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify directory path.",
+  },
 });
 
 // 5. execute_command
@@ -750,6 +947,10 @@ registry.register({
     const { projectRoot } = context;
     const commandArg = args.command || "";
     if (!commandArg) return "Error: 'command' argument is required for execute_command.";
+    const quoteIssue = validateShellQuoteBalance(commandArg);
+    if (quoteIssue) {
+      return `Error: Malformed shell command (${quoteIssue}). Fix quoting before retrying.`;
+    }
     try {
       const res = await runShellCommand(projectRoot, commandArg, { 
         yes: true, 
@@ -760,8 +961,197 @@ registry.register({
     } catch (err: any) {
       return `Error executing command: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Run command",
+    targetExtractor: (args: any) => args.command,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const m = r.match(/Exit Code: (-?\d+)/);
+      return m ? `exit ${m[1]}` : "done";
+    },
+    risk: "high",
+    prerequisite: "none",
+    recovery: "Check syntax and command availability in shell.",
+  },
 });
+
+export interface ValidatedDispatchSubagentArgs {
+  agentId: AgentId;
+  task: string;
+  dispatchId?: string;
+}
+
+export function validateDispatchSubagentArgs(
+  args: Record<string, any>,
+  projectRoot: string
+): { ok: true; value: ValidatedDispatchSubagentArgs } | { ok: false; error: string } {
+  const agentIdArg = String(args.agentId ?? "").trim();
+  const taskArg = String(args.task ?? "").trim();
+  const dispatchIdArg = String(args.dispatchId ?? "").trim();
+  if (!agentIdArg || !taskArg) {
+    return { ok: false, error: "Error: 'agentId' and 'task' arguments are required for dispatch_subagent." };
+  }
+  if (!isAgentId(agentIdArg, projectRoot)) {
+    return { ok: false, error: `Error: Unknown agentId "${agentIdArg}" for dispatch_subagent.` };
+  }
+  if (taskArg.length > 50_000) {
+    return { ok: false, error: "Error: 'task' is too large for dispatch_subagent." };
+  }
+  return {
+    ok: true,
+    value: {
+      agentId: agentIdArg as AgentId,
+      task: taskArg,
+      ...(dispatchIdArg ? { dispatchId: dispatchIdArg } : {}),
+    },
+  };
+}
+
+function formatDispatchResult(res: Awaited<ReturnType<typeof dispatchAgent>>): string {
+  return `Exit Code: ${res.exitCode}\nStdout:\n${res.stdout}\nStderr:\n${res.stderr}`;
+}
+
+export async function executeDispatchSubagentFanout(
+  calls: ToolCall[],
+  projectRoot: string,
+  skillsRoot?: string,
+  signal?: AbortSignal
+): Promise<string[]> {
+  const results: string[] = new Array(calls.length);
+  const valid: ValidatedDispatchSubagentArgs[] = [];
+  const validIndexes: number[] = [];
+
+  calls.forEach((call, index) => {
+    const validated = validateDispatchSubagentArgs(call.arguments, projectRoot);
+    if (!validated.ok) {
+      results[index] = validated.error;
+      return;
+    }
+    valid.push(validated.value);
+    validIndexes.push(index);
+  });
+
+  if (valid.length === 0) return results;
+
+  try {
+    const fanout = await dispatchAgentsParallel(
+      projectRoot,
+      valid.map((v) => ({
+        agentId: v.agentId,
+        task: v.task,
+        projectRoot,
+        dispatchId: v.dispatchId,
+      })),
+      { skillsRoot, signal }
+    );
+    fanout.results.forEach((res: AgentDispatchResult, validIndex: number) => {
+      const originalIndex = validIndexes[validIndex]!;
+      results[originalIndex] = formatDispatchResult(res);
+    });
+    for (const originalIndex of validIndexes) {
+      results[originalIndex] ??= `Error executing subagent dispatch: ${fanout.error || "Missing subagent result"}`;
+    }
+    return results;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    for (const originalIndex of validIndexes) {
+      results[originalIndex] = `Error executing subagent dispatch: ${msg}`;
+    }
+    return results;
+  }
+}
+
+function validateShellQuoteBalance(command: string): string | null {
+  let d = 0;
+  let s = 0;
+  let b = 0;
+  for (const ch of command) {
+    if (ch === '"' && s % 2 === 0 && b % 2 === 0) d ^= 1;
+    else if (ch === "'" && d % 2 === 0 && b % 2 === 0) s ^= 1;
+    else if (ch === "`" && d % 2 === 0 && s % 2 === 0) b ^= 1;
+  }
+  if (d) return "unbalanced double quotes";
+  if (s) return "unbalanced single quotes";
+  if (b) return "unbalanced backticks";
+  return null;
+}
+
+export interface ParallelTaskInput {
+  agentId: string;
+  task: string;
+  label?: string;
+  contextFiles?: string[];
+  dispatchId?: string;
+}
+
+export async function executeDispatchParallel(
+  projectRoot: string,
+  batchLabel: string | undefined,
+  tasks: ParallelTaskInput[],
+  skillsRoot?: string,
+  signal?: AbortSignal,
+  sessionId?: string
+): Promise<string> {
+  const batchId = `batch-${randomUUID()}`;
+  if (sessionId) startDelegationBatch(sessionId, batchId, batchLabel);
+
+  const valid: ValidatedDispatchSubagentArgs[] = [];
+  const labels = new Map<string, string>();
+  const taskTexts = new Map<string, string>();
+
+  for (const t of tasks) {
+    const validated = validateDispatchSubagentArgs(
+      { agentId: t.agentId, task: t.task, dispatchId: t.dispatchId },
+      projectRoot
+    );
+    if (!validated.ok) {
+      return validated.error;
+    }
+    valid.push(validated.value);
+    labels.set(validated.value.dispatchId ?? validated.value.agentId, t.label ?? t.task.slice(0, 48));
+    taskTexts.set(validated.value.dispatchId ?? validated.value.agentId, t.task);
+  }
+
+  if (valid.length === 0) {
+    return "Error: 'tasks' array is empty for dispatch_parallel.";
+  }
+
+  try {
+    const skipVerify = getRuntimeFlags().skipSubagentVerifyOnParallel;
+    const fanout = await dispatchAgentsParallel(
+      projectRoot,
+      valid.map((v, i) => ({
+        agentId: v.agentId,
+        task: v.task,
+        projectRoot,
+        dispatchId: v.dispatchId,
+        contextFiles: tasks[i]?.contextFiles,
+        label: tasks[i]?.label,
+      })),
+      { skillsRoot, signal, skipVerify }
+    );
+
+    const report = buildParallelDispatchReport(fanout, {
+      batchId,
+      batchLabel,
+      labels,
+      taskByDispatchId: taskTexts,
+    });
+    report.tasks.forEach((tr) => {
+      const full = taskTexts.get(tr.dispatchId);
+      if (full) tr.task = full;
+    });
+
+    persistBatchReport(projectRoot, report);
+    if (sessionId) completeDelegationBatch(sessionId, report);
+
+    const modelReport = formatReportForModel(report);
+    return `Exit Code: ${fanout.success ? 0 : 1}\nStdout:\n${modelReport}\nStderr:\n${fanout.error ?? ""}`;
+  } catch (err: any) {
+    return `Error executing parallel dispatch: ${err?.message || String(err)}`;
+  }
+}
 
 // 6. dispatch_subagent
 registry.register({
@@ -771,25 +1161,93 @@ registry.register({
   schema: z.object({
     agentId: z.string(),
     task: z.string(),
+    dispatchId: z.string().optional(),
   }),
   execute: async (args: any, context: any) => {
     const { projectRoot, skillsRoot } = context;
-    const agentIdArg = args.agentId || "";
-    const taskArg = args.task || "";
-    if (!agentIdArg || !taskArg) {
-      return "Error: 'agentId' and 'task' arguments are required for dispatch_subagent.";
-    }
+    const validated = validateDispatchSubagentArgs(args, projectRoot);
+    if (!validated.ok) return validated.error;
     try {
+      if (getRuntimeFlags().subagentAlwaysIsolated) {
+        return await executeDispatchParallel(
+          projectRoot,
+          undefined,
+          [{
+            agentId: validated.value.agentId,
+            task: validated.value.task,
+            dispatchId: validated.value.dispatchId,
+          }],
+          skillsRoot,
+          context.cancellationToken instanceof AbortSignal ? context.cancellationToken : undefined,
+          context.sessionId
+        );
+      }
       const res = await dispatchAgent({
-        agentId: agentIdArg as any,
-        task: taskArg,
+        agentId: validated.value.agentId,
+        task: validated.value.task,
         projectRoot,
-      }, { skillsRoot });
-      return `Exit Code: ${res.exitCode}\nStdout:\n${res.stdout}\nStderr:\n${res.stderr}`;
+        dispatchId: validated.value.dispatchId,
+      }, { skillsRoot, signal: context.cancellationToken });
+      return formatDispatchResult(res);
     } catch (err: any) {
       return `Error executing subagent dispatch: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Delegate to subagent",
+    targetExtractor: (args: any) => args.agentId,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "high",
+    prerequisite: "none",
+    recovery: "Verify agent config and resource limits.",
+  },
+});
+
+// 6b. dispatch_parallel — parent-orchestrated batch (OpenCode-style)
+registry.register({
+  name: "dispatch_parallel",
+  description:
+    "Spawn multiple specialist subagents in parallel with isolated workspaces. Each task gets a scoped prompt; the runtime waits for all, merges file changes, and returns a structured batch report. Use for 2+ parallel tasks instead of multiple dispatch_subagent calls.",
+  category: "other",
+  schema: z.object({
+    batchLabel: z.string().optional(),
+    tasks: z.array(
+      z.object({
+        agentId: z.string(),
+        task: z.string(),
+        label: z.string().optional(),
+        contextFiles: z.array(z.string()).optional(),
+        dispatchId: z.string().optional(),
+      })
+    ),
+  }),
+  execute: async (args: any, context: any) => {
+    const { projectRoot, skillsRoot } = context;
+    const parsed = parseDispatchParallelTasks(args);
+    if (!parsed.ok) return parsed.error;
+    return executeDispatchParallel(
+      projectRoot,
+      parsed.batchLabel,
+      parsed.tasks,
+      skillsRoot,
+      context.cancellationToken instanceof AbortSignal ? context.cancellationToken : undefined,
+      context.sessionId
+    );
+  },
+  metadata: {
+    semanticAction: "Dispatch parallel",
+    targetExtractor: (args: any) => args.batchLabel || "parallel",
+    resultSummarizer: () => "parallel batch",
+    risk: "high",
+    prerequisite: "none",
+    recovery: "Verify agent config and resource limits.",
+  },
 });
 
 // 7. grep_file
@@ -829,7 +1287,20 @@ registry.register({
     } catch (err: any) {
       return `Error searching file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Search file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      if (/^No matches found/.test(r)) return "no matches";
+      const m = r.match(/Found (\d+) match/);
+      return m ? `${m[1]} ${m[1] === "1" ? "match" : "matches"}` : "done";
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify target path exists.",
+  },
 });
 
 // 8. find_files
@@ -902,7 +1373,20 @@ registry.register({
     } catch (err: any) {
       return `Error finding files: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Find files",
+    targetExtractor: (args: any) => args.path || ".",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      if (/^No files found/.test(r)) return "no files";
+      const m = r.match(/Found (\d+) files/);
+      return m ? `${m[1]} ${m[1] === "1" ? "file" : "files"}` : "done";
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify search path.",
+  },
 });
 
 // 9. delete_file
@@ -929,7 +1413,15 @@ registry.register({
     } catch (err: any) {
       return `Error deleting file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Delete file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: () => "deleted",
+    risk: "high",
+    prerequisite: "none",
+    recovery: "Ensure the file exists and is writable.",
+  },
 });
 
 // 10. move_file
@@ -965,7 +1457,15 @@ registry.register({
     } catch (err: any) {
       return `Error moving file: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Move file",
+    targetExtractor: (args: any) => args.source,
+    resultSummarizer: () => "moved",
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Ensure source file exists and destination path is valid.",
+  },
 });
 
 // 11. grep_search
@@ -1061,7 +1561,20 @@ registry.register({
     } catch (err: any) {
       return `Error running grep_search: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Search files",
+    targetExtractor: (args: any) => args.path || ".",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      if (/^No matches found/.test(r)) return "no matches";
+      const m = r.match(/Found (\d+) match/);
+      return m ? `${m[1]} ${m[1] === "1" ? "match" : "matches"}` : "done";
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify search path and pattern.",
+  },
 });
 
 // 12. create_directory
@@ -1088,7 +1601,15 @@ registry.register({
     } catch (err: any) {
       return `Error creating directory: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Create directory",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: () => "created",
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Verify parent directory permissions.",
+  },
 });
 
 // 13. file_info
@@ -1103,16 +1624,32 @@ registry.register({
     const { projectRoot } = context;
     const pathArg = args.path || "";
     if (!pathArg) return "Error: 'path' argument is required for file_info.";
-    const filePath = resolve(projectRoot, pathArg);
+    let filePath = resolve(projectRoot, pathArg);
+    let resolvedPath = pathArg;
+    if (pathArg === "BUILD_ID" && !existsSync(filePath)) {
+      const nextBuildId = resolve(projectRoot, ".next/BUILD_ID");
+      if (existsSync(nextBuildId)) {
+        filePath = nextBuildId;
+        resolvedPath = ".next/BUILD_ID";
+      }
+    }
     if (!existsSync(filePath)) {
       return `Error: File not found at path "${pathArg}"`;
     }
     try {
       const stat = statSync(filePath);
+      if (stat.isDirectory()) {
+        const entries = readdirSync(filePath);
+        return [
+          `Directory: ${resolvedPath}`,
+          `Entries: ${entries.length}`,
+          ...entries.map(e => `  - ${e}`)
+        ].join("\n");
+      }
       const content = readFileSync(filePath, "utf8");
       const lines = content.split("\n");
       return [
-        `File: ${pathArg}`,
+        `File: ${resolvedPath}`,
         `Size: ${(stat.size / 1024).toFixed(2)} KB (${stat.size} bytes)`,
         `Lines: ${lines.length}`,
         `Last Modified: ${new Date(stat.mtimeMs).toISOString()}`,
@@ -1121,7 +1658,21 @@ registry.register({
     } catch (err: any) {
       return `Error fetching file info: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Get file info",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "low",
+    prerequisite: "none",
+    recovery: "Verify that target path exists.",
+  },
 });
 
 // 14. batch_edit
@@ -1178,7 +1729,15 @@ registry.register({
     } catch (err: any) {
       return `Error applying batch_edit: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Batch edit file",
+    targetExtractor: (args: any) => args.path,
+    resultSummarizer: () => "edited",
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Ensure all targets match existing content exactly.",
+  },
 });
 
 // 15. git_summary
@@ -1205,7 +1764,21 @@ registry.register({
     } catch (err: any) {
       return `Error fetching Git summary: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Get git summary",
+    targetExtractor: () => "",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "low",
+    prerequisite: "git_repo",
+    recovery: "Ensure the workspace is a valid Git repository.",
+  },
 });
 
 // 16. git_diff
@@ -1234,7 +1807,21 @@ registry.register({
     } catch (err: any) {
       return `Error running git diff: ${err.message || String(err)}`;
     }
-  }
+  },
+  metadata: {
+    semanticAction: "Get git diff",
+    targetExtractor: () => "",
+    resultSummarizer: (_args: any, result: any) => {
+      const r = result ?? "";
+      const n = r.length;
+      return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : n >= 1024 ? `${(n / 1024).toFixed(1)} KB`
+        : `${n} B`;
+    },
+    risk: "low",
+    prerequisite: "git_repo",
+    recovery: "Ensure the workspace is a valid Git repository.",
+  },
 });
 
 
@@ -1249,24 +1836,80 @@ export async function executeTool(
   projectRoot: string,
   skillsRoot?: string,
   signal?: AbortSignal,
-  breaker?: CircuitBreakerState
+  breaker?: CircuitBreakerState,
+  circuitPrechecked = false,
+  sessionId?: string
 ): Promise<string> {
   // Use the caller's per-turn breaker when provided (scoped path), else the
   // process-wide fallback (legacy). Either way the trip reason is latched on the
   // state so the owning turn loop can hard-break (see consumeBreakerTrip).
   const state = breaker ?? circuitBreakerState;
+
+  // Track attempted file modifications
+  if (isFileWritingTool(name)) {
+    const pathArg = args.path || "";
+    if (pathArg) {
+      const resolvedPath = resolve(projectRoot, pathArg);
+      if (!state.lastModifiedFiles.includes(resolvedPath)) {
+        state.lastModifiedFiles.push(resolvedPath);
+        if (state.lastModifiedFiles.length > 10) {
+          state.lastModifiedFiles.shift();
+        }
+      }
+    }
+  }
+
+  // File Truncation Prevention Gate — block only when a large on-disk file would
+  // be replaced with clearly truncated content (the common LLM output-limit failure).
+  // Full rewrites of large files (e.g. rebuilding a corrupted page.tsx) are allowed
+  // when the new payload is comparable in size to what is already on disk.
+  if (name === "write_file") {
+    const pathArg = args.path || "";
+    if (pathArg) {
+      const filePath = resolve(projectRoot, pathArg);
+      if (existsSync(filePath)) {
+        try {
+          const stats = statSync(filePath);
+          const sizeInKb = stats.size / 1024;
+          const currentContent = readFileSync(filePath, "utf8");
+          const lineCount = currentContent.split("\n").length;
+          const newContent = args.content || "";
+          const newLineCount = newContent.split("\n").length;
+          const newSizeKb = Buffer.byteLength(newContent, "utf8") / 1024;
+          const isLargeExisting = lineCount > 100 || sizeInKb > 5;
+          const wouldTruncate =
+            newLineCount < Math.max(20, Math.floor(lineCount * 0.75)) &&
+            newSizeKb < Math.max(1, sizeInKb * 0.75);
+          if (isLargeExisting && wouldTruncate) {
+            return `Error: Large file detected (${lineCount} lines, ${sizeInKb.toFixed(2)} KB) and the new content looks truncated (${newLineCount} lines, ${newSizeKb.toFixed(2)} KB). To prevent output token truncation, use 'edit_file' for targeted changes, or build the file in chunks with write_file + append_file — do not overwrite with a partial body.`;
+          }
+        } catch (e) {
+          // ignore
+        }
+      } else {
+        const newContent = args.content || "";
+        const sizeInKb = Buffer.byteLength(newContent, "utf8") / 1024;
+        if (sizeInKb > 10) {
+          console.warn(`[WARNING] Creating a new large file (${sizeInKb.toFixed(2)} KB). Proceeding but recommend splitting or optimizing.`);
+        }
+      }
+    }
+  }
+
   // Check circuit breaker before execution
-  const circuitCheck = checkCircuitBreaker(state, [{ name, arguments: args }]);
-  if (circuitCheck.shouldBreak) {
-    state.trippedReason = circuitCheck.reason ?? "Possible infinite loop detected.";
-    return `Error: Circuit breaker triggered - ${circuitCheck.reason}`;
+  if (!circuitPrechecked) {
+    const circuitCheck = checkCircuitBreaker(state, [{ name, arguments: args }]);
+    if (circuitCheck.shouldBreak) {
+      state.trippedReason = circuitCheck.reason ?? "Possible infinite loop detected.";
+      return `Error: Circuit breaker triggered - ${circuitCheck.reason}`;
+    }
   }
 
   const resolvedSkillsRoot = skillsRoot || resolveSkillsRoot();
 
   const executeOnce = async (): Promise<string> => {
     const mockContext = {
-      sessionId: "session-id",
+      sessionId: sessionId ?? "session-id",
       traceId: "trace-id",
       workspaceId: "workspace-id",
       cancellationToken: signal || { aborted: false },
@@ -1309,10 +1952,9 @@ export async function executeTool(
     // subagent (`dispatch_subagent`) used to RESET the failure counter — the
     // breaker never tripped and the model spun re-running a build that always
     // fails. When `breakerFailedExits` is on, a non-zero exit counts as a failure.
-    const isError = isErrorResult(result);
     const isFailedExit =
       getRuntimeFlags().breakerFailedExits && isNonZeroExitResult(result);
-    if (isError || isFailedExit) {
+    if ((isErrorResult(result) && !isBenignEmptyResult(result)) || isFailedExit) {
       recordToolFailure(state);
     } else {
       recordToolSuccess(state);

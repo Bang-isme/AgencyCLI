@@ -42,14 +42,49 @@ describe("stripToolCalls", () => {
     expect(stripToolCalls(input)).toBe("Start\n\nEnd");
   });
 
+  it("strips function_calls wrappers and parameter tags cleanly", () => {
+    const input = "Start\n<function_calls><function_call name=\"read_file\"><parameter name=\"path\">src/page.tsx</parameter></function_call></function_calls>\nEnd";
+    expect(stripToolCalls(input)).toBe("Start\n\nEnd");
+  });
+
   it("strips stray closing tags left by message continuations", () => {
     const input = "Cập nhật plan:</tool_call></tool_call>";
     expect(stripToolCalls(input)).toBe("Cập nhật plan:");
   });
 
+  it("strips orphan function_calls and param closers leaked by provider wrappers", () => {
+    const input = "Giờ update homepage:</function_calls></function_calls></param>\nNext";
+    expect(stripToolCalls(input)).toBe("Giờ update homepage:\nNext");
+  });
+
+  it("strips malformed function_calls and invoke closers without >", () => {
+    const input = "Log:</function_calls\nWait</invoke\nEnd";
+    expect(stripToolCalls(input)).toBe("Log:\nWait\nEnd");
+  });
+
+  it("collapses repetitive wait narration lines", () => {
+    const input = "Build chạy dài.\nĐợi thêm:\nĐợi thêm:\nĐợi:\nXong.";
+    expect(stripToolCalls(input)).toBe("Build chạy dài.\nĐợi thêm:\nXong.");
+  });
+
+  it("strips function_commands and invoke markup-only lines", () => {
+    const input = "Monitor build:\n</function_commands>\n</invoke>\nDone.";
+    expect(stripToolCalls(input)).toBe("Monitor build:\n\nDone.");
+  });
+
   it("cleans up minimax tag lookalikes or repetition loop garbage", () => {
     const input = "files:]<]minimax[>[]<]minimax[>[]";
     expect(stripToolCalls(input)).toBe("files:");
+  });
+
+  it("strips stray closing tags like </command> and </mm:think>", () => {
+    const input = "Finished compile.</command>\n</invoke></mm:think># 🟢 Hello";
+    expect(stripToolCalls(input)).toBe("Finished compile.\n# 🟢 Hello");
+  });
+
+  it("strips unclosed tags at the end of the string", () => {
+    const input = "Next step:<tool_call name=\"x\"";
+    expect(stripToolCalls(input)).toBe("Next step:");
   });
 });
 

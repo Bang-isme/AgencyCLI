@@ -58,6 +58,7 @@ describe("runtime flags", () => {
     expect(f.autoRecover).toBe(true);
     expect(f.approvalInToolPath).toBe("enforce");
     expect(f.executionBudgetMs).toBe(300_000);
+    expect(f.subagentExecutionBudgetMs).toBe(600_000);
     expect(f.memoryGc).toBe(true);
   });
 
