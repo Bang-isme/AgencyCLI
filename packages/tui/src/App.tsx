@@ -2077,7 +2077,8 @@ ${taskDesc}`;
     : estimateComposerHeight(buffer, contentCols, loading);
   const baseFixedHeight = 2 + 1 + composerHeight + 1; // Header (2) + Divider (1) + Composer + Footer (1)
 
-  const suggestionsHeight = menuActive ? 9 : 0;
+  const maxVisibleSuggestions = rows < 22 ? 2 : rows < 26 ? 3 : rows < 30 ? 4 : 6;
+  const suggestionsHeight = menuActive ? maxVisibleSuggestions + 3 : 0;
   // ToolActivity renders one row + a marginTop blank line (2 total), and only
   // when NOT in a goal (the GoalRunner already shows live activity — showing the
   // spinner too is redundant and was never height-reserved during goals).
@@ -2089,8 +2090,8 @@ ${taskDesc}`;
   const activeErrorCount = errorNotifications.filter((e) => !e.dismissed).length;
   const errorBannerHeight = activeErrorCount > 0 ? 7 + (activeErrorCount > 1 ? 2 : 0) : 0;
 
-  // We want conversationHeight to be at least 4
-  const minConversationHeight = 4;
+  // We want conversationHeight to be at least 2
+  const minConversationHeight = rows < 20 ? 2 : 4;
 
   // Available height for GoalRunner
   const goalRunnerBaseHeight = goalActive ? (goalRunnerViewMode === "flat" ? 2 : 6) : 0;
@@ -2119,14 +2120,14 @@ ${taskDesc}`;
     const allocatedOther =
       baseFixedHeight + suggestionsHeight + loadingHeight + indexingHeight;
     const planBudget = rows - allocatedOther - 1 - minConversationHeight - planOverhead;
-    planMaxVisible = Math.max(2, Math.min(12, planBudget));
+    planMaxVisible = Math.max(1, Math.min(12, planBudget));
     const truncated = planTodos.length > planMaxVisible;
     const visibleRows = truncated ? planMaxVisible : planTodos.length;
     planPanelHeight = planOverhead + visibleRows + (truncated ? 1 : 0);
   }
 
   const fixedHeight = baseFixedHeight + suggestionsHeight + loadingHeight + goalRunnerHeight + indexingHeight + planPanelHeight + errorBannerHeight;
-  const conversationHeight = Math.max(4, rows - fixedHeight - 1);
+  const conversationHeight = Math.max(minConversationHeight, rows - fixedHeight - 1);
 
   useKeyboardHandlers({
     overlays,

@@ -14,7 +14,7 @@ export interface SlashMenuProps {
 }
 
 const NAME_WIDTH = 14;
-const MAX_VISIBLE = 6;
+
 
 
 
@@ -24,30 +24,31 @@ export const SlashMenu = memo(function SlashMenu({
   index,
   visible,
 }: SlashMenuProps) {
-  const { composerWidth, composerInnerWidth } = useTerminalLayout();
+  const { composerWidth, composerInnerWidth, rows } = useTerminalLayout();
   const descWidth = Math.max(8, composerInnerWidth - NAME_WIDTH - 6);
 
   if (!visible || items.length === 0) {
     return null;
   }
 
+  const maxVisible = rows < 22 ? 2 : rows < 26 ? 3 : rows < 30 ? 4 : 6;
   const safe = Math.max(0, Math.min(index, items.length - 1));
 
   let start = 0;
-  if (items.length > MAX_VISIBLE) {
-    start = Math.max(0, Math.min(safe - 2, items.length - MAX_VISIBLE));
+  if (items.length > maxVisible) {
+    start = Math.max(0, Math.min(safe - 2, items.length - maxVisible));
   }
-  const visibleItems = items.slice(start, start + MAX_VISIBLE);
-  const hasMore = items.length > MAX_VISIBLE;
+  const visibleItems = items.slice(start, start + maxVisible);
+  const hasMore = items.length > maxVisible;
 
-  const rows: JSX.Element[] = [];
-  for (let vi = 0; vi < MAX_VISIBLE; vi++) {
+  const rowsList: JSX.Element[] = [];
+  for (let vi = 0; vi < maxVisible; vi++) {
     const item = visibleItems[vi];
     if (item) {
       const realIndex = start + vi;
       const selected = realIndex === safe;
       const icon = item.icon ?? capabilityRegistry.get(item.name)?.icon ?? "·";
-      rows.push(
+      rowsList.push(
         <Box key={vi} flexDirection="row" height={1} overflow="hidden">
           <Box width={2}>
             <Text color={selected ? theme.accent : theme.muted}>
@@ -70,7 +71,7 @@ export const SlashMenu = memo(function SlashMenu({
         </Box>
       );
     } else {
-      rows.push(
+      rowsList.push(
         <Box key={vi} height={1}>
           <Text> </Text>
         </Box>
@@ -84,14 +85,14 @@ export const SlashMenu = memo(function SlashMenu({
       borderStyle="round"
       borderColor={theme.border}
       paddingX={1}
-      height={MAX_VISIBLE + 3}
+      height={maxVisible + 3}
       width={composerWidth}
       overflow="hidden"
     >
       <Text color={theme.muted} dimColor>
         /{hasMore ? ` ${items.length} commands` : " commands"}
       </Text>
-      {rows}
+      {rowsList}
     </Box>
   );
 });

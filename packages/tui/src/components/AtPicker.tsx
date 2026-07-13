@@ -10,7 +10,7 @@ export interface AtPickerProps {
   query: string;
 }
 
-const MAX_VISIBLE = 6;
+
 
 function fileIcon(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -50,7 +50,8 @@ export const AtPicker = memo(function AtPicker({
   index,
   query,
 }: AtPickerProps) {
-  const { composerWidth } = useTerminalLayout();
+  const { composerWidth, rows } = useTerminalLayout();
+  const maxVisible = rows < 22 ? 2 : rows < 26 ? 3 : rows < 30 ? 4 : 6;
 
   if (paths.length === 0) {
     return (
@@ -59,12 +60,12 @@ export const AtPicker = memo(function AtPicker({
         borderStyle="round"
         borderColor={theme.border}
         paddingX={1}
-        height={MAX_VISIBLE + 3}
+        height={maxVisible + 3}
         width={composerWidth}
         overflow="hidden"
       >
         <Text color={theme.muted}>No files match @{query || "…"}</Text>
-        {Array.from({ length: MAX_VISIBLE }).map((_, i) => (
+        {Array.from({ length: maxVisible }).map((_, i) => (
           <Text key={i}> </Text>
         ))}
       </Box>
@@ -74,19 +75,19 @@ export const AtPicker = memo(function AtPicker({
   const safe = index % paths.length;
 
   let start = 0;
-  if (paths.length > MAX_VISIBLE) {
-    start = Math.max(0, Math.min(safe - 2, paths.length - MAX_VISIBLE));
+  if (paths.length > maxVisible) {
+    start = Math.max(0, Math.min(safe - 2, paths.length - maxVisible));
   }
-  const visiblePaths = paths.slice(start, start + MAX_VISIBLE);
+  const visiblePaths = paths.slice(start, start + maxVisible);
 
-  const rows: JSX.Element[] = [];
-  for (let vi = 0; vi < MAX_VISIBLE; vi++) {
+  const rowsList: JSX.Element[] = [];
+  for (let vi = 0; vi < maxVisible; vi++) {
     const p = visiblePaths[vi];
     if (p) {
       const realIndex = start + vi;
       const selected = realIndex === safe;
       const icon = fileIcon(p);
-      rows.push(
+      rowsList.push(
         <Box key={vi} flexDirection="row" height={1} overflow="hidden">
           <Box width={3}>
             <Text color={selected ? theme.accent : theme.muted}>
@@ -102,7 +103,7 @@ export const AtPicker = memo(function AtPicker({
         </Box>
       );
     } else {
-      rows.push(
+      rowsList.push(
         <Box key={vi} height={1}>
           <Text> </Text>
         </Box>
@@ -116,14 +117,14 @@ export const AtPicker = memo(function AtPicker({
       borderStyle="round"
       borderColor={theme.border}
       paddingX={1}
-      height={MAX_VISIBLE + 3}
+      height={maxVisible + 3}
       width={composerWidth}
       overflow="hidden"
     >
       <Text color={theme.muted} dimColor>
         files matching @{query || "…"}
       </Text>
-      {rows}
+      {rowsList}
     </Box>
   );
 });
