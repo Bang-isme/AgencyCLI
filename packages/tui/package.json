@@ -23,7 +23,8 @@
     "ink": "^5.0.0",
     "react": "^18.3.0",
     "@agency/core": "workspace:*",
-    "@agency/providers": "workspace:*"
+    "@agency/providers": "workspace:*",
+    "@agency/skills-bridge": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -70,13 +70,23 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
       return <Text color={theme.muted}>No matching commands found.</Text>;
     }
 
+    const colWidth = useTwoColumns ? Math.floor(overlayWidth / 2) - 1 : overlayWidth - 4;
+
     const renderLine = (item: any) => {
       const isCore = item.tier === "core";
       const prereqs = item.prerequisites && item.prerequisites.length > 0 ? ` [${item.prerequisites.join(", ")}]` : "";
+      const prefix = `/${item.id}`.padEnd(14);
+      let desc = item.description + prereqs;
+
+      const allowedDescWidth = colWidth - 16;
+      if (desc.length > allowedDescWidth && allowedDescWidth > 5) {
+        desc = desc.substring(0, allowedDescWidth - 3) + "...";
+      }
+
       return (
         <Text color={theme.muted} wrap="truncate">
-          <Text color={isCore ? theme.accent : theme.muted}>/{item.id.padEnd(12)}</Text>
-          {item.description}{prereqs}
+          <Text color={isCore ? theme.accent : theme.muted}>{prefix}</Text>
+          {desc}
         </Text>
       );
     };

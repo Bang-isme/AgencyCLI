@@ -339,6 +339,9 @@ importers:
       '@agency/providers':
         specifier: workspace:*
         version: link:../providers
+      '@agency/skills-bridge':
+        specifier: workspace:*
+        version: link:../skills-bridge
       ink:
         specifier: ^5.0.0
         version: 5.2.1(@types/react@18.3.29)(react@18.3.1)

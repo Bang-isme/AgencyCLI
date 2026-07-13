@@ -306,6 +306,264 @@ export async function executeSlash(
       return { handled: true, showModels: true };
     }
 
+    case "setup": {
+      const { getWorkspaceReadiness, resolveSkillsRoot } = await import("@agency/core");
+      const readiness = await getWorkspaceReadiness(ctx.projectRoot);
+      const skillsRoot = (() => {
+        try { return resolveSkillsRoot(); } catch { return "(not found)"; }
+      })();
+      const lines = [
+        `* Workspace Setup & Readiness Check:`,
+        `  • Project root: ${ctx.projectRoot}`,
+        `  • Skills Pack:  ${skillsRoot}`,
+        `  • Status checks:`,
+      ];
+      for (const check of readiness) {
+        const icon = check.state === "ready" ? "✓" : "x";
+        lines.push(`    ${icon} ${check.label}: ${check.detail}`);
+      }
+      return {
+        handled: true,
+        systemLines: lines,
+      };
+    }
+
+    case "doctor": {
+      const { resolveSkillsRoot, getWorkspaceReadiness } = await import("@agency/core");
+      const { resolvePythonBin } = await import("@agency/skills-bridge");
+      const python = await resolvePythonBin();
+      const skillsRoot = (() => {
+        try { return resolveSkillsRoot(); } catch { return null; }
+      })();
+      const readiness = await getWorkspaceReadiness(ctx.projectRoot);
+
+      const lines = [
+        `+ Workspace & System Doctor Preflight Report:`,
+        `  • Python:      ${python ? `✓ ${python}` : "▲ not found (using heuristic fallback)"}`,
+        `  • Skills Pack: ${skillsRoot ? `✓ ${skillsRoot}` : "x not found (missing skills manifest)"}`,
+        `  • Git Repo:    ${readiness.find(c => c.id === "git")?.state === "ready" ? "✓ ready" : "▲ not a git repository"}`,
+        `  • Workspace readiness:`,
+      ];
+      for (const check of readiness) {
+        const icon = check.state === "ready" ? "✓" : "x";
+        lines.push(`    ${icon} [${check.id}] ${check.label}: ${check.detail}`);
+      }
+      return {
+        handled: true,
+        systemLines: lines,
+      };
+    }
+
+    case "browser": {
+      const parts = args.trim().split(/\s+/);
+      const { getBrowserMcpStatus } = await import("@agency/core");
+      const status = getBrowserMcpStatus(ctx.projectRoot);
+
+      if (parts[0] === "open" && parts[1]) {
+        const url = parts[1];
+        const { platform } = await import("node:os");
+        const { exec } = await import("node:child_process");
+        let openCommand = "";
+        const currentPlatform = platform();
+        if (currentPlatform === "win32") {
+          openCommand = `cmd.exe /c start "" "${url}"`;
+        } else if (currentPlatform === "darwin") {
+          openCommand = `open "${url}"`;
+        } else {
+          openCommand = `xdg-open "${url}"`;
+        }
+        try {
+          exec(openCommand);
+          return {
+            handled: true,
+            systemLines: [
+              `✓ Opened URL: ${url}`,
+              `  Browser MCP status: ${status.configured ? "configured" : "not configured"}`,
+            ],
+          };
+        } catch (err: any) {
+          return {
+            handled: true,
+            systemLines: [`Error opening URL: ${err.message}`],
+          };
+        }
+      }
+
+      return {
+        handled: true,
+        systemLines: [
+          `B Browser MCP Status Check:`,
+          `  • Configured: ${status.configured ? "✓ Yes" : "x No"}`,
+          `  • Hint: ${status.hint}`,
+          `  • Use '/browser open <url>' to open a web page directly.`,
+        ],
+      };
+    }
+
+    case "team": {
+      const { loadTeam, initTeam, addMember } = await import("@agency/core");
+      const parts = args.trim().split(/\s+/);
+      const sub = parts[0]?.toLowerCase();
+
+      if (sub === "init") {
+        const nameArgIdx = parts.indexOf("--name");
+        const nameVal = nameArgIdx !== -1 ? parts[nameArgIdx + 1] : undefined;
+        if (!nameVal) {
+          return {
+            handled: true,
+            systemLines: ["[Error] Team name is required. Usage: /team init --name <team_name>"],
+          };
+        }
+        try {
+          initTeam(ctx.projectRoot, nameVal);
+          return {
+            handled: true,
+            systemLines: [
+              `✓ Successfully initialized team "${nameVal}"!`,
+              `  File written: .agency/team.json`,
+            ],
+          };
+        } catch (err: any) {
+          return { handled: true, systemLines: [`[Error] ${err.message}`] };
+        }
+      }
+
+      if (sub === "member") {
+        if (parts[1]?.toLowerCase() === "add") {
+          const idIdx = parts.indexOf("--id");
+          const nameIdx = parts.indexOf("--name");
+          const roleIdx = parts.indexOf("--role");
+          const emailIdx = parts.indexOf("--email");
+
+          const id = idIdx !== -1 ? parts[idIdx + 1] : undefined;
+          const nameVal = nameIdx !== -1 ? parts[nameIdx + 1] : undefined;
+          const role = roleIdx !== -1 ? parts[roleIdx + 1] : undefined;
+          const email = emailIdx !== -1 ? parts[emailIdx + 1] : undefined;
+
+          if (!id || !nameVal || !role) {
+            return {
+              handled: true,
+              systemLines: [
+                "[Error] Missing arguments. Usage: /team member add --id <id> --name <name> --role <role> [--email <email>]",
+              ],
+            };
+          }
+          try {
+            addMember(ctx.projectRoot, { id, name: nameVal, role: role as any, email });
+            return {
+              handled: true,
+              systemLines: [
+                `✓ Added member ${nameVal} (${role}) to the team.`,
+              ],
+            };
+          } catch (err: any) {
+            return { handled: true, systemLines: [`[Error] ${err.message}`] };
+          }
+        }
+      }
+
+      // Default: show
+      try {
+        const config = loadTeam(ctx.projectRoot);
+        if (!config) {
+          return {
+            handled: true,
+            systemLines: [
+              `▲ Team not initialized for this project.`,
+              `  Use '/team init --name <name>' to bootstrap team collaboration config.`,
+            ],
+          };
+        }
+        const lines = [
+          `T Team: ${config.teamName}`,
+          `  Members:`,
+        ];
+        if (config.members && config.members.length > 0) {
+          for (const m of config.members) {
+            lines.push(`    - [${m.id}] ${m.name} (${m.role})${m.email ? ` <${m.email}>` : ""}`);
+          }
+        } else {
+          lines.push(`    (No members added yet. Run '/team member add ...')`);
+        }
+        return {
+          handled: true,
+          systemLines: lines,
+        };
+      } catch {
+        return {
+          handled: true,
+          systemLines: [
+            `▲ Team not found or not initialized.`,
+            `  Use '/team init --name <name>' to start.`,
+          ],
+        };
+      }
+    }
+
+    case "workflow": {
+      const { listWorkflowNames, WORKFLOWS } = await import("@agency/core");
+      const parts = args.trim().split(/\s+/);
+      const sub = parts[0]?.toLowerCase();
+
+      if (sub === "run") {
+        const wfName = parts[1];
+        if (!wfName) {
+          return {
+            handled: true,
+            systemLines: [`[Error] Workflow name is required. Available: ${listWorkflowNames().join(", ")}`],
+          };
+        }
+        return {
+          handled: true,
+          systemLines: [
+            `⚠ To run workflow "${wfName}" autonomously, please trigger the Goal runner:`,
+            `  Use: /goal execute workflow ${wfName} ${parts.slice(2).join(" ")}`,
+          ],
+        };
+      }
+
+      const lines = [
+        `W CodexAI Execution Workflows:`,
+      ];
+      for (const name of listWorkflowNames()) {
+        const steps = WORKFLOWS[name].map((s) => s.name).join(" ➔ ");
+        lines.push(`  • ${name.padEnd(10)}: ${steps}`);
+      }
+      lines.push(`  • Use '/workflow run <name>' to see execution instructions.`);
+      return {
+        handled: true,
+        systemLines: lines,
+      };
+    }
+
+    case "git": {
+      return {
+        handled: true,
+        systemLines: [
+          `g Git Operations Bridge:`,
+          `  For interactive code review, branch analysis, or diff checks, use the review overlay:`,
+          `  Command: /review`,
+          `  Or use specialized sub-options:`,
+          `    • /review staged        - Review staged changes`,
+          `    • /review commit        - Review the last commit`,
+          `    • /review branch        - Review current branch changes`,
+        ],
+      };
+    }
+
+    case "handover": {
+      const { generateHandover } = await import("@agency/core");
+      const { path } = generateHandover(ctx.projectRoot);
+      return {
+        handled: true,
+        systemLines: [
+          `H Generated Handover Handoff Report:`,
+          `  File written: ${path}`,
+          `  This report contains session summary, active tasks, and context details so team members or subsequent sessions can resume with zero context loss.`,
+        ],
+      };
+    }
+
     case "skills":
     case "skill":
       return { handled: true, showSkills: true };
