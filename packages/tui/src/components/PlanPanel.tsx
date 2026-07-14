@@ -38,7 +38,7 @@ export function selectPlanRows(
   const total = todos.length;
   if (total === 0) return { rows: [], aboveCount: 0, belowCount: 0, truncated: false };
 
-  const cap = Math.max(1, Math.min(maxVisible && maxVisible > 0 ? maxVisible : (compact ? 4 : total), compact ? 4 : total));
+  const cap = Math.max(1, maxVisible && maxVisible > 0 ? maxVisible : (compact ? 4 : total));
   const inProgress = todos.findIndex((t) => t.status === "in_progress");
   const firstUnfinished = todos.findIndex((t) => t.status !== "completed");
   const focus = inProgress >= 0 ? inProgress : Math.max(0, firstUnfinished);

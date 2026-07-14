@@ -3035,7 +3035,7 @@ ${taskDesc}`;
               />
             ) : null}
             {planActive ? (
-              <PlanPanel theme={theme} todos={planTodos} maxVisible={planMaxVisible} />
+              <PlanPanel theme={theme} todos={planTodos} maxVisible={planMaxVisible} compact={false} />
             ) : null}
             {indexing ? (
               <IndexProgressPanel
