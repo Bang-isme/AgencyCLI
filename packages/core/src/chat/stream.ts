@@ -43,7 +43,7 @@ import {
   globalProviderSupervisor,
 } from "../utils/governance-instance.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall, executeDispatchSubagentFanout, executeDispatchParallel, type ParallelTaskInput } from "../skill/tool-harness.js";
+import { parseToolCalls, stripToolCallsFromText, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall, executeDispatchSubagentFanout, executeDispatchParallel, type ParallelTaskInput } from "../skill/tool-harness.js";
 import { consumeBreakerTrip, type CircuitBreakerState } from "./circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
 import { loadHistoricalMemories, safeAddEpisode } from "./memory-integration.js";
@@ -549,7 +549,7 @@ export async function runChatTurnWithStream(
 
         turnHistory = [
           ...turnHistory,
-          { role: "assistant" as const, content: currentText },
+          { role: "assistant" as const, content: stripToolCallsFromText(currentText) },
           { role: "user" as const, content: toolOutputs },
         ];
         turnHistory = pruneToolResultsInHistory(turnHistory);
@@ -614,7 +614,7 @@ export async function runChatTurnWithStream(
             : "";
         turnHistory = [
           ...turnHistory,
-          { role: "assistant" as const, content: currentText },
+          { role: "assistant" as const, content: stripToolCallsFromText(currentText) },
           {
             role: "user" as const,
             content: "You were cut off because of token limit limits. Continue exactly where you left off without any preamble, greeting, or repetitive sentences. Maintain the exact formatting structure, including active markdown code blocks or SEARCH/REPLACE blocks without duplication.",
@@ -643,7 +643,7 @@ export async function runChatTurnWithStream(
         publishAutoContinueContinuation(autoContinueCount, MAX_AUTO_CONTINUE);
         turnHistory = [
           ...turnHistory,
-          { role: "assistant" as const, content: currentText },
+          { role: "assistant" as const, content: stripToolCallsFromText(currentText) },
           { role: "user" as const, content: buildAutoContinueNudge(filesWritten, input.projectRoot, autoContinueCount) },
         ];
         loopCount++;

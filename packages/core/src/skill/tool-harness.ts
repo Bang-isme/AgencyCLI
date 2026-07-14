@@ -79,21 +79,35 @@ export function parseToolCalls(text: string): ToolCall[] {
 
     const args: Record<string, string> = {};
     
-    // Match parameters
+    // Match attribute-style parameters first (<param name="key">val</param>)
     const paramRegex = /<(?:parameter|param|arg)\s+name\s*=\s*['"]([^'"]+)['"]\s*>([\s\S]*?)<\/\s*(?:parameter|param|arg)\s*>/g;
     let pMatch;
     while ((pMatch = paramRegex.exec(body)) !== null) {
       args[pMatch[1]!] = pMatch[2]!.trim();
     }
     
-    // Match standard XML tags
-    const argRegex = /<([^>\s/]+)>([\s\S]*?)<\/\1>/g;
+    // Match standard XML tags by outer top-level boundaries (preventing inner HTML/JSX tags from corrupting content)
+    const topTagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
     let argMatch;
-    while ((argMatch = argRegex.exec(body)) !== null) {
+    let cursor = 0;
+    while ((argMatch = topTagRegex.exec(body)) !== null) {
       const tagName = argMatch[1]!;
       if (!["parameter", "param", "arg", "name", "tool_call", "invoke", "invoke_call", "function_call", "function_calls"].includes(tagName)) {
-        args[tagName] = argMatch[2]!.trim();
+        if (!args[tagName]) {
+          const openTag = `<${tagName}>`;
+          const closeTag = `</${tagName}>`;
+          const openIdx = body.indexOf(openTag, cursor);
+          const closeIdx = body.lastIndexOf(closeTag);
+          if (openIdx !== -1 && closeIdx > openIdx) {
+            args[tagName] = body.slice(openIdx + openTag.length, closeIdx).trim();
+            cursor = closeIdx + closeTag.length;
+            topTagRegex.lastIndex = cursor;
+            continue;
+          }
+          args[tagName] = argMatch[2]!.trim();
+        }
       }
+      cursor = argMatch.index + argMatch[0].length;
     }
     
     toolCalls.push({ name, arguments: args });
@@ -143,6 +157,17 @@ export function parseToolCalls(text: string): ToolCall[] {
   }
 
   return toolCalls;
+}
+
+/**
+ * Strips tool call XML blocks and unclosed tool call tags from text so that
+ * assistant history saved to turnHistory stays clean and unpolluted.
+ */
+export function stripToolCallsFromText(text: string): string {
+  if (!text) return "";
+  let clean = text.replace(/<(tool_call|invoke|invoke_call|function_call|minimax:tool_call)(?:\s+name\s*=\s*["']([^"']+)["']\s*|\s*)>([\s\S]*?)<\/\s*(?:tool_call|invoke|invoke_call|function_call|minimax:tool_call)\s*>/g, "");
+  clean = clean.replace(/<(tool_call|invoke|invoke_call|function_call|minimax:tool_call)\b[\s\S]*$/g, "");
+  return clean.trim();
 }
 
 /**

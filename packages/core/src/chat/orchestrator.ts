@@ -29,7 +29,7 @@ import { formatRouteSummary, buildSuggestedCommands } from "./route-presentation
 import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, pruneToolResultsInHistory, recordTurnTokenCost, resolveSessionId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, buildAutoContinueExhaustedNotice, publishAutoContinueContinuation, MAX_AUTO_CONTINUE, MAX_TOTAL_AUTO_CONTINUE } from "./turn-helpers.js";
 import { createTraceRecorder } from "./trace-recorder.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
-import { parseToolCalls, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall, executeDispatchSubagentFanout } from "../skill/tool-harness.js";
+import { parseToolCalls, stripToolCallsFromText, executeTool, truncateToolResult, isFileWritingTool, resetToolCircuitBreaker, consumeCircuitBreakerTrip, createTurnCircuitBreaker, hasUnclosedToolCall, executeDispatchSubagentFanout } from "../skill/tool-harness.js";
 import { resolveContextRetryLimit } from "./context-retry.js";
 import { consumeBreakerTrip, type CircuitBreakerState } from "./circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
@@ -391,7 +391,7 @@ export async function runChatTurn(
 
         turnHistory = [
           ...turnHistory,
-          { role: "assistant" as const, content: currentText },
+          { role: "assistant" as const, content: stripToolCallsFromText(currentText) },
           { role: "user" as const, content: toolOutputs },
         ];
 
@@ -436,7 +436,7 @@ export async function runChatTurn(
             : "";
         turnHistory = [
           ...turnHistory,
-          { role: "assistant" as const, content: currentText },
+          { role: "assistant" as const, content: stripToolCallsFromText(currentText) },
           {
             role: "user" as const,
             content: "You were cut off because of token limit limits. Continue exactly where you left off without any preamble, greeting, or repetitive sentences. Maintain the exact formatting structure, including active markdown code blocks or SEARCH/REPLACE blocks without duplication.",
@@ -461,7 +461,7 @@ export async function runChatTurn(
         publishAutoContinueContinuation(autoContinueCount, MAX_AUTO_CONTINUE);
         turnHistory = [
           ...turnHistory,
-          { role: "assistant" as const, content: currentText },
+          { role: "assistant" as const, content: stripToolCallsFromText(currentText) },
           { role: "user" as const, content: buildAutoContinueNudge(filesWritten, input.projectRoot, autoContinueCount) },
         ];
         loopCount++;

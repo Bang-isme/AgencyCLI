@@ -489,7 +489,11 @@ describe("Sandbox Suite", () => {
 
       const executePromise = sandbox.execute("cat bigfile");
       stdoutStream.push("1234567890abcdef"); // 16 bytes > 10
-      setTimeout(() => closeCb?.(0), 10);
+      stdoutStream.push(null);
+      setImmediate(() => {
+        if (closeCb) closeCb(0);
+        else setTimeout(() => closeCb?.(0), 20);
+      });
 
       const result = await executePromise;
       expect(result.stdoutTruncated).toBe(true);

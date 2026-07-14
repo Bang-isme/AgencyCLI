@@ -3,7 +3,7 @@ import { z } from "zod";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseToolCalls, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker, createTurnCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
+import { parseToolCalls, stripToolCallsFromText, executeTool, isFileWritingTool, truncateToolResult, registry, resetToolCircuitBreaker, createTurnCircuitBreaker, consumeCircuitBreakerTrip, hasUnclosedToolCall } from "../skill/tool-harness.js";
 import { executeTurnToolBatch } from "../chat/turn-loop.js";
 import { consumeBreakerTrip } from "../chat/circuit-breaker.js";
 import { EventBus } from "../events/event-bus.js";
@@ -133,6 +133,35 @@ Here is my decision:
       `;
       expect(() => parseToolCalls(text)).not.toThrow();
       expect(parseToolCalls(text)).toHaveLength(0);
+    });
+
+    it("parses code content with nested HTML and JSX tags cleanly without corruption", () => {
+      const text = `
+<tool_call name="append_file">
+  <path>src/components/Hero.tsx</path>
+  <content>
+    export function Hero() {
+      return (
+        <section className="hero">
+          <h1>Hero Title</h1>
+          <p>Description</p>
+        </section>
+      );
+    }
+  </content>
+</tool_call>
+      `;
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.name).toBe("append_file");
+      expect(calls[0]!.arguments.path).toBe("src/components/Hero.tsx");
+      expect(calls[0]!.arguments.content).toContain('<section className="hero">');
+      expect(calls[0]!.arguments.content).toContain('<h1>Hero Title</h1>');
+    });
+
+    it("stripToolCallsFromText removes XML tool call blocks and unclosed tags cleanly", () => {
+      const text = `I will append the component code now.\n<tool_call name="append_file">\n  <path>a.tsx</path>\n</tool_call>\nDone!`;
+      expect(stripToolCallsFromText(text)).toBe("I will append the component code now.\n\nDone!");
     });
 
     it("parses minimax:tool_call tags correctly", () => {
