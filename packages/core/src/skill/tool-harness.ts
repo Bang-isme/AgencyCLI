@@ -2175,10 +2175,10 @@ registry.register({
 // browser_action
 registry.register({
   name: "browser_action",
-  description: "Perform a user interaction on the active browser page, such as clicking an element, typing text, or taking a screenshot.",
+  description: "Perform a user interaction on the active browser page, such as clicking an element, typing text, taking a screenshot, hovering, pressing keys, scrolling, or navigating history.",
   category: "write",
   schema: z.object({
-    action: z.enum(["click", "type", "screenshot"]),
+    action: z.enum(["click", "type", "screenshot", "hover", "press", "scroll", "wait", "back", "forward", "reload"]),
     selector: z.string().optional(),
     value: z.string().optional(),
   }),
@@ -2193,6 +2193,35 @@ registry.register({
         if (!args.selector) return "Error: 'selector' is required for type action.";
         if (args.value === undefined) return "Error: 'value' is required for type action.";
         await browser.type(args.selector, args.value);
+      } else if (action === "hover") {
+        if (!args.selector) return "Error: 'selector' is required for hover action.";
+        await browser.hover(args.selector);
+      } else if (action === "press") {
+        if (!args.selector) return "Error: 'selector' is required for press action.";
+        if (!args.value) return "Error: 'value' (key) is required for press action.";
+        await browser.press(args.selector, args.value);
+      } else if (action === "scroll") {
+        let dir: any = args.value;
+        if (dir && !isNaN(Number(dir))) {
+          dir = Number(dir);
+        }
+        await browser.scroll(args.selector, dir);
+      } else if (action === "wait") {
+        let waitVal: string | number = args.value || "";
+        if (waitVal && !isNaN(Number(waitVal))) {
+          waitVal = Number(waitVal);
+        }
+        if (!waitVal && args.selector) {
+          waitVal = args.selector;
+        }
+        if (!waitVal) return "Error: 'selector' or 'value' (ms) is required for wait action.";
+        await browser.wait(waitVal);
+      } else if (action === "back") {
+        await browser.back();
+      } else if (action === "forward") {
+        await browser.forward();
+      } else if (action === "reload") {
+        await browser.reload();
       } else if (action === "screenshot") {
         const screenshotBuf = await browser.screenshot();
         const screenshotName = `browser_screenshot_${Date.now()}.png`;

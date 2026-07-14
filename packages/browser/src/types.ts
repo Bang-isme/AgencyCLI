@@ -33,4 +33,18 @@ export interface BrowserAutomationRuntime {
   getCurrentUrl(): string;
   /** Returns the current operating mode. */
   getMode(): BrowserMode;
+  /** Simulates hovering over a DOM node. */
+  hover(selector: string): Promise<void>;
+  /** Simulates pressing a key on a DOM node. */
+  press(selector: string, key: string): Promise<void>;
+  /** Scrolls the page or a specific element. */
+  scroll(selector?: string, direction?: "up" | "down" | "left" | "right" | number): Promise<void>;
+  /** Waits for a CSS selector or duration. */
+  wait(selectorOrMs: string | number): Promise<void>;
+  /** Navigates back in history. */
+  back(): Promise<void>;
+  /** Navigates forward in history. */
+  forward(): Promise<void>;
+  /** Reloads the page. */
+  reload(): Promise<void>;
 }

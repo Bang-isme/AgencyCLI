@@ -86,6 +86,34 @@ export class MockRuntime implements BrowserAutomationRuntime {
     this.launched = false;
   }
 
+  async hover(_selector: string): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
+  async press(_selector: string, _key: string): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
+  async scroll(_selector?: string, _direction?: "up" | "down" | "left" | "right" | number): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
+  async wait(_selectorOrMs: string | number): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
+  async back(): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
+  async forward(): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
+  async reload(): Promise<void> {
+    if (!this.launched) throw new Error("Mock browser is not launched.");
+  }
+
   getClickHistory(): string[] {
     return this.clickHistory;
   }
@@ -197,6 +225,64 @@ export class PlaywrightRuntime implements BrowserAutomationRuntime {
     this.page = null;
     this.context = null;
     this.browser = null;
+  }
+
+  async hover(selector: string): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    await this.page.hover(selector);
+  }
+
+  async press(selector: string, key: string): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    await this.page.press(selector, key);
+  }
+
+  async scroll(selector?: string, direction?: "up" | "down" | "left" | "right" | number): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    if (selector) {
+      await this.page.evaluate((sel: string) => {
+        const el = document.querySelector(sel);
+        if (el) el.scrollIntoView({ behavior: "smooth" });
+      }, selector);
+    } else {
+      await this.page.evaluate((dir: any) => {
+        if (typeof dir === "number") {
+          window.scrollBy({ top: dir, behavior: "smooth" });
+        } else if (dir === "down") {
+          window.scrollBy({ top: window.innerHeight * 0.8, behavior: "smooth" });
+        } else if (dir === "up") {
+          window.scrollBy({ top: -window.innerHeight * 0.8, behavior: "smooth" });
+        } else if (dir === "left") {
+          window.scrollBy({ left: -window.innerWidth * 0.8, behavior: "smooth" });
+        } else if (dir === "right") {
+          window.scrollBy({ left: window.innerWidth * 0.8, behavior: "smooth" });
+        }
+      }, direction ?? "down");
+    }
+  }
+
+  async wait(selectorOrMs: string | number): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    if (typeof selectorOrMs === "number") {
+      await this.page.waitForTimeout(selectorOrMs);
+    } else {
+      await this.page.waitForSelector(selectorOrMs);
+    }
+  }
+
+  async back(): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    await this.page.goBack();
+  }
+
+  async forward(): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    await this.page.goForward();
+  }
+
+  async reload(): Promise<void> {
+    if (!this.page) throw new Error("Playwright browser is not launched.");
+    await this.page.reload();
   }
 }
 
@@ -329,6 +415,106 @@ export class CdpRuntime implements BrowserAutomationRuntime {
       this.ws.close();
     }
     this.ws = null;
+  }
+
+  async hover(selector: string): Promise<void> {
+    const script = `
+      (() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) throw new Error("Element not found: " + ${JSON.stringify(selector)});
+        el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        return true;
+      })()
+    `;
+    await this.evaluate(script);
+  }
+
+  async press(selector: string, key: string): Promise<void> {
+    const script = `
+      (() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) throw new Error("Element not found: " + ${JSON.stringify(selector)});
+        const opts = { key: ${JSON.stringify(key)}, bubbles: true };
+        el.dispatchEvent(new KeyboardEvent('keydown', opts));
+        el.dispatchEvent(new KeyboardEvent('keypress', opts));
+        el.dispatchEvent(new KeyboardEvent('keyup', opts));
+        return true;
+      })()
+    `;
+    await this.evaluate(script);
+  }
+
+  async scroll(selector?: string, direction?: "up" | "down" | "left" | "right" | number): Promise<void> {
+    if (selector) {
+      const script = `
+        (() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+          return true;
+        })()
+      `;
+      await this.evaluate(script);
+    } else {
+      const script = `
+        (() => {
+          const dir = ${JSON.stringify(direction ?? "down")};
+          const val = Number(dir);
+          if (!isNaN(val)) {
+            window.scrollBy({ top: val, behavior: 'smooth' });
+          } else if (dir === 'down') {
+            window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' });
+          } else if (dir === 'up') {
+            window.scrollBy({ top: -window.innerHeight * 0.8, behavior: 'smooth' });
+          } else if (dir === 'left') {
+            window.scrollBy({ left: -window.innerWidth * 0.8, behavior: 'smooth' });
+          } else if (dir === 'right') {
+            window.scrollBy({ left: window.innerWidth * 0.8, behavior: 'smooth' });
+          }
+          return true;
+        })()
+      `;
+      await this.evaluate(script);
+    }
+  }
+
+  async wait(selectorOrMs: string | number): Promise<void> {
+    if (typeof selectorOrMs === "number") {
+      await new Promise((resolve) => setTimeout(resolve, selectorOrMs));
+    } else {
+      const script = `
+        (() => {
+          return new Promise((resolve, reject) => {
+            const sel = ${JSON.stringify(selectorOrMs)};
+            if (document.querySelector(sel)) return resolve(true);
+            const observer = new MutationObserver(() => {
+              if (document.querySelector(sel)) {
+                observer.disconnect();
+                resolve(true);
+              }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            setTimeout(() => {
+              observer.disconnect();
+              reject(new Error("Timeout waiting for selector: " + sel));
+            }, 10000);
+          });
+        })()
+      `;
+      await this.evaluate(script);
+    }
+  }
+
+  async back(): Promise<void> {
+    await this.evaluate("history.back()");
+  }
+
+  async forward(): Promise<void> {
+    await this.evaluate("history.forward()");
+  }
+
+  async reload(): Promise<void> {
+    await this.evaluate("location.reload()");
   }
 }
 
