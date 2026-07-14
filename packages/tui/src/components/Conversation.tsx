@@ -6,6 +6,7 @@ import type { SubagentStatus } from "../state/subagent-status.js";
 import { parseToolCalls, getRuntimeFlags, sanitizeAssistantTranscript } from "@agency/core";
 import { EmptyChat } from "./EmptyChat.js";
 import { contentWidth as measureContentWidth } from "../layout/terminal-layout.js";
+import { renderHighlightedLine } from "./SyntaxHighlighter.js";
 
 /** Verb shown in the per-message file-change summary, by write-tool name. */
 const FILE_TOOL_VERB: Record<string, string> = {
@@ -332,7 +333,9 @@ function renderConversationParts(parts: ConversationPart[], ctx: RenderPartsCont
             <Box flexDirection="row" width={innerWidth}>
               <Text color={prefixColor}>│ </Text>
               <Text color={theme.muted}>  {lineNum} │ </Text>
-              <Box flexGrow={1} overflow="hidden"><Text color={theme.text} backgroundColor={theme.panel}>{codeLine}</Text></Box>
+              <Box flexGrow={1} overflow="hidden">
+                {renderHighlightedLine(codeLine, part.language ?? "", theme)}
+              </Box>
             </Box>
           ),
           "HIGH"
@@ -1147,12 +1150,18 @@ export function calculateFormattedLines(
             const maxLineNumWidth = String(innerCodeLines.length).length;
             const displayedLinesCount = expandedTui ? Math.min(innerCodeLines.length, 24) : Math.min(innerCodeLines.length, 12);
 
+            let streamLanguage = "";
+            const firstFenceLine = codeLines.find(l => l.trim().startsWith("```"));
+            if (firstFenceLine) {
+              streamLanguage = firstFenceLine.trim().slice(3).trim();
+            }
+
             formatted.push(linePool.acquire(
               `${m.id}-stream-code-header`,
               (
                 <Box flexDirection="row" width={innerWidth}>
                   <Text color={prefixColor}>│ </Text>
-                  <Text color={theme.accent} bold>  [Code Block]</Text>
+                  <Text color={theme.accent} bold>  [Code Block {streamLanguage ? `(${streamLanguage})` : ""}]</Text>
                 </Box>
               ),
               "HIGH"
@@ -1172,7 +1181,7 @@ export function calculateFormattedLines(
                       <Text color={prefixColor}>│ </Text>
                       <Text color={theme.muted}>  {clIdx === 0 ? lineNum : " ".repeat(maxLineNumWidth)} │ </Text>
                       <Box flexGrow={1} overflow="hidden">
-                        <Text color={theme.text} backgroundColor={theme.panel}>{codeLineText}</Text>
+                        {renderHighlightedLine(codeLineText, streamLanguage, theme)}
                       </Box>
                     </Box>
                   ),

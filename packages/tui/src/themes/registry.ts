@@ -26,6 +26,45 @@ export const THEMES: Record<string, ThemeTokens> = {
     warning: "#f9e2af",  // Soft amber (Elevated warnings/decisions)
     danger: "#f38ba8",   // Soft rose red (Failed states & errors)
   },
+  catppuccin: {
+    bg: "#1e1e2e",
+    panel: "#181825",
+    border: "#313244",
+    dimBorder: "#45475a",
+    text: "#cdd6f4",
+    muted: "#7f849c",
+    accent: "#cba6f7",
+    highlight: "#f5c2e7",
+    success: "#a6e3a1",
+    warning: "#f9e2af",
+    danger: "#f38ba8",
+  },
+  oneDark: {
+    bg: "#282c34",
+    panel: "#21252b",
+    border: "#393f4a",
+    dimBorder: "#2c313a",
+    text: "#abb2bf",
+    muted: "#5c6370",
+    accent: "#56b6c2",
+    highlight: "#61afef",
+    success: "#98c379",
+    warning: "#e5c07b",
+    danger: "#e06c75",
+  },
+  tokyoNight: {
+    bg: "#1a1b26",
+    panel: "#1e2030",
+    border: "#737aa2",
+    dimBorder: "#545c7e",
+    text: "#c8d3f5",
+    muted: "#828bb8",
+    accent: "#ff966c",
+    highlight: "#82aaff",
+    success: "#4fd6be",
+    warning: "#ff966c",
+    danger: "#ff757f",
+  },
   daylight: {
     bg: "#fdf6e3",       // Solarized Base3 (Warm cream paper background)
     panel: "#eee8d5",    // Solarized Base2 (Highlight panel)
