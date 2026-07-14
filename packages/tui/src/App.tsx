@@ -40,6 +40,7 @@ import { VariantOverlay } from "./components/VariantOverlay.js";
 import { ThemeOverlay } from "./components/ThemeOverlay.js";
 import { RouteOverlay } from "./components/RouteOverlay.js";
 import { BrowserOverlay } from "./components/BrowserOverlay.js";
+import { LiveGrillOverlay } from "./components/LiveGrillOverlay.js";
 import { SkillsPicker } from "./components/SkillsPicker.js";
 import { ReviewMenu } from "./components/ReviewMenu.js";
 import { StatusDashboard } from "./components/StatusDashboard.js";
@@ -274,9 +275,11 @@ export function App({
     route: false,
     themePicker: false,
     browser: false,
+    liveGrill: false,
   });
 
   const [expandedTui, setExpandedTui] = useState(false);
+  const [grillPayload, setGrillPayload] = useState<any>(null);
   const [mcpConnecting, setMcpConnecting] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [activeSubagentId, setActiveSubagentId] = useState<string | null>(null);
@@ -303,6 +306,7 @@ export function App({
       route: false,
       themePicker: false,
       browser: false,
+      liveGrill: false,
     });
   }, []);
 
@@ -329,7 +333,8 @@ export function App({
     overlays.help ||
     overlays.route ||
     overlays.themePicker ||
-    overlays.browser;
+    overlays.browser ||
+    overlays.liveGrill;
 
   const updateSession = useCallback(
     (updater: (s: AgencySession) => AgencySession, saveToDisk = true) => {
@@ -1044,9 +1049,16 @@ export function App({
       ]);
     };
 
+    const handleLoopPaused = (event: any) => {
+      const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
+      setGrillPayload(payload);
+      setOverlayOpen("liveGrill", true);
+    };
+
     EventBus.getInstance().subscribe("system:warning", handleSystemWarning);
     EventBus.getInstance().subscribe("security:egress-denied", handleSecurityAlert);
     EventBus.getInstance().subscribe("chat:verify-failed", handleVerifyFailed);
+    EventBus.getInstance().subscribe("loop:paused", handleLoopPaused);
 
     return () => {
       delete (globalThis as any).onAgencyProviderWarning;
@@ -1055,6 +1067,7 @@ export function App({
       EventBus.getInstance().unsubscribe("system:warning", handleSystemWarning);
       EventBus.getInstance().unsubscribe("security:egress-denied", handleSecurityAlert);
       EventBus.getInstance().unsubscribe("chat:verify-failed", handleVerifyFailed);
+      EventBus.getInstance().unsubscribe("loop:paused", handleLoopPaused);
     };
   }, [addSystemLines, updateSession]);
 
@@ -1762,6 +1775,7 @@ ${taskDesc}`;
             signal: controller.signal,
             history,
             sessionId: session?.id,
+            loopMitigationWaitForResume: true,
           },
           {
             onRoute: (ev) => {
@@ -2643,6 +2657,13 @@ ${taskDesc}`;
                   });
                 }}
                 onClose={() => setOverlayOpen("browser", false)}
+              />
+            ) : null}
+            {overlays.liveGrill && grillPayload ? (
+              <LiveGrillOverlay
+                theme={theme}
+                payload={grillPayload}
+                onClose={() => setOverlayOpen("liveGrill", false)}
               />
             ) : null}
             {overlays.connect ? (

@@ -46,6 +46,7 @@ export interface OverlayStates {
   route: boolean;
   themePicker: boolean;
   browser: boolean;
+  liveGrill: boolean;
 }
 
 export interface UseKeyboardHandlersOptions {
