@@ -193,6 +193,10 @@ export function mergeWorkspaceChanges(
 export function cleanIsolatedWorkspace(ws: WorkspaceIsolation): void {
   closeDb(ws.tempDir);
   if (existsSync(ws.tempDir)) {
-    rmSync(ws.tempDir, { recursive: true, force: true });
+    try {
+      rmSync(ws.tempDir, { recursive: true, force: true });
+    } catch (err: any) {
+      console.warn(`[WARNING] Failed to clean up isolated workspace at ${ws.tempDir}: ${err.message || String(err)}`);
+    }
   }
 }

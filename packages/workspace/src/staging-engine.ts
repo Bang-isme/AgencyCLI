@@ -143,7 +143,7 @@ export class StagingEngine {
         const proc = execa(bin!, args, {
           cwd: tempWorkspace,
           reject: false,
-          cancelSignal: signal,
+          signal,
         });
 
         const onAbort = () => {
