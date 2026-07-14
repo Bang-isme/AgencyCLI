@@ -435,16 +435,39 @@ export async function executeSlash(
           const roleIdx = parts.indexOf("--role");
           const emailIdx = parts.indexOf("--email");
 
-          const id = idIdx !== -1 ? parts[idIdx + 1] : undefined;
-          const nameVal = nameIdx !== -1 ? parts[nameIdx + 1] : undefined;
-          const role = roleIdx !== -1 ? parts[roleIdx + 1] : undefined;
+          let id = idIdx !== -1 ? parts[idIdx + 1] : undefined;
+          let nameVal = nameIdx !== -1 ? parts[nameIdx + 1] : undefined;
+          let role = roleIdx !== -1 ? parts[roleIdx + 1] : undefined;
           const email = emailIdx !== -1 ? parts[emailIdx + 1] : undefined;
+
+          if (!id || !nameVal || !role) {
+            // Find positional arguments to fill in the blanks
+            const posArgs: string[] = [];
+            for (let i = 2; i < parts.length; i++) {
+              const part = parts[i]!;
+              if (part.startsWith("-")) {
+                i++; // skip value of flag
+                continue;
+              }
+              posArgs.push(part);
+            }
+            if (!id && posArgs.length >= 1) {
+              id = posArgs[0]?.toLowerCase();
+            }
+            if (!nameVal && posArgs.length >= 1) {
+              nameVal = id && id !== posArgs[0]?.toLowerCase() ? posArgs[0] : (posArgs[1] ?? posArgs[0]);
+            }
+            if (!role) {
+              role = (posArgs.length >= 3 ? posArgs[2] : undefined) ?? "dev";
+            }
+          }
 
           if (!id || !nameVal || !role) {
             return {
               handled: true,
               systemLines: [
                 "[Error] Missing arguments. Usage: /team member add --id <id> --name <name> --role <role> [--email <email>]",
+                "  (Fallback syntax: /team member add <id> <name> <role>)",
               ],
             };
           }

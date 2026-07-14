@@ -280,6 +280,8 @@ export function App({
   const [transcriptFocus, setTranscriptFocus] = useState<TranscriptFocus>(inactiveFocus);
   const userHasScrolledUpRef = useRef(false);
 
+  const [readiness, setReadiness] = useState<any[]>([]);
+
   const closeAllOverlays = useCallback(() => {
     setOverlays({
       connect: false,
@@ -519,6 +521,20 @@ export function App({
   const [indexReady, setIndexReady] = useState(false);
   const [indexProgress, setIndexProgress] = useState<import("@agency/core").IndexProgress | null>(null);
   const indexAbortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    import("@agency/core").then(({ getWorkspaceReadiness }) => {
+      if (!active) return;
+      getWorkspaceReadiness(project).then((res) => {
+        if (!active) return;
+        setReadiness(res);
+      }).catch(() => {});
+    });
+    return () => {
+      active = false;
+    };
+  }, [project, indexing, agencyConfig]);
 
   const handleCancelOrAbort = useCallback(() => {
     let handled = false;
@@ -2353,6 +2369,7 @@ ${taskDesc}`;
           selectedIndex={welcomeIndex}
           rows={rows}
           cols={cols}
+          readiness={readiness}
         />
       </TerminalViewport>
     );

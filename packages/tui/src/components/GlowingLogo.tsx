@@ -199,7 +199,7 @@ export function GlowingLogo({
 
   const { cols, rows: layoutRows } = useTerminalLayout();
   const rows = height ?? layoutRows;
-  const shouldCollapse = rows < 20 || cols < 50;
+  const shouldCollapse = rows < 28 || cols < 50;
 
   if (shouldCollapse) {
     return (

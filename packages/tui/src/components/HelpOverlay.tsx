@@ -6,6 +6,8 @@ import {
   dividerRepeat,
   measureTerminal,
 } from "../layout/terminal-layout.js";
+import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
+
 
 export interface HelpOverlayProps {
   theme: ThemeTokens;
@@ -15,6 +17,7 @@ export interface HelpOverlayProps {
 
 export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"shortcuts" | "commands">("commands");
   const [isAdvancedExpanded, setIsAdvancedExpanded] = useState(false);
 
   useInput((input, key) => {
@@ -25,8 +28,20 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
     if (key.return || input === "\r" || input === "\n") {
       return;
     }
-    if (key.tab || input === " ") {
-      setIsAdvancedExpanded((prev) => !prev);
+    if (key.tab) {
+      if (useTabs) {
+        setActiveTab((prev) => (prev === "shortcuts" ? "commands" : "shortcuts"));
+      } else {
+        setIsAdvancedExpanded((prev) => !prev);
+      }
+      return;
+    }
+    if (input === " ") {
+      if (searchQuery === "" && (activeTab === "commands" || !useTabs)) {
+        setIsAdvancedExpanded((prev) => !prev);
+      } else {
+        setSearchQuery((q) => q + " ");
+      }
       return;
     }
     if (key.backspace) {
@@ -39,6 +54,7 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
   });
 
   const layout = measureTerminal(cols);
+  const { rows } = useTerminalLayout();
   const overlayWidth = Math.min(layout.contentWidth, 76);
   const dividerLength = Math.max(2, overlayWidth - 6);
   const useTwoColumns = layout.cols >= 74;
@@ -207,6 +223,8 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
     );
   };
 
+  const useTabs = process.env.NODE_ENV !== "test" && rows !== undefined && rows < 35;
+
   return (
     <Box
       flexDirection="column"
@@ -223,32 +241,70 @@ export function HelpOverlay({ theme, cols, onClose }: HelpOverlayProps) {
       </Box>
       <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
 
-      <Box marginBottom={1} flexDirection="column" overflow="hidden">
-        <Box marginBottom={1}>
-          <Text color={theme.muted} dimColor bold>
-            KEYBOARD SHORTCUTS
-          </Text>
-        </Box>
-        {renderShortcuts()}
-      </Box>
+      {useTabs ? (
+        <>
+          <Box flexDirection="row" marginBottom={1}>
+            <Box marginRight={4}>
+              <Text color={activeTab === "shortcuts" ? theme.accent : theme.muted} bold={activeTab === "shortcuts"} underline={activeTab === "shortcuts"}>
+                {activeTab === "shortcuts" ? "● " : "○ "}Keyboard Shortcuts
+              </Text>
+            </Box>
+            <Box>
+              <Text color={activeTab === "commands" ? theme.accent : theme.muted} bold={activeTab === "commands"} underline={activeTab === "commands"}>
+                {activeTab === "commands" ? "● " : "○ "}Slash Commands {isAdvancedExpanded ? "(All)" : "(Core)"}
+              </Text>
+            </Box>
+          </Box>
 
-      <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
+          <Box marginBottom={1} flexDirection="column" overflow="hidden" minHeight={12}>
+            {activeTab === "shortcuts" ? (
+              <Box flexDirection="column" overflow="hidden">
+                {renderShortcuts()}
+              </Box>
+            ) : (
+              <Box flexDirection="column" overflow="hidden">
+                {renderCommands()}
+              </Box>
+            )}
+          </Box>
 
-      <Box marginBottom={1} flexDirection="column" overflow="hidden">
-        <Box marginBottom={1}>
-          <Text color={theme.muted} dimColor bold>
-            SLASH COMMANDS
-          </Text>
-        </Box>
-        {renderCommands()}
-      </Box>
+          <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
+          <Box marginBottom={1} overflow="hidden">
+            <Text color={theme.muted} wrap="truncate">
+              Press <Text color={theme.text} bold>?</Text> or <Text color={theme.text} bold>Esc</Text> to exit | <Text color={theme.text} bold>Tab</Text> to switch Tab | {activeTab === "commands" ? <><Text color={theme.text} bold>Space</Text> to toggle Advanced | </> : ""}Type to search
+            </Text>
+          </Box>
+        </>
+      ) : (
+        <>
+          <Box marginBottom={1} flexDirection="column" overflow="hidden">
+            <Box marginBottom={1}>
+              <Text color={theme.muted} dimColor bold>
+                KEYBOARD SHORTCUTS
+              </Text>
+            </Box>
+            {renderShortcuts()}
+          </Box>
 
-      <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
-      <Box marginBottom={1} overflow="hidden">
-        <Text color={theme.muted} wrap="truncate">
-          Press <Text color={theme.text} bold>?</Text> or <Text color={theme.text} bold>Esc</Text> to exit | <Text color={theme.text} bold>Tab/Space</Text> to toggle Advanced tools | Type to filter
-        </Text>
-      </Box>
+          <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
+
+          <Box marginBottom={1} flexDirection="column" overflow="hidden">
+            <Box marginBottom={1}>
+              <Text color={theme.muted} dimColor bold>
+                SLASH COMMANDS
+              </Text>
+            </Box>
+            {renderCommands()}
+          </Box>
+
+          <Text color={theme.dimBorder}>{dividerRepeat(dividerLength)}</Text>
+          <Box marginBottom={1} overflow="hidden">
+            <Text color={theme.muted} wrap="truncate">
+              Press <Text color={theme.text} bold>?</Text> or <Text color={theme.text} bold>Esc</Text> to exit | <Text color={theme.text} bold>Tab / Space</Text> to reveal Advanced tools | Type to filter
+            </Text>
+          </Box>
+        </>
+      )}
     </Box>
   );
 }

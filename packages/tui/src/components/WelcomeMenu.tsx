@@ -11,6 +11,7 @@ export interface WelcomeMenuProps {
   selectedIndex: number;
   rows: number;
   cols: number;
+  readiness?: any[];
 }
 
 const OPTIONS = [
@@ -23,6 +24,7 @@ export function WelcomeMenu({
   theme,
   version = "0.1.0",
   selectedIndex,
+  readiness,
 }: WelcomeMenuProps) {
   const tick = useTick(true, 50);
   const { shellWidth, shellHeight, cols } = useTerminalLayout();
@@ -76,12 +78,31 @@ export function WelcomeMenu({
         {/* Divider */}
         <ScanningDivider width={innerWidth} tick={tick} theme={theme} phaseOffset={15} />
 
+        {/* Workspace Readiness Checklist */}
+        {readiness && readiness.length > 0 && (
+          <Box flexDirection="column" paddingY={1} paddingX={isNarrow ? 0 : 2} overflow="hidden">
+            <Text color={theme.warning} bold>Workspace Status Checklist:</Text>
+            {readiness.map((check) => {
+              const isReady = check.state === "ready";
+              const color = isReady ? theme.success : check.state === "attention" ? theme.warning : theme.danger;
+              const statusIcon = isReady ? "✓" : "x";
+              return (
+                <Box key={check.id} flexDirection="row" overflow="hidden">
+                  <Text color={color} bold>{`  [${statusIcon}] `}</Text>
+                  <Text color={theme.text} bold wrap="truncate">{check.label}: </Text>
+                  <Text color={theme.muted} wrap="truncate">{check.detail}</Text>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+
         {/* Options Menu */}
         <Box
           flexDirection="column"
-          paddingY={isNarrow ? 1 : 2}
+          paddingY={isNarrow ? 0 : 1}
           paddingX={isNarrow ? 0 : 2}
-          height={isNarrow ? 5 : 7}
+          height={isNarrow ? 4 : 5}
           overflow="hidden"
         >
           {OPTIONS.map((opt, idx) => {
