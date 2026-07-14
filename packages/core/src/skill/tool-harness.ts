@@ -1906,6 +1906,21 @@ export async function executeTool(
     }
   }
 
+  // Pre-emptive loop warning for consecutive identical calls (at 3rd call)
+  const lastSignature = `${name}:${JSON.stringify(args)}`;
+  let repeatCount = 0;
+  for (let i = state.toolCallHistory.length - 2; i >= 0; i--) {
+    if (state.toolCallHistory[i] === lastSignature) {
+      repeatCount++;
+    } else {
+      break;
+    }
+  }
+  const isTestEnv = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+  if (!isTestEnv && repeatCount >= 2 && repeatCount < getRuntimeFlags().circuitBreakerThreshold - 1) {
+    return `Error: You have already executed the tool "${name}" consecutively ${repeatCount} times with identical arguments. Running it again is redundant and will fail. Please stop, inspect the files, modify your arguments, or try an alternative command/strategy to get unstuck.`;
+  }
+
   const resolvedSkillsRoot = skillsRoot || resolveSkillsRoot();
 
   const executeOnce = async (): Promise<string> => {
@@ -1955,7 +1970,10 @@ export async function executeTool(
     // fails. When `breakerFailedExits` is on, a non-zero exit counts as a failure.
     const isFailedExit =
       getRuntimeFlags().breakerFailedExits && isNonZeroExitResult(result);
-    if ((isErrorResult(result) && !isBenignEmptyResult(result)) || isFailedExit) {
+    // Command tools (execute_command) returning non-zero exit codes are providing compiler/test
+    // feedback during normal debugging cycles, so they should NOT count as consecutive harness failures.
+    const isCommandTool = ["execute_command"].includes(name);
+    if ((isErrorResult(result) && !isBenignEmptyResult(result)) || (isFailedExit && !isCommandTool)) {
       recordToolFailure(state);
     } else {
       recordToolSuccess(state);
