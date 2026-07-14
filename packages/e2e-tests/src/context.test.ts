@@ -17,9 +17,12 @@ async function stopServer(proc: any, config: any) {
         headers: { "Authorization": `Bearer ${config.token}` },
         signal: AbortSignal.timeout(1000),
       });
+      await new Promise((resolve) => setTimeout(resolve, 300));
     } catch {}
   }
-  proc.kill("SIGTERM");
+  try {
+    proc.kill("SIGTERM");
+  } catch {}
   await proc.catch(() => {});
 }
 
