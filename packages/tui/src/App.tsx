@@ -37,6 +37,7 @@ import { ErrorBanner, type ErrorNotification } from "./components/ErrorBanner.js
 import { ConnectOverlay, getProviderInfo, type ProviderStatus } from "./components/ConnectOverlay.js";
 import { ModelsOverlay } from "./components/ModelsOverlay.js";
 import { VariantOverlay } from "./components/VariantOverlay.js";
+import { ThemeOverlay } from "./components/ThemeOverlay.js";
 import { RouteOverlay } from "./components/RouteOverlay.js";
 import { SkillsPicker } from "./components/SkillsPicker.js";
 import { ReviewMenu } from "./components/ReviewMenu.js";
@@ -270,6 +271,7 @@ export function App({
     project: false,
     help: false,
     route: false,
+    themePicker: false,
   });
 
   const [expandedTui, setExpandedTui] = useState(false);
@@ -297,6 +299,7 @@ export function App({
       project: false,
       help: false,
       route: false,
+      themePicker: false,
     });
   }, []);
 
@@ -321,7 +324,8 @@ export function App({
     overlays.resume ||
     overlays.project ||
     overlays.help ||
-    overlays.route;
+    overlays.route ||
+    overlays.themePicker;
 
   const updateSession = useCallback(
     (updater: (s: AgencySession) => AgencySession, saveToDisk = true) => {
@@ -1242,6 +1246,11 @@ export function App({
         closeAllOverlays();
         setOverlayOpen("variant", true);
         addSystemLines(["v Opening Thinking Budget Selector..."]);
+      }
+      if (slash.showThemePicker) {
+        closeAllOverlays();
+        setOverlayOpen("themePicker", true);
+        addSystemLines(["🎨 Opening Theme Selector..."]);
       }
       if (slash.injectPrompt) {
         setBuffer(slash.injectPrompt);
@@ -2554,6 +2563,49 @@ ${taskDesc}`;
           >
             {overlays.help ? (
               <HelpOverlay theme={theme} cols={cols} onClose={() => setOverlayOpen("help", false)} />
+            ) : null}
+            {overlays.themePicker ? (
+              <ThemeOverlay
+                theme={theme}
+                currentThemeId={themeId}
+                onPreview={(tid) => setThemeId(tid)}
+                onSelect={(tid) => {
+                  setThemeId(tid);
+                  import("node:fs").then(({ readFileSync, writeFileSync, mkdirSync, existsSync: fsExists }) => {
+                    import("node:os").then(({ homedir }) => {
+                      import("node:path").then(({ join: pjoin }) => {
+                        const dir = pjoin(homedir(), ".agency");
+                        if (!fsExists(dir)) mkdirSync(dir, { recursive: true });
+                        const cfgPath = pjoin(dir, "config.json");
+                        let cfg: Record<string, any> = {};
+                        try {
+                          cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+                        } catch { /* ignored */ }
+                        cfg.theme = tid;
+                        writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), "utf8");
+                        setOverlayOpen("themePicker", false);
+                        addSystemLines([`✓ Theme permanently set to ${tid}`]);
+                      });
+                    });
+                  });
+                }}
+                onClose={() => {
+                  import("node:fs").then(({ readFileSync }) => {
+                    import("node:os").then(({ homedir }) => {
+                      import("node:path").then(({ join: pjoin }) => {
+                        const cfgPath = pjoin(homedir(), ".agency", "config.json");
+                        let loadedTheme = "agency";
+                        try {
+                          const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+                          if (cfg.theme) loadedTheme = cfg.theme;
+                        } catch { /* ignored */ }
+                        setThemeId(loadedTheme as any);
+                        setOverlayOpen("themePicker", false);
+                      });
+                    });
+                  });
+                }}
+              />
             ) : null}
             {overlays.connect ? (
               <ConnectOverlay

@@ -46,6 +46,8 @@ export interface SlashResult {
   showResume?: boolean;
   /** Open project picker. */
   showProject?: boolean;
+  /** Open theme picker overlay. */
+  showThemePicker?: boolean;
   /** Launch a long-running goal task. */
   goalTask?: string;
   /** Add a recurring schedule. */
@@ -114,14 +116,10 @@ export async function executeSlash(
 
     case "themes":
     case "theme": {
-      if (!args && name === "themes") {
+      if (!args) {
         return {
           handled: true,
-          systemLines: [
-            `Themes: ${listThemeIds().join(", ")}`,
-            `Active: ${ctx.themeId}`,
-            "Use /theme <id> to switch.",
-          ],
+          showThemePicker: true,
         };
       }
       const next = (args || "agency").toLowerCase();
