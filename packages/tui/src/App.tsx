@@ -40,7 +40,6 @@ import { VariantOverlay } from "./components/VariantOverlay.js";
 import { ThemeOverlay } from "./components/ThemeOverlay.js";
 import { RouteOverlay } from "./components/RouteOverlay.js";
 import { BrowserOverlay } from "./components/BrowserOverlay.js";
-import { LiveGrillOverlay } from "./components/LiveGrillOverlay.js";
 import { SkillsPicker } from "./components/SkillsPicker.js";
 import { ReviewMenu } from "./components/ReviewMenu.js";
 import { StatusDashboard } from "./components/StatusDashboard.js";
@@ -279,6 +278,7 @@ export function App({
   });
 
   const [expandedTui, setExpandedTui] = useState(false);
+  const [isLoopPaused, setIsLoopPaused] = useState(false);
   const [grillPayload, setGrillPayload] = useState<any>(null);
   const [mcpConnecting, setMcpConnecting] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -1052,7 +1052,12 @@ export function App({
     const handleLoopPaused = (event: any) => {
       const payload = typeof event.payload === "string" ? JSON.parse(event.payload) : event.payload;
       setGrillPayload(payload);
-      setOverlayOpen("liveGrill", true);
+      setIsLoopPaused(true);
+      setLoading(false);
+      addSystemLines([
+        `⚠️ Stuck Agent Alert: Loop paused after ${payload?.consecutiveFailures ?? 5} consecutive failures.`,
+        `Type instructions below to steer the agent, or type /abort or /rollback to stop/revert.`,
+      ]);
     };
 
     EventBus.getInstance().subscribe("system:warning", handleSystemWarning);
@@ -1970,6 +1975,35 @@ ${taskDesc}`;
     const prompt = buffer.trim();
     if (!prompt) return;
     setBuffer("");
+
+    if (isLoopPaused) {
+      const action = prompt.toLowerCase() === "/abort" || prompt.toLowerCase() === "/exit"
+        ? "abort"
+        : prompt.toLowerCase() === "/rollback"
+        ? "rollback"
+        : "continue";
+
+      const { EventBus: EB } = await import("@agency/core");
+      void EB.getInstance().publish("loop:resume", {
+        agentId: grillPayload?.agentId,
+        conversationId: grillPayload?.conversationId,
+        action,
+        feedback: action === "continue" ? prompt : undefined,
+      });
+
+      setIsLoopPaused(false);
+      setGrillPayload(null);
+      setLoading(true);
+      setActivityPhase("writing");
+
+      updateSession((s) =>
+        appendMessages(s, [
+          { role: "user", content: prompt }
+        ])
+      );
+      return;
+    }
+
     // Clear the worker tracker too (not just the React mirror): the tracker Map is
     // a process singleton, so without this the previous turn's workers leak back
     // into this turn's panel on the next notify.
@@ -1984,7 +2018,7 @@ ${taskDesc}`;
     userHasScrolledUpRef.current = false;
     promptQueueRef.current.push(prompt);
     void processNextInQueue();
-  }, [buffer, processNextInQueue, workerPanelLifecycle]);
+  }, [buffer, processNextInQueue, workerPanelLifecycle, isLoopPaused, grillPayload, updateSession]);
 
   const clearApproval = useCallback(
     (decision: "approve" | "deny") => {
@@ -2443,24 +2477,42 @@ ${taskDesc}`;
         loading={loading}
         composer={
           showApproval || overlayActive || activeSubagentId !== null ? null : (
-            <ComposerBlock
-              theme={theme}
-              buffer={buffer}
-              cursorPos={composerCursorEdit ? cursorPos : undefined}
-              onBufferChange={setBuffer}
-              onSlashExpand={() => setIsSlashExpanded(true)}
-              loading={loading}
-              showHelp={overlays.help}
-              slashQuery={slashActive?.query ?? null}
-              slashSuggestions={slashSuggestions}
-              atQuery={atActive?.query ?? null}
-              atSuggestions={atSuggestions}
-              agentMode={agentMode}
-              displayModelName={displayModelName}
-              budgetMode={modeBudget(agentMode)}
-              thinkingLabel={thinkingLabel}
-              project={project}
-            />
+            <Box flexDirection="column" width="100%">
+              {isLoopPaused ? (
+                <Box
+                  borderStyle="single"
+                  borderColor={theme.danger}
+                  paddingX={1}
+                  marginBottom={0}
+                  flexDirection="column"
+                >
+                  <Text color={theme.danger} bold>
+                    ⚠️ Stuck Agent: Loop paused after {grillPayload?.consecutiveFailures ?? 5} failures.
+                  </Text>
+                  <Text color={theme.text}>
+                    Steer: Type steering instructions and press Enter. Stop: Type /abort or /rollback.
+                  </Text>
+                </Box>
+              ) : null}
+              <ComposerBlock
+                theme={theme}
+                buffer={buffer}
+                cursorPos={composerCursorEdit ? cursorPos : undefined}
+                onBufferChange={setBuffer}
+                onSlashExpand={() => setIsSlashExpanded(true)}
+                loading={loading}
+                showHelp={overlays.help}
+                slashQuery={slashActive?.query ?? null}
+                slashSuggestions={slashSuggestions}
+                atQuery={atActive?.query ?? null}
+                atSuggestions={atSuggestions}
+                agentMode={agentMode}
+                displayModelName={displayModelName}
+                budgetMode={modeBudget(agentMode)}
+                thinkingLabel={thinkingLabel}
+                project={project}
+              />
+            </Box>
           )
         }
         footer={
@@ -2657,13 +2709,6 @@ ${taskDesc}`;
                   });
                 }}
                 onClose={() => setOverlayOpen("browser", false)}
-              />
-            ) : null}
-            {overlays.liveGrill && grillPayload ? (
-              <LiveGrillOverlay
-                theme={theme}
-                payload={grillPayload}
-                onClose={() => setOverlayOpen("liveGrill", false)}
               />
             ) : null}
             {overlays.connect ? (
