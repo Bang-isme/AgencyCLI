@@ -1023,7 +1023,7 @@ async function dispatchAgentImpl(
         const runWorkspaceAcceptance = async (): Promise<{ passed: boolean; failures: string }> => {
           for (const cmd of xmlAcceptanceCommands) {
             const [bin, ...args] = cmd;
-            const proc = execa(bin!, args, { cwd: req.projectRoot, reject: false, detached: true, signal: controller.signal });
+            const proc = execa(bin!, args, { cwd: req.projectRoot, reject: false, detached: true, cancelSignal: controller.signal });
             WorkerRegistry.getInstance().register(proc);
             const res = await proc;
             if (res.exitCode !== 0) {

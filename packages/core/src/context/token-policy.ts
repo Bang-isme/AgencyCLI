@@ -30,7 +30,7 @@ const PLANS: Record<BudgetMode, TokenBudgetPlan> = {
     mode: "normal",
     maxContextFiles: 12,
     maxContextChars: 32000,
-    maxLlmOutputTokens: 2048,
+    maxLlmOutputTokens: 4096,
     allowPreflight: false,
     includeFullRouteJson: false,
     useRouteCache: true,
@@ -39,7 +39,7 @@ const PLANS: Record<BudgetMode, TokenBudgetPlan> = {
     mode: "deep",
     maxContextFiles: 25,
     maxContextChars: 64000,
-    maxLlmOutputTokens: 4096,
+    maxLlmOutputTokens: 8192,
     allowPreflight: true,
     includeFullRouteJson: false,
     useRouteCache: true,
@@ -77,11 +77,11 @@ export function getTokenBudgetPlan(
       } else if (mode === "normal") {
         plan.maxContextChars = Math.min(128000, Math.max(16000, adaptiveMaxChars));
         plan.maxContextFiles = spec.contextWindow >= 100000 ? 30 : 12;
-        plan.maxLlmOutputTokens = Math.min(2048, maxOutputLimit);
+        plan.maxLlmOutputTokens = Math.min(4096, maxOutputLimit);
       } else if (mode === "deep") {
         plan.maxContextChars = Math.min(512000, Math.max(32000, adaptiveMaxChars));
         plan.maxContextFiles = spec.contextWindow >= 100000 ? 60 : 25;
-        plan.maxLlmOutputTokens = Math.min(4096, maxOutputLimit);
+        plan.maxLlmOutputTokens = Math.min(8192, maxOutputLimit);
       }
     }
   } catch {
