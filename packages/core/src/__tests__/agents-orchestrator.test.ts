@@ -468,7 +468,11 @@ describe("dispatchAgent", () => {
     const started: ReplayEvent[] = [];
     const finished: ReplayEvent[] = [];
     const onStarted = (e: ReplayEvent) => started.push(e);
-    const onFinished = (e: ReplayEvent) => finished.push(e);
+    const onFinished = (e: ReplayEvent) => {
+      if (started.length > 0 && e.dispatchId === started[0]!.dispatchId) {
+        finished.push(e);
+      }
+    };
     bus.subscribe("subagent:started", onStarted);
     bus.subscribe("subagent:finished", onFinished);
 
