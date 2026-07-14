@@ -34,6 +34,7 @@
     "@agency/heuristics": "workspace:*",
     "@agency/memory": "workspace:*",
     "@agency/providers": "workspace:*",
+    "@agency/browser": "workspace:*",
     "@agency/security": "workspace:*",
     "@agency/skills-bridge": "workspace:*",
     "@agency/telemetry": "workspace:*",

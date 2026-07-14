@@ -6,7 +6,10 @@
     "rootDir": "src",
     "types": ["node"]
   },
-  "references": [{ "path": "../providers" }],
+  "references": [
+    { "path": "../providers" },
+    { "path": "../browser" }
+  ],
   "include": ["src/**/*"],
   "exclude": ["src/**/__tests__/**"]
 }

@@ -271,6 +271,8 @@ export const MASTER_CAPABILITIES: readonly CapabilityDescriptor[] = [
   { id: "help", tier: "core", surfaces: ["tui", "cli"], label: "Help", description: "Shortcuts and capability discovery overlay", category: "workspace", risk: "low", prerequisites: [], icon: "?", aliases: ["h"] },
   { id: "setup", tier: "core", surfaces: ["tui", "cli"], label: "Setup wizard", description: "Initial workspace setup & onboarding wizard", category: "workspace", risk: "low", prerequisites: [], icon: "*" },
   { id: "doctor", tier: "core", surfaces: ["tui", "cli"], label: "System doctor", description: "Inspect provider, environment, and runtime health", category: "runtime", risk: "low", prerequisites: [], icon: "+" },
+  { id: "chat", tier: "core", surfaces: ["cli"], label: "Chat", description: "Run a direct coding-agent turn in the active workspace", category: "session", risk: "medium", prerequisites: ["provider_configured"], recoveryAction: "Run agency setup or agency config init to configure a provider.", recovery: "Run agency setup or agency config init to configure a provider.", icon: ">" },
+  { id: "config", tier: "core", surfaces: ["cli"], label: "Provider config", description: "Inspect or update local provider configuration", category: "workspace", risk: "medium", prerequisites: [], recoveryAction: "Run agency config init to create a configuration file.", recovery: "Run agency config init to create a configuration file.", icon: "c" },
   { id: "connect", tier: "core", surfaces: ["tui", "cli"], label: "Connect provider", description: "Set up API keys and providers", category: "workspace", risk: "low", prerequisites: [], recoveryAction: "Run /connect to add a usable provider.", recovery: "Run /connect to add a usable provider.", icon: ">" },
   { id: "models", tier: "core", surfaces: ["tui", "cli"], label: "Choose model", description: "Select an available model", category: "workspace", risk: "low", prerequisites: ["provider_configured"], recoveryAction: "Run /connect first to configure a provider.", recovery: "Run /connect first to configure a provider.", icon: "M", aliases: ["model"] },
   { id: "sessions", tier: "core", surfaces: ["tui", "cli"], label: "Sessions manager", description: "Resume, fork, export, or delete sessions", category: "session", risk: "low", prerequisites: [], icon: "S", aliases: ["session", "resume", "continue"] },
@@ -306,10 +308,13 @@ export const MASTER_CAPABILITIES: readonly CapabilityDescriptor[] = [
   { id: "git", tier: "advanced", surfaces: ["cli"], label: "Git tools", description: "Standalone CLI git operations helper", category: "review", risk: "medium", prerequisites: ["git_repo"], icon: "g" },
 
   // Tools
+  { id: "browser_open", tier: "advanced", surfaces: ["tool"], label: "Open web browser", description: "Launch browser and navigate to a URL", category: "tool", risk: "medium", prerequisites: [], icon: "o" },
+  { id: "browser_action", tier: "advanced", surfaces: ["tool"], label: "Interact with web browser", description: "Click, type, or screenshot active browser", category: "tool", risk: "medium", prerequisites: [], icon: "o" },
+  { id: "browser_close", tier: "advanced", surfaces: ["tool"], label: "Close web browser", description: "Close active web browser instance", category: "tool", risk: "low", prerequisites: [], icon: "o" },
   { id: "read_file", tier: "core", surfaces: ["tool"], label: "Read file", description: "Read workspace content", category: "tool", risk: "low", prerequisites: [], recoveryAction: "Ensure path exists and is readable.", recovery: "Ensure path exists and is readable.", icon: "o" },
   { id: "write_file", tier: "core", surfaces: ["tool"], label: "Write file", description: "Create or replace workspace content", category: "tool", risk: "high", prerequisites: [], recoveryAction: "Check write permissions.", recovery: "Check write permissions.", icon: "o" },
   { id: "edit_file", tier: "core", surfaces: ["tool"], label: "Edit file", description: "Apply a targeted workspace edit", category: "tool", risk: "medium", prerequisites: [], recoveryAction: "Target file must exist.", recovery: "Target file must exist.", icon: "o" },
-  { id: "execute_command", tier: "core", surfaces: ["tool", "cli"], label: "Run command", description: "Run a sandboxed shell command", category: "runtime", risk: "critical", prerequisites: [], recoveryAction: "Inspect command security policy.", recovery: "Inspect command security policy.", icon: "o" },
+  { id: "execute_command", tier: "core", surfaces: ["tool", "cli"], label: "Run command", description: "Run a sandboxed shell command", category: "runtime", risk: "critical", prerequisites: [], recoveryAction: "Inspect command security policy.", recovery: "Inspect command security policy.", icon: "o", aliases: ["run"] },
   { id: "git_summary", tier: "core", surfaces: ["tool"], label: "Git summary", description: "Inspect workspace changes", category: "review", risk: "low", prerequisites: ["git_repo"], icon: "o" },
   { id: "git_diff", tier: "core", surfaces: ["tool"], label: "Git diff", description: "Inspect textual changes", category: "review", risk: "low", prerequisites: ["git_repo"], icon: "o" },
   { id: "dispatch_subagent", tier: "advanced", surfaces: ["tool"], label: "Delegate task", description: "Run one scoped specialist task", category: "runtime", risk: "medium", prerequisites: [], icon: "o" },
@@ -357,4 +362,3 @@ export function describeToolCapability(name: string, category = "other"): Pick<C
     tier: category === "read" ? "core" : "advanced",
   };
 }
-

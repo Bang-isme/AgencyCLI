@@ -110,6 +110,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@agency/browser':
+        specifier: workspace:*
+        version: link:../browser
       '@agency/context':
         specifier: workspace:*
         version: link:../context

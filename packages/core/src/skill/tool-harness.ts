@@ -25,6 +25,7 @@ import { ToolRegistry } from "@agency/tooling";
 import { ApprovalPolicyEngine, ApprovalRequiredError } from "../approval/index.js";
 import { EventBus } from "../events/event-bus.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
+import { PlaywrightRuntime } from "@agency/browser";
 
 export interface ToolCall {
   name: string;
@@ -2082,3 +2083,144 @@ export function truncateToolResult(name: string, result: string, modelName?: str
   }
   return result.slice(0, maxChars) + `\n... [truncated: ${result.length - maxChars} more characters]`;
 }
+
+let activeBrowser: PlaywrightRuntime | null = null;
+
+async function getOrLaunchBrowser(headless = true): Promise<PlaywrightRuntime> {
+  if (activeBrowser) return activeBrowser;
+  activeBrowser = new PlaywrightRuntime();
+  await activeBrowser.launch({ headless });
+  return activeBrowser;
+}
+
+// browser_open
+registry.register({
+  name: "browser_open",
+  description: "Launch a headless browser and navigate to a URL. Returns the page title, clean text/markdown content, and optionally a screenshot path.",
+  category: "read",
+  schema: z.object({
+    url: z.string(),
+    screenshot: z.boolean().optional(),
+  }),
+  execute: async (args: any, context: any) => {
+    const url = args.url;
+    if (!url) return "Error: 'url' argument is required for browser_open.";
+    try {
+      const browser = await getOrLaunchBrowser(true);
+      await browser.navigate(url);
+
+      const currentUrl = browser.getCurrentUrl();
+      const title = await browser.evaluate<string>("document.title");
+      const textContent = await browser.evaluate<string>("document.body.innerText");
+
+      let resultText = `URL: ${currentUrl}\nTitle: ${title}\nContent:\n${textContent.slice(0, 10000)}`;
+      if (textContent.length > 10000) {
+        resultText += "\n... (truncated)";
+      }
+
+      if (args.screenshot) {
+        const screenshotBuf = await browser.screenshot();
+        const screenshotName = `browser_screenshot_${Date.now()}.png`;
+        const screenshotPath = join(context.projectRoot || process.cwd(), screenshotName);
+        writeFileSync(screenshotPath, screenshotBuf);
+        resultText += `\n\n✓ Screenshot saved to: ${screenshotName}`;
+      }
+
+      return resultText;
+    } catch (err: any) {
+      return `Error in browser_open: ${err.message || String(err)}`;
+    }
+  },
+  metadata: {
+    semanticAction: "Open web browser",
+    targetExtractor: (args: any) => args.url,
+    resultSummarizer: (_args: any, result: any) => {
+      return result ? "Successfully opened and extracted content" : "Failed";
+    },
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Verify the URL and ensure Playwright is installed.",
+  },
+});
+
+// browser_action
+registry.register({
+  name: "browser_action",
+  description: "Perform a user interaction on the active browser page, such as clicking an element, typing text, or taking a screenshot.",
+  category: "write",
+  schema: z.object({
+    action: z.enum(["click", "type", "screenshot"]),
+    selector: z.string().optional(),
+    value: z.string().optional(),
+  }),
+  execute: async (args: any, context: any) => {
+    const action = args.action;
+    try {
+      const browser = await getOrLaunchBrowser(true);
+      if (action === "click") {
+        if (!args.selector) return "Error: 'selector' is required for click action.";
+        await browser.click(args.selector);
+      } else if (action === "type") {
+        if (!args.selector) return "Error: 'selector' is required for type action.";
+        if (args.value === undefined) return "Error: 'value' is required for type action.";
+        await browser.type(args.selector, args.value);
+      } else if (action === "screenshot") {
+        const screenshotBuf = await browser.screenshot();
+        const screenshotName = `browser_screenshot_${Date.now()}.png`;
+        const screenshotPath = join(context.projectRoot || process.cwd(), screenshotName);
+        writeFileSync(screenshotPath, screenshotBuf);
+        return `✓ Screenshot saved to: ${screenshotName}`;
+      }
+
+      const currentUrl = browser.getCurrentUrl();
+      const title = await browser.evaluate<string>("document.title");
+      const textContent = await browser.evaluate<string>("document.body.innerText");
+
+      let resultText = `Performed ${action} action.\nURL: ${currentUrl}\nTitle: ${title}\nContent:\n${textContent.slice(0, 10000)}`;
+      if (textContent.length > 10000) {
+        resultText += "\n... (truncated)";
+      }
+      return resultText;
+    } catch (err: any) {
+      return `Error in browser_action: ${err.message || String(err)}`;
+    }
+  },
+  metadata: {
+    semanticAction: "Interact with web browser",
+    targetExtractor: (args: any) => args.action,
+    resultSummarizer: (_args: any, result: any) => {
+      return result ? "Successfully performed browser action" : "Failed";
+    },
+    risk: "medium",
+    prerequisite: "none",
+    recovery: "Verify the selector and ensure the browser has an open page.",
+  },
+});
+
+// browser_close
+registry.register({
+  name: "browser_close",
+  description: "Close the active browser instance to free up resources.",
+  category: "write",
+  schema: z.object({}),
+  execute: async (_args: any, _context: any) => {
+    try {
+      if (activeBrowser) {
+        await activeBrowser.close();
+        activeBrowser = null;
+        return "✓ Browser instance closed successfully.";
+      }
+      return "No active browser instance found.";
+    } catch (err: any) {
+      return `Error closing browser: ${err.message || String(err)}`;
+    }
+  },
+  metadata: {
+    semanticAction: "Close web browser",
+    targetExtractor: () => "browser",
+    resultSummarizer: (_args: any, result: any) => result,
+    risk: "low",
+    prerequisite: "none",
+    recovery: "No recovery action needed.",
+  },
+});
