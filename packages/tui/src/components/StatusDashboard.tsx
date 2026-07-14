@@ -8,6 +8,7 @@ import type { ContextBreakdown } from "@agency/core";
 import { getSpecSourceColor } from "../utils/spec-source.js";
 import { ContextUsagePanel } from "./ContextUsagePanel.js";
 
+
 import { useTerminalLayout } from "../layout/TerminalLayoutProvider.js";
 import { panelWidth } from "../layout/terminal-layout.js";
 
@@ -55,6 +56,17 @@ export function StatusDashboard({
   const [readiness, setReadiness] = useState<WorkspaceReadinessCheck[]>([]);
   const { cols } = useTerminalLayout();
   const overlayWidth = panelWidth(cols, 85, 45);
+
+  let hasOverride = false;
+  if (currentModel) {
+    const bare = currentModel.split("/").slice(1).join("/") || currentModel;
+    try {
+      const spec = getModelSpec(bare);
+      if (spec.specSource === "override") {
+        hasOverride = true;
+      }
+    } catch { /* ignored */ }
+  }
   const innerWidth = overlayWidth - 6;
   const isSmallScreen = cols < 75;
   const col1Width = isSmallScreen ? innerWidth : Math.floor(innerWidth * 0.35);
@@ -123,11 +135,13 @@ export function StatusDashboard({
       {readiness.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={theme.muted} bold dimColor>Workspace readiness</Text>
-          <Text color={theme.muted} wrap="truncate">
-            {readiness.map((check) => `${check.state === "ready" ? "✓" : check.state === "attention" ? "!" : "○"} ${check.label}: ${check.detail}`).join(" · ")}
-          </Text>
+          {readiness.map((check, idx) => (
+            <Text key={idx} color={theme.muted} wrap="wrap">
+              {check.state === "ready" ? "✓" : check.state === "attention" ? "!" : "○"} {check.label}: {check.detail}
+            </Text>
+          ))}
           {readiness.find((check) => check.state === "attention")?.recovery ? (
-            <Text color={theme.warning} wrap="truncate">
+            <Text color={theme.warning} wrap="wrap">
               {readiness.find((check) => check.state === "attention")!.recovery}
             </Text>
           ) : null}
@@ -206,7 +220,7 @@ export function StatusDashboard({
             const spec = getModelSpec(bare);
             const baseline = getBaselineModelSpec(bare);
             const specSource = spec.specSource || "default";
-            const specSourceLabel = specSource === "override" ? "override (stale?)" : specSource;
+            const specSourceLabel = specSource === "override" ? "custom override" : specSource;
             const specSourceColor = getSpecSourceColor(specSource, theme);
             const catalogWindow = baseline.contextWindow;
             return (
@@ -290,7 +304,9 @@ export function StatusDashboard({
 
       <Box marginTop={1}>
         <Text color={theme.muted} dimColor>
-          Esc to close · r reset stale context override
+          {hasOverride
+            ? "Esc to close · r reset custom override"
+            : "Esc to close"}
         </Text>
       </Box>
     </Box>
