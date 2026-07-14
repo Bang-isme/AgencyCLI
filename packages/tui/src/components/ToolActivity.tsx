@@ -19,6 +19,7 @@ export interface ToolActivityProps {
   subagents?: SubagentStatus[];
   label?: string;
   lifecycle?: ActionLifecycleEvent;
+  rateLimitMessage?: string | null;
 }
 
 interface ShimmerRun {
@@ -26,10 +27,14 @@ interface ShimmerRun {
   color: string;
 }
 
-function buildShimmerRuns(label: string, tick: number, theme: ThemeTokens): ShimmerRun[] {
+function buildShimmerRuns(label: string, tick: number, theme: ThemeTokens, isWarning: boolean): ShimmerRun[] {
   const chars = [...label];
   const len = chars.length;
   if (len === 0) return [];
+
+  if (isWarning) {
+    return [{ text: label, color: theme.warning }];
+  }
 
   const GAP = 12;
   const BAND = 2;
@@ -59,6 +64,7 @@ export const ToolActivity = memo(function ToolActivity({
   subagents,
   label,
   lifecycle,
+  rateLimitMessage,
 }: ToolActivityProps) {
   const tick = useTick(active, 100);
   const wave = SPINNER_BLOCKS[tick % SPINNER_BLOCKS.length]!;
@@ -68,11 +74,25 @@ export const ToolActivity = memo(function ToolActivity({
     displayLabel = PresentationMapper.mapToCompactRow(lifecycle, theme, { tick }).label;
   }
   if (!displayLabel) {
-    displayLabel = getPhaseLabel(phase);
+    if (rateLimitMessage) {
+      let concise = "Rate Limited / Retrying";
+      const attemptMatch = rateLimitMessage.match(/Attempt \d+\/\d+/);
+      const retryMatch = rateLimitMessage.match(/Retrying in [\d\.]+s/);
+      if (attemptMatch && retryMatch) {
+        concise = `Rate Limited (${attemptMatch[0]}, ${retryMatch[0]})`;
+      } else if (attemptMatch) {
+        concise = `Rate Limited (${attemptMatch[0]})`;
+      } else if (retryMatch) {
+        concise = `Rate Limited (${retryMatch[0]})`;
+      }
+      displayLabel = concise;
+    } else {
+      displayLabel = getPhaseLabel(phase);
+    }
   }
 
   const runningSubagent = subagents?.find(a => a.status === "running");
-  if (runningSubagent && !label && !lifecycle) {
+  if (runningSubagent && !label && !lifecycle && !rateLimitMessage) {
     const rawName = normalizeWorkerName(runningSubagent.agentId);
     const name = rawName.startsWith("worker.") ? rawName : `worker.${rawName}`;
     const activeStep = runningSubagent.steps?.find(s => s.status === "active");
@@ -96,15 +116,17 @@ export const ToolActivity = memo(function ToolActivity({
 
   if (!active) return null;
 
-  const labelRuns = buildShimmerRuns(displayLabel, tick, theme);
+  const isWarning = !!rateLimitMessage;
+  const labelRuns = buildShimmerRuns(displayLabel, tick, theme, isWarning);
+  const indicatorColor = isWarning ? theme.warning : theme.accent;
 
   return (
     <Box flexDirection="row" marginTop={1} marginBottom={0} paddingLeft={1}>
-      <Text color={theme.accent}>{wave} </Text>
+      <Text color={indicatorColor}>{wave} </Text>
       {labelRuns.map((run, i) => (
         <Text key={i} color={run.color} bold>{run.text}</Text>
       ))}
-      <Text color={theme.accent}>{dots} </Text>
+      <Text color={indicatorColor}>{dots} </Text>
       <Text color={theme.muted}>
         · {formatElapsed(elapsed)}
         {tokenCount > 0 ? ` · ${formatTokenCount(tokenCount)} tokens` : ""}

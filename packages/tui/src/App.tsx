@@ -603,6 +603,7 @@ export function App({
   const [activityPhase, setActivityPhase] = useState<ActivityPhase>("idle");
   const [tokenCount, setTokenCount] = useState(0);
   const [loadStartMs, setLoadStartMs] = useState(0);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [lastUsage, setLastUsage] = useState<any>(null);
@@ -971,6 +972,7 @@ export function App({
         msgText.includes("LLM request failed. Attempt");
 
       if (isRetryWarning) {
+        setRateLimitMessage(msgText);
         updateSession((s) => {
           let targetIdx = -1;
           for (let idx = s.messages.length - 1; idx >= 0; idx--) {
@@ -1794,6 +1796,7 @@ ${taskDesc}`;
                 );
               }
               setActivityPhase("writing");
+              setRateLimitMessage(null);
               patchMessage(assistantId, {
                 presentation: {
                   chips: ev.chips,
@@ -1807,6 +1810,7 @@ ${taskDesc}`;
               }
             },
             onDelta: (delta) => {
+              setRateLimitMessage(null);
               if (!gotDelta) {
                 gotDelta = true;
                 setActivityPhase("writing");
@@ -1817,6 +1821,7 @@ ${taskDesc}`;
               triggerThrottledFlush();
             },
             onThought: (thoughtDelta) => {
+              setRateLimitMessage(null);
               accumulatedThought += thoughtDelta;
               currentTurnThoughtLength += thoughtDelta.length;
               updateTokenCount(currentTurnContentLength, currentTurnThoughtLength);
@@ -2529,7 +2534,13 @@ ${taskDesc}`;
             thinkingLabel={thinkingLabel}
             modeLabel={modeLabel(agentMode)}
             modeDescription={modeDescription(agentMode)}
-            phaseLabel={activityPhase !== "idle" ? getPhaseLabel(activityPhase) : undefined}
+            phaseLabel={
+              rateLimitMessage
+                ? "Rate Limited"
+                : activityPhase !== "idle"
+                  ? getPhaseLabel(activityPhase)
+                  : undefined
+            }
             agentMode={agentMode}
             workers={statusBarWorkers}
           />
@@ -3083,6 +3094,7 @@ ${taskDesc}`;
                 startMs={loadStartMs}
                 tokenCount={tokenCount}
                 subagents={subagents}
+                rateLimitMessage={rateLimitMessage}
               />
             ) : null}
             {goalActive ? (
