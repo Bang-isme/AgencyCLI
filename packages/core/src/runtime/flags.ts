@@ -480,10 +480,9 @@ export function getRuntimeFlags(env: NodeJS.ProcessEnv = process.env): RuntimeFl
     // Additive accuracy (better limits/cost/caps for any BYOK model) → on by default
     // to ensure precise spec resolution across both legacy and hardened profiles.
     modelCatalog: parseBool(env.AGENCY_MODEL_CATALOG, true),
-    // Behaviour-changing (rewrites the prompt history with a summary; costs one
-    // extra summarisation call when it triggers) → off in legacy (verbatim
-    // history), on in hardened.
-    contextCompaction: parseBool(env.AGENCY_CONTEXT_COMPACTION, hardened),
+    // Proactively compact turn history once it exceeds ~70% of context window.
+    // Default ON across all profiles to match OpenCode/Antigravity standards.
+    contextCompaction: parseBool(env.AGENCY_CONTEXT_COMPACTION, true),
     parentParallelOrchestration: parseBool(env.AGENCY_PARENT_PARALLEL_ORCHESTRATION, hardened),
     forcedDelegationSynthesis: parseBool(env.AGENCY_FORCED_DELEGATION_SYNTHESIS, hardened),
     subagentAlwaysIsolated: parseBool(env.AGENCY_SUBAGENT_ALWAYS_ISOLATED, hardened),

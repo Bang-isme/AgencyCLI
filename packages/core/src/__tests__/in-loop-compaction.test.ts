@@ -115,7 +115,7 @@ describe("in-loop context compaction (§2.3 cont'd 21)", () => {
   });
 
   it("flag OFF (legacy): compaction is never invoked (byte-identical)", async () => {
-    delete process.env.AGENCY_CONTEXT_COMPACTION; // legacy default = off
+    process.env.AGENCY_CONTEXT_COMPACTION = "0"; // flag OFF
     mockedGetProvider.mockReturnValue(twoIterationProvider());
 
     await runChatTurnWithStream(
