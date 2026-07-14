@@ -45,6 +45,7 @@ export interface OverlayStates {
   help: boolean;
   route: boolean;
   themePicker: boolean;
+  browser: boolean;
 }
 
 export interface UseKeyboardHandlersOptions {

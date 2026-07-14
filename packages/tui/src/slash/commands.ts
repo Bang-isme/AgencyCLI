@@ -48,6 +48,7 @@ export interface SlashResult {
   showProject?: boolean;
   /** Open theme picker overlay. */
   showThemePicker?: boolean;
+  showBrowser?: boolean;
   /** Launch a long-running goal task. */
   goalTask?: string;
   /** Add a recurring schedule. */
@@ -353,7 +354,14 @@ export async function executeSlash(
     }
 
     case "browser": {
-      const parts = args.trim().split(/\s+/);
+      const trimmed = args.trim();
+      if (!trimmed) {
+        return {
+          handled: true,
+          showBrowser: true,
+        };
+      }
+      const parts = trimmed.split(/\s+/);
       const { getBrowserMcpStatus } = await import("@agency/core");
       const status = getBrowserMcpStatus(ctx.projectRoot);
 

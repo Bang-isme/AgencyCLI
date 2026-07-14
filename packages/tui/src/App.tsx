@@ -39,6 +39,7 @@ import { ModelsOverlay } from "./components/ModelsOverlay.js";
 import { VariantOverlay } from "./components/VariantOverlay.js";
 import { ThemeOverlay } from "./components/ThemeOverlay.js";
 import { RouteOverlay } from "./components/RouteOverlay.js";
+import { BrowserOverlay } from "./components/BrowserOverlay.js";
 import { SkillsPicker } from "./components/SkillsPicker.js";
 import { ReviewMenu } from "./components/ReviewMenu.js";
 import { StatusDashboard } from "./components/StatusDashboard.js";
@@ -272,6 +273,7 @@ export function App({
     help: false,
     route: false,
     themePicker: false,
+    browser: false,
   });
 
   const [expandedTui, setExpandedTui] = useState(false);
@@ -300,6 +302,7 @@ export function App({
       help: false,
       route: false,
       themePicker: false,
+      browser: false,
     });
   }, []);
 
@@ -325,7 +328,8 @@ export function App({
     overlays.project ||
     overlays.help ||
     overlays.route ||
-    overlays.themePicker;
+    overlays.themePicker ||
+    overlays.browser;
 
   const updateSession = useCallback(
     (updater: (s: AgencySession) => AgencySession, saveToDisk = true) => {
@@ -1251,6 +1255,11 @@ export function App({
         closeAllOverlays();
         setOverlayOpen("themePicker", true);
         addSystemLines(["🎨 Opening Theme Selector..."]);
+      }
+      if (slash.showBrowser) {
+        closeAllOverlays();
+        setOverlayOpen("browser", true);
+        addSystemLines(["🌐 Opening Browser Overlay..."]);
       }
       if (slash.injectPrompt) {
         setBuffer(slash.injectPrompt);
@@ -2605,6 +2614,35 @@ ${taskDesc}`;
                     });
                   });
                 }}
+              />
+            ) : null}
+            {overlays.browser ? (
+              <BrowserOverlay
+                theme={theme}
+                projectRoot={project}
+                onOpen={(url) => {
+                  import("node:os").then(({ platform }) => {
+                    import("node:child_process").then(({ exec }) => {
+                      let openCommand = "";
+                      const currentPlatform = platform();
+                      if (currentPlatform === "win32") {
+                        openCommand = `cmd.exe /c start "" "${url}"`;
+                      } else if (currentPlatform === "darwin") {
+                        openCommand = `open "${url}"`;
+                      } else {
+                        openCommand = `xdg-open "${url}"`;
+                      }
+                      try {
+                        exec(openCommand);
+                        addSystemLines([`✓ Opened URL: ${url}`]);
+                      } catch (err: any) {
+                        addSystemLines([`Error opening URL: ${err.message}`]);
+                      }
+                      setOverlayOpen("browser", false);
+                    });
+                  });
+                }}
+                onClose={() => setOverlayOpen("browser", false)}
               />
             ) : null}
             {overlays.connect ? (
