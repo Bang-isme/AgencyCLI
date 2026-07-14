@@ -179,6 +179,22 @@ export class HybridRetriever {
       reasons.push("Active Task ID boost +0.20.");
     }
 
+    // Graph decay-based boosting for active task
+    if (executionCtx.activeTaskId && this._graphStore) {
+      try {
+        const path = this._graphStore.findPath(executionCtx.activeTaskId, item.id);
+        if (path !== null) {
+          const pathDistance = path.length;
+          const graphBoost = 0.15 / (1.0 + pathDistance);
+          boost += graphBoost;
+          item.explanation.dependency_boost += graphBoost;
+          reasons.push(`Graph neighbor boost of +${graphBoost.toFixed(4)} applied (Path distance: ${pathDistance}).`);
+        }
+      } catch {
+        // Degrade gracefully
+      }
+    }
+
     // Edited files boosting
     if (executionCtx.editedFiles && item.metadata?.file_path) {
       const fileMatch = executionCtx.editedFiles.some((f) => item.metadata.file_path.includes(f));
@@ -186,6 +202,24 @@ export class HybridRetriever {
         boost += 0.20;
         item.explanation.dependency_boost += 0.20;
         reasons.push("Edited files proximity boost +0.20.");
+      }
+
+      // Graph edited files proximity boosting
+      if (this._graphStore) {
+        try {
+          for (const editedFile of executionCtx.editedFiles) {
+            const path = this._graphStore.findPath(editedFile, item.metadata.file_path);
+            if (path !== null) {
+              const pathDistance = path.length;
+              const fileGraphBoost = 0.10 / (1.0 + pathDistance);
+              boost += fileGraphBoost;
+              item.explanation.dependency_boost += fileGraphBoost;
+              reasons.push(`Graph file proximity boost of +${fileGraphBoost.toFixed(4)} applied (Path distance: ${pathDistance} from ${editedFile}).`);
+            }
+          }
+        } catch {
+          // Degrade gracefully
+        }
       }
     }
 

@@ -20,7 +20,7 @@ export interface Embedder {
   readonly id: string;
   /** Output vector length; constant for a given embedder instance. */
   readonly dimension: number;
-  embed(text: string): number[];
+  embed(text: string): number[] | Promise<number[]>;
 }
 
 /** FNV-1a 32-bit hash — fast, deterministic, dependency-free. */

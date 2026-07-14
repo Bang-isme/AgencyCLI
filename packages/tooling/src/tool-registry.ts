@@ -93,11 +93,25 @@ export class ToolRegistry {
     const parsedArgs = validation.data;
 
     // 2. Pre-execution governance checks
-    for (const hook of this.preExecuteHooks) {
-      await hook(name, parsedArgs, context);
+    try {
+      for (const hook of this.preExecuteHooks) {
+        await hook(name, parsedArgs, context);
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      (error as any).isHookError = true;
+      throw error;
     }
 
-    // 3. Category-dependent timeouts
+    // 3. Category-dependent timeouts (with custom multiplier)
+    let multiplier = 1.0;
+    if (process.env.AGENCY_TIMEOUT_MULTIPLIER) {
+      const val = parseFloat(process.env.AGENCY_TIMEOUT_MULTIPLIER);
+      if (!isNaN(val) && val > 0) {
+        multiplier = val;
+      }
+    }
+
     // 10s for reads, 30s for writes, 120s for compiles/tests, 30s other
     let timeoutMs = 30000;
     if (tool.category === "read") {
@@ -107,6 +121,8 @@ export class ToolRegistry {
     } else if (tool.category === "compile" || tool.category === "test") {
       timeoutMs = 120000;
     }
+
+    timeoutMs = Math.round(timeoutMs * multiplier);
 
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => {
@@ -121,8 +137,14 @@ export class ToolRegistry {
       ]);
 
       // 4. Post-execution hooks (e.g. token budget counting)
-      for (const hook of this.postExecuteHooks) {
-        await hook(name, parsedArgs, result, context);
+      try {
+        for (const hook of this.postExecuteHooks) {
+          await hook(name, parsedArgs, result, context);
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        (error as any).isHookError = true;
+        throw error;
       }
 
       return result;
@@ -154,6 +176,7 @@ export class ToolRegistry {
       let errorKind: SafeInvokeResult["errorKind"] = "execution";
       if (msg.startsWith("Validation failed")) errorKind = "validation";
       else if (msg.includes("timed out")) errorKind = "timeout";
+      else if (err && typeof err === "object" && (err as any).isHookError) errorKind = "hook";
       return { ok: false, error: msg, errorKind };
     }
   }

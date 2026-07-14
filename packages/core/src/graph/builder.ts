@@ -9,7 +9,15 @@ function toPosixPath(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-export async function buildKnowledgeGraph(projectRoot: string): Promise<void> {
+export interface BuildKnowledgeGraphOptions {
+  /** Suppress the best-effort dashboard-written notice for machine output. */
+  quiet?: boolean;
+}
+
+export async function buildKnowledgeGraph(
+  projectRoot: string,
+  options: BuildKnowledgeGraphOptions = {}
+): Promise<void> {
   const index = loadIndex(projectRoot);
   if (!index) return;
 
@@ -1113,7 +1121,9 @@ export async function buildKnowledgeGraph(projectRoot: string): Promise<void> {
       writeFileSync(htmlOutputPath, htmlContent, "utf8");
       // Diagnostic notice → stderr, so it never pollutes a CLI `--json` stdout
       // (this fires during normal file-editing turns).
-      console.error(`[Knowledge Graph Dashboard] Automatically updated: ${htmlOutputPath}`);
+      if (!options.quiet) {
+        console.error(`[Knowledge Graph Dashboard] Automatically updated: ${htmlOutputPath}`);
+      }
     }
   } catch (err) {
     // Fail silently if skills pack template is not present, maintaining core independence
@@ -1140,4 +1150,3 @@ export async function updateKnowledgeGraphForFiles(projectRoot: string, files: s
 
   await buildKnowledgeGraph(projectRoot);
 }
-

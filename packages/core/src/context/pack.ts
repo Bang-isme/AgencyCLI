@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { execSync } from "node:child_process";
 import { formatRouteSummary } from "../chat/route-presentation.js";
 import type { RouteResult } from "../router/model-router.js";
 import { selectContextFiles } from "./selector.js";
@@ -207,6 +208,55 @@ export function buildContextPack(
 
   const symbolGraph = loadSymbolGraph(projectRoot);
 
+  // Retrieve modified files and direct dependencies to protect them from degradation
+  const modifiedFiles: string[] = [];
+  try {
+    const output = execSync("git status --porcelain", {
+      cwd: projectRoot,
+      timeout: 2000,
+      stdio: "pipe",
+    }).toString("utf8");
+    for (const line of output.split("\n").filter((l) => l.length > 3)) {
+      const filePathRaw = line.slice(3).trim();
+      const filePath = filePathRaw.replace(/^"|"$/g, "");
+      modifiedFiles.push(filePath);
+    }
+  } catch {
+    // Ignore git status failures
+  }
+
+  const priorityPaths = new Set<string>(modifiedFiles);
+  const priorityBases = new Set<string>();
+
+  try {
+    for (const modFile of modifiedFiles) {
+      const fileData = symbolGraph.files[modFile];
+      if (fileData && fileData.imports) {
+        for (const imp of fileData.imports) {
+          if (imp.module.startsWith(".")) {
+            const lastSlash = modFile.lastIndexOf("/");
+            const modDir = lastSlash !== -1 ? modFile.slice(0, lastSlash) : "";
+            const parts = modDir ? modDir.split("/") : [];
+            const impParts = imp.module.split("/");
+            for (const part of impParts) {
+              if (part === ".") continue;
+              if (part === "..") {
+                parts.pop();
+              } else {
+                parts.push(part);
+              }
+            }
+            const resolvedRel = parts.join("/");
+            const resolvedBase = resolvedRel.replace(/\.(js|ts)x?$/, "");
+            priorityBases.add(resolvedBase);
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore symbol graph failures
+  }
+
   // Load all selected files in memory first
   const filesContent = new Map<string, string>();
   for (let i = 0; i < files.length; i++) {
@@ -215,7 +265,9 @@ export function buildContextPack(
     if (existsSync(fullPath)) {
       try {
         const content = readFileSync(fullPath, "utf8");
-        const isPrimary = i < 3;
+        const entryBase = relPath.replace(/\.(js|ts)x?$/, "");
+        const isPriority = priorityPaths.has(relPath) || priorityBases.has(entryBase);
+        const isPrimary = i < 3 || isPriority;
         const isTsOrJs = /\.(?:ts|tsx|js|jsx)$/i.test(relPath);
 
         if (isPrimary || !isTsOrJs) {

@@ -45,7 +45,7 @@ export function registerSetup(program: Command) {
           : await incrementalUpdateAsync(projectRoot);
         writeIndex(projectRoot, index);
 
-        await buildKnowledgeGraph(projectRoot);
+        await buildKnowledgeGraph(projectRoot, { quiet: Boolean(options.json) });
 
         let skillsRoot: string;
         try {
@@ -65,14 +65,17 @@ export function registerSetup(program: Command) {
 
         const readiness = await getWorkspaceReadiness(projectRoot);
         const provider = readiness.find((check) => check.id === "provider");
+        const llmReady = provider?.state === "ready";
 
-        out.phase("setup completion", {
-          project: projectRoot,
-          indexedFiles: String(index.files.length),
-          skillsPack: skillsRoot,
-          configPath: configPath + (configCreated ? " (created template)" : ""),
-          provider: provider?.detail ?? "Unknown",
-        });
+        if (!options.json) {
+          out.phase("setup completion", {
+            project: projectRoot,
+            indexedFiles: String(index.files.length),
+            skillsPack: skillsRoot,
+            configPath: configPath + (configCreated ? " (created template)" : ""),
+            provider: provider?.detail ?? "Unknown",
+          });
+        }
 
         if (options.json) {
           out.json({
@@ -80,6 +83,9 @@ export function registerSetup(program: Command) {
             files: index.files.length,
             skills: skillsRoot,
             config: configPath,
+            // Retained for existing machine consumers; `readiness` is the
+            // richer canonical diagnostic surface.
+            llmReady,
             readiness,
           });
         }

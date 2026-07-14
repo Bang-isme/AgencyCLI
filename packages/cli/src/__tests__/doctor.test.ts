@@ -35,6 +35,8 @@ describe("agency doctor", () => {
     expect(names).toContain("python");
     expect(names).toContain("skills-pack");
     expect(names).toContain("providers");
+    expect(names).toContain("index");
+    expect(names).toContain("git");
   });
 
   it("validates skills-pack integrity (declared skills all resolve to a SKILL.md)", () => {

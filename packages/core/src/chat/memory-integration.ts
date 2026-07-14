@@ -5,12 +5,12 @@ import {
   VectorStore,
   GraphStore,
   HybridRetriever,
-  LocalDeterministicEmbedder,
   MarkdownMemoryStore,
   type Embedder,
 } from "@agency/memory";
 import { EventBus } from "../events/event-bus.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
+import { ProviderBackedEmbedder } from "./provider-embedder.js";
 
 /**
  * Maximum characters of formatted memory injected into the system prompt. Each
@@ -22,14 +22,12 @@ import { getRuntimeFlags } from "../runtime/flags.js";
 const RECALL_CHAR_BUDGET = 6000;
 
 /**
- * One process-wide local deterministic embedder (no network/key/model file).
- * Lazily built so the cost is paid only when semantic recall is enabled. Behind
- * the {@link Embedder} interface so a provider-backed embedder can be swapped in
- * later. See {@link LocalDeterministicEmbedder}.
+ * One process-wide provider-backed embedder (with local fallback).
+ * Lazily built so the cost is paid only when semantic recall is enabled.
  */
 let embedder: Embedder | undefined;
 function getEmbedder(): Embedder {
-  if (!embedder) embedder = new LocalDeterministicEmbedder();
+  if (!embedder) embedder = new ProviderBackedEmbedder();
   return embedder;
 }
 
@@ -144,7 +142,7 @@ async function loadEpisodeRecallBlock(
     if (semantic) {
       try {
         const retriever = new HybridRetriever(store, new VectorStore(db), new GraphStore(db));
-        const queryVector = getEmbedder().embed(userPrompt);
+        const queryVector = await getEmbedder().embed(userPrompt);
         const ranked = retriever.retrieve(queryVector, userPrompt, { limit: 12, maxTokens: 4000 });
         for (const r of ranked) {
           if (r.source) formatRecord(r.source as EpisodeLike);
@@ -215,21 +213,50 @@ export function safeAddEpisode(
     if (getRuntimeFlags().memorySemantic) {
       try {
         const emb = getEmbedder();
-        new VectorStore(db).insert({
-          id: vectorIdFor(sessionId, turnIndex, actionSignature, content),
-          tenant_id: "default",
-          session_id: sessionId,
-          memory_type: "episodic",
-          state: "ACTIVE",
-          vector: emb.embed(`${goal}\n${content}`),
-          content,
-          metadata: { session_id: sessionId, turn_index: turnIndex, action_signature: actionSignature, goal, created_at: Date.now() },
-          embedding_model: emb.id,
-          embedding_dimension: emb.dimension,
-          lamport_timestamp: 0,
-        });
+        const vectorOrPromise = emb.embed(`${goal}\n${content}`);
+
+        if (vectorOrPromise instanceof Promise) {
+          vectorOrPromise
+            .then((vector) => {
+              try {
+                new VectorStore(db).insert({
+                  id: vectorIdFor(sessionId, turnIndex, actionSignature, content),
+                  tenant_id: "default",
+                  session_id: sessionId,
+                  memory_type: "episodic",
+                  state: "ACTIVE",
+                  vector,
+                  content,
+                  metadata: { session_id: sessionId, turn_index: turnIndex, action_signature: actionSignature, goal, created_at: Date.now() },
+                  embedding_model: emb.id,
+                  embedding_dimension: emb.dimension,
+                  lamport_timestamp: 0,
+                });
+              } catch {
+                // swallow inner vector insert errors
+              }
+            })
+            .catch(() => {
+              // swallow embedding errors
+            });
+        } else {
+          // Synchronous execution for local deterministic embedders
+          new VectorStore(db).insert({
+            id: vectorIdFor(sessionId, turnIndex, actionSignature, content),
+            tenant_id: "default",
+            session_id: sessionId,
+            memory_type: "episodic",
+            state: "ACTIVE",
+            vector: vectorOrPromise,
+            content,
+            metadata: { session_id: sessionId, turn_index: turnIndex, action_signature: actionSignature, goal, created_at: Date.now() },
+            embedding_model: emb.id,
+            embedding_dimension: emb.dimension,
+            lamport_timestamp: 0,
+          });
+        }
       } catch {
-        // Vector indexing is an enhancement, not a guarantee — swallow.
+        // swallow outer errors
       }
     }
   } catch (err) {

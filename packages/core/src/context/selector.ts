@@ -99,6 +99,28 @@ function isSelectablePath(path: string): boolean {
   return !SKIP_EXTENSIONS.has(path.slice(dot).toLowerCase());
 }
 
+import { execSync } from "node:child_process";
+import { loadSymbolGraph } from "../index/incremental-indexer.js";
+
+function getModifiedFilesSync(projectRoot: string): string[] {
+  try {
+    const output = execSync("git status --porcelain", {
+      cwd: projectRoot,
+      timeout: 2000,
+      stdio: "pipe",
+    }).toString("utf8");
+    const files: string[] = [];
+    for (const line of output.split("\n").filter((l) => l.length > 3)) {
+      const filePathRaw = line.slice(3).trim();
+      const filePath = filePathRaw.replace(/^"|"$/g, "");
+      files.push(filePath);
+    }
+    return files;
+  } catch {
+    return [];
+  }
+}
+
 /** Rank workspace files by route intent keywords and return top paths. */
 export function selectContextFiles(
   projectRoot: string,
@@ -115,6 +137,41 @@ export function selectContextFiles(
   const prompt = userPrompt ?? "";
   const isBroad = prompt ? isBroadQuery(prompt) : false;
 
+  // Retrieve modified files and direct dependencies
+  const modifiedFiles = getModifiedFilesSync(projectRoot);
+  const priorityPaths = new Set<string>(modifiedFiles);
+  const priorityBases = new Set<string>();
+
+  try {
+    const symbolGraph = loadSymbolGraph(projectRoot);
+    for (const modFile of modifiedFiles) {
+      const fileData = symbolGraph.files[modFile];
+      if (fileData && fileData.imports) {
+        for (const imp of fileData.imports) {
+          if (imp.module.startsWith(".")) {
+            const lastSlash = modFile.lastIndexOf("/");
+            const modDir = lastSlash !== -1 ? modFile.slice(0, lastSlash) : "";
+            const parts = modDir ? modDir.split("/") : [];
+            const impParts = imp.module.split("/");
+            for (const part of impParts) {
+              if (part === ".") continue;
+              if (part === "..") {
+                parts.pop();
+              } else {
+                parts.push(part);
+              }
+            }
+            const resolvedRel = parts.join("/");
+            const resolvedBase = resolvedRel.replace(/\.(js|ts)x?$/, "");
+            priorityBases.add(resolvedBase);
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore symbol graph failures
+  }
+
   const scored = index.files
     .filter((entry) => isSelectablePath(entry.path))
     .map((entry) => {
@@ -130,6 +187,17 @@ export function selectContextFiles(
 
       if (route.intent === "other" && isImportantFile(entry.path)) {
         score += 3;
+      }
+
+      // Proximity & active file boosting
+      const entryBase = entry.path.replace(/\.(js|ts)x?$/, "");
+      if (priorityPaths.has(entry.path) || priorityBases.has(entryBase)) {
+        score += 100;
+      }
+
+      // Explicitly mentioned in user prompt boost
+      if (prompt && prompt.includes(entry.path)) {
+        score += 50;
       }
 
       return {

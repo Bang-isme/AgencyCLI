@@ -29,6 +29,8 @@ export interface AttemptContext {
   round: number;
   /** Acceptance failures from the previous round (undefined on round 1). */
   previousFailures?: string;
+  /** True if this failure is a repeat of the previous round's failure */
+  isRepeatedFailure?: boolean;
 }
 
 export type VerifyLoopStopReason =
@@ -74,7 +76,8 @@ export async function runVerifyLoop(
       return { success: false, rounds: round - 1, stopReason: "budget-exhausted", history };
     }
 
-    await attempt({ round, previousFailures });
+    const isRepeatedFailure = round > 1 && sameCount > 0;
+    await attempt({ round, previousFailures, isRepeatedFailure });
     const result = await verify();
     history.push({ round, verify: result });
 

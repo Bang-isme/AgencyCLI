@@ -26,6 +26,7 @@ import { ApprovalPolicyEngine, ApprovalRequiredError } from "../approval/index.j
 import { EventBus } from "../events/event-bus.js";
 import { getRuntimeFlags } from "../runtime/flags.js";
 import { PlaywrightRuntime } from "@agency/browser";
+import { safeAddEpisode } from "../chat/memory-integration.js";
 
 export interface ToolCall {
   name: string;
@@ -2141,8 +2142,18 @@ registry.register({
         const screenshotName = `browser_screenshot_${Date.now()}.png`;
         const screenshotPath = join(context.projectRoot || process.cwd(), screenshotName);
         writeFileSync(screenshotPath, screenshotBuf);
-        resultText += `\n\n✓ Screenshot saved to: ${screenshotName}`;
+        resultText += `\n\n✓ Screenshot saved to: ${screenshotName}. You can inspect this image using the 'view_file' tool to see the visual state of the page.`;
       }
+
+      // Record browser open in episodic memory
+      safeAddEpisode(
+        context.projectRoot || process.cwd(),
+        context.sessionId || "default",
+        `Open web browser to ${url}`,
+        context.turnIndex || 0,
+        "browser_open",
+        `URL: ${currentUrl}\nTitle: ${title}\nContent:\n${textContent.slice(0, 1000)}`
+      );
 
       return resultText;
     } catch (err: any) {
@@ -2187,7 +2198,20 @@ registry.register({
         const screenshotName = `browser_screenshot_${Date.now()}.png`;
         const screenshotPath = join(context.projectRoot || process.cwd(), screenshotName);
         writeFileSync(screenshotPath, screenshotBuf);
-        return `✓ Screenshot saved to: ${screenshotName}`;
+
+        // Record browser action in episodic memory
+        const currentUrl = browser.getCurrentUrl();
+        const title = await browser.evaluate<string>("document.title");
+        safeAddEpisode(
+          context.projectRoot || process.cwd(),
+          context.sessionId || "default",
+          `Capture browser screenshot`,
+          context.turnIndex || 0,
+          "browser_action",
+          `Action: screenshot\nURL: ${currentUrl}\nTitle: ${title}`
+        );
+
+        return `✓ Screenshot saved to: ${screenshotName}. You can inspect this image using the 'view_file' tool to see the visual state of the page.`;
       }
 
       const currentUrl = browser.getCurrentUrl();
@@ -2198,6 +2222,17 @@ registry.register({
       if (textContent.length > 10000) {
         resultText += "\n... (truncated)";
       }
+
+      // Record browser action in episodic memory
+      safeAddEpisode(
+        context.projectRoot || process.cwd(),
+        context.sessionId || "default",
+        `Perform browser action: ${action} on ${args.selector || ""}`,
+        context.turnIndex || 0,
+        "browser_action",
+        `Action: ${action} on ${args.selector || ""}\nResult URL: ${currentUrl}\nTitle: ${title}\nContent:\n${textContent.slice(0, 1000)}`
+      );
+
       return resultText;
     } catch (err: any) {
       return `Error in browser_action: ${err.message || String(err)}`;

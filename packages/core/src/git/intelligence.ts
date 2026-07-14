@@ -147,3 +147,20 @@ export async function getGitDiff(
     truncated: diff.length > maxChars,
   };
 }
+
+export async function getModifiedFiles(projectRoot: string): Promise<string[]> {
+  const result = await execa("git", ["status", "--porcelain"], {
+    cwd: projectRoot,
+    reject: false,
+    timeout: 3000,
+  });
+  if (result.exitCode !== 0) return [];
+
+  const files: string[] = [];
+  for (const line of result.stdout.split("\n").filter((l) => l.length > 3)) {
+    const filePathRaw = line.slice(3).trim();
+    const filePath = filePathRaw.replace(/^"|"$/g, "");
+    files.push(filePath);
+  }
+  return files;
+}

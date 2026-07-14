@@ -876,10 +876,15 @@ async function dispatchAgentImpl(
                   phase: `Self-healing (round ${ctx.round})`,
                   elapsedMs: Date.now() - startTime,
                 });
+                const repeatedWarning =
+                  `\n\n⚠️ [CRITICAL REPEATED FAILURE / SELF-REFLECTION DIRECTIVE]\n` +
+                  `You have produced the exact same compiler/test error output in consecutive rounds.\n` +
+                  `Your current approach is stuck. DO NOT output the same edits.\n` +
+                  `Analyze why your previous attempt failed, self-reflect on the root cause, and completely pivot to a different design or solution (e.g. use different APIs, functions, or rewrite/refactor differently).\n\n`;
                 const fixPrompt =
                   req.task +
                   contextRefs +
-                  `\n\n[Your previous edit failed verification. Fix these errors and output the corrected edits]\n` +
+                  (ctx.isRepeatedFailure ? repeatedWarning : `\n\n[Your previous edit failed verification. Fix these errors and output the corrected edits]\n`) +
                   (ctx.previousFailures ?? "");
                 const fix = await withDeadline(
                   (deadlineSignal) => runChatTurnWithStream(
@@ -957,7 +962,12 @@ async function dispatchAgentImpl(
                 controller.signal
               );
               lastErrors = verifyResult.errors.join("\n");
-              return { passed: verifyResult.success, failures: lastErrors };
+              const normalizedSignature = lastErrors
+                .replace(new RegExp(`tx-\\d+-r\\d+`, "g"), "[TX_ID]")
+                .replace(/agency-staging-verify[\\/][^\\/\n]+/g, "agency-staging-verify/[TEMP_PATH]")
+                .replace(/\b\d+(?:\.\d+)?(?:ms|s)\b/g, "[DURATION]")
+                .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g, "[TIMESTAMP]");
+              return { passed: verifyResult.success, failures: lastErrors, signature: normalizedSignature };
             },
             {
               maxRounds: verifyMaxRounds,
