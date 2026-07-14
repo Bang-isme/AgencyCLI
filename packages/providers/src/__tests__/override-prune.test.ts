@@ -8,16 +8,16 @@ describe("pruneStaleContextWindowOverrides", () => {
       defaultProvider: "nvidia",
       providers: {},
       modelOverrides: {
-        "MiniMax-M3": {
-          contextWindow: 800_000,
+        "MiniMax-M2.7": {
+          contextWindow: 100_000,
           maxOutputTokens: 8192,
           thinkingType: "effort",
         },
       },
     };
     const pruned = pruneStaleContextWindowOverrides(cfg);
-    expect(pruned.modelOverrides?.["MiniMax-M3"]?.contextWindow).toBeUndefined();
-    expect(pruned.modelOverrides?.["MiniMax-M3"]?.maxOutputTokens).toBe(8192);
+    expect(pruned.modelOverrides?.["MiniMax-M2.7"]?.contextWindow).toBeUndefined();
+    expect(pruned.modelOverrides?.["MiniMax-M2.7"]?.maxOutputTokens).toBe(8192);
   });
 
   it("keeps overrides that match catalog within 95%", () => {
@@ -25,7 +25,7 @@ describe("pruneStaleContextWindowOverrides", () => {
       defaultProvider: "nvidia",
       providers: {},
       modelOverrides: {
-        "MiniMax-M3": { contextWindow: 1_000_000 },
+        "MiniMax-M2.7": { contextWindow: 204_800 },
       },
     };
     expect(pruneStaleContextWindowOverrides(cfg)).toBe(cfg);
