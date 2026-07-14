@@ -15,6 +15,8 @@ To prevent file truncation (Max Output Token exhaustion) and avoid wasteful turn
 * **Targeted Code Replacements**: Do NOT use `write_to_file` to rewrite entire large files. Always prefer `replace_file_content` or `multi_replace_file_content` to make focused, surgical edits to only the lines changing.
 * **Proactive Syntax and Build Checks**: Before running tools, mentally trace the syntax of imports, types, and variables to ensure no compilation/linting errors are introduced.
 * **Stop on Recurrent Failures**: If a fix fails compilation or unit tests 2 times, stop immediately. Do not keep repeating the same edit. Pause, re-evaluate, perform a self-reflection loop, or request guidance.
+* **Background Task Verification (Xác thực Task chạy ngầm)**: Khi chạy các lệnh kiểm tra, build hoặc compile qua `run_command` mà lệnh bị đẩy xuống chạy ngầm (background task), Model **tuyệt đối không được đoán kết quả hoặc tiếp tục bước tiếp theo**. Model bắt buộc phải chờ thông báo hoàn thành từ hệ thống (hoặc dùng `manage_task` kiểm tra trạng thái) để nhận được đầy đủ `exitCode`, `stdout`, và `stderr` trước khi đưa ra bất kỳ kết luận nào.
+* **Handling File Truncation (Xử lý file bị cắt cụt do hết token)**: Khi viết các tệp mã nguồn lớn (CSS, React components), Model phải kiểm tra xem file có bị cắt cụt giữa chừng do chạm ngưỡng Max Output Tokens hay không. Nếu bị cắt cụt, Model phải thực hiện thêm lượt gọi tool bổ sung để hoàn thành nốt phần code còn thiếu trước khi tiến hành build và báo cáo kết quả.
 
 ---
 
