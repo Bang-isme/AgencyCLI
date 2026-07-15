@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { resolvePythonBin } from "@agency/skills-bridge";
 import { ApprovalRequiredError } from "../approval/policy.js";
 import { SecurityEscalationManager, SecurityLevel } from "@agency/security";
+import { resolveRunId } from "../chat/turn-helpers.js";
+import { RunManifestRecorder } from "../runtime/run-manifest-store.js";
 
 export class SecurityClearanceError extends Error {
   override readonly name = "SecurityClearanceError";
@@ -42,6 +44,7 @@ export interface RunStepResult {
 export interface RunWorkflowOptions {
   yes?: boolean;
   prompt?: string;
+  runId?: string;
   /** Include runtime_hook preflight steps (slow; default false for token savings). */
   preflight?: boolean;
   onStep?: (name: string, result: RunStepResult) => void;
@@ -204,6 +207,10 @@ export async function runWorkflow(
   workflow: WorkflowName,
   opts: RunWorkflowOptions = {}
 ): Promise<RunWorkflowResult> {
+  const runId = resolveRunId(opts.runId);
+  process.env.AGENCY_RUN_ID = runId;
+  const recorder = new RunManifestRecorder(projectRoot, runId);
+
   // Security clearance check
   const securityManager = new SecurityEscalationManager();
   const maxSecurityLevel = opts.maxSecurityLevel ?? SecurityLevel.Level5_Privileged;
@@ -211,6 +218,7 @@ export async function runWorkflow(
 
   const accessResult = securityManager.checkAccess("run_command", maxSecurityLevel, whitelist);
   if (!accessResult.allowed) {
+    recorder.finishRun("failed", accessResult.reason || `security clearance insufficient`);
     throw new SecurityClearanceError(accessResult.reason || `security clearance insufficient`);
   }
 
@@ -219,6 +227,7 @@ export async function runWorkflow(
 
   for (const step of definition) {
     if (step.requiresApproval && !opts.yes) {
+      recorder.finishRun("incomplete", `Approval required for ${step.name}`);
       throw new ApprovalRequiredError(
         `Workflow step "${step.name}" requires approval (--yes or TUI confirm)`
       );
@@ -229,10 +238,12 @@ export async function runWorkflow(
     opts.onStep?.(step.name, result);
 
     if (result.exitCode !== 0) {
+      recorder.finishRun("failed", `Workflow step ${step.name} failed with exit code ${result.exitCode}`);
       return { status: "failed", steps };
     }
   }
 
+  recorder.finishRun("succeeded", `Workflow ${workflow} completed successfully`);
   return { status: "ok", steps };
 }
 

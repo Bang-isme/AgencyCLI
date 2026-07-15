@@ -166,32 +166,48 @@ export function sanitizeLifecycleEvent(event: ActionLifecycleEvent): ActionLifec
     ? "Runtime Process"
     : event.label;
 
-  const sanitizeString = (str?: string): string | undefined => {
+  const MAX_STRING_LEN = 1024;
+  const MAX_RAW_DETAIL_LEN = 512;
+
+  const sanitizeString = (str?: string, maxLen = MAX_STRING_LEN): string | undefined => {
     if (!str) return str;
     let s = str;
-    // Redact common secret formats (API keys, Bearer tokens, passwords)
+    // Redact common secret formats (API keys, Bearer tokens, passwords, authorization headers)
     s = s.replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|AIza[a-zA-Z0-9_-]{35}|gsk_[a-zA-Z0-9_-]{20,}|Bearer\s+[a-zA-Z0-9._-]{20,})\b/g, "[REDACTED_SECRET]");
-    s = s.replace(/((?:api_key|password|secret|auth_token)\s*[:=]\s*["'])[^"']+(["'])/gi, "$1[REDACTED]$2");
+    s = s.replace(/((?:api_key|password|secret|auth_token|authorization|access_token)\s*[:=]\s*["'])[^"']+(["'])/gi, "$1[REDACTED]$2");
+    if (s.length > maxLen) {
+      s = `${s.slice(0, maxLen)}... [TRUNCATED ${s.length - maxLen} chars]`;
+    }
     return s;
   };
 
-  const sanitizeObj = (obj: any): any => {
-    if (!obj || typeof obj !== "object") return obj;
-    if (Array.isArray(obj)) return obj.map(sanitizeObj);
+  const sanitizeObj = (obj: any, depth = 0): any => {
+    if (!obj || typeof obj !== "object" || depth > 5) return obj;
+    if (Array.isArray(obj)) return obj.map((item) => sanitizeObj(item, depth + 1));
     const result: Record<string, any> = {};
     for (const [key, val] of Object.entries(obj)) {
-      if (/secret|password|token|key|authorization/i.test(key)) {
+      if (/secret|password|auth_token|access_token|key|authorization|bearer/i.test(key)) {
         result[key] = "[REDACTED]";
       } else if (typeof val === "string") {
         result[key] = sanitizeString(val);
       } else if (typeof val === "object") {
-        result[key] = sanitizeObj(val);
+        result[key] = sanitizeObj(val, depth + 1);
       } else {
         result[key] = val;
       }
     }
     return result;
   };
+
+  let rawDetail: string | { refId: string; summary: string } | undefined;
+  if (typeof event.rawDetail === "string") {
+    rawDetail = sanitizeString(event.rawDetail, MAX_RAW_DETAIL_LEN);
+  } else if (event.rawDetail && typeof event.rawDetail === "object") {
+    rawDetail = {
+      refId: String(event.rawDetail.refId || "ref-summary"),
+      summary: sanitizeString(event.rawDetail.summary, MAX_RAW_DETAIL_LEN) || "Raw detail summary",
+    };
+  }
 
   const evidence = event.evidence ? sanitizeObj(event.evidence) : undefined;
   if (evidence && target !== undefined) {
@@ -204,6 +220,7 @@ export function sanitizeLifecycleEvent(event: ActionLifecycleEvent): ActionLifec
     label,
     summary: sanitizeString(event.summary),
     recovery: sanitizeString(event.recovery),
+    rawDetail,
     evidence,
     meta: event.meta ? sanitizeObj(event.meta) : undefined,
   };
@@ -273,7 +290,7 @@ export function lifecycleFromToolEvent(
   };
 
   return sanitizeLifecycleEvent({
-    id: String(payload.id ?? `${runId}:${String(payload.turnId ?? "turn")}:${action}:${target ?? ""}:${String(payload.seq ?? now)}`),
+    id: String(payload.id ?? `${runId}:${String(payload.turnId ?? "turn")}:${action}:${target ?? ""}`),
     runId,
     turnId: payload.turnId ? String(payload.turnId) : undefined,
     parentId: payload.parentId ? String(payload.parentId) : undefined,

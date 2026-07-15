@@ -28,8 +28,9 @@ import {
   type ChatTurnInput,
   type ChatTurnResult,
 } from "./orchestrator.js";
-import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, pruneToolResultsInHistory, recordTurnTokenCost, resolveSessionId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, buildAutoContinueExhaustedNotice, publishAutoContinueContinuation, MAX_AUTO_CONTINUE, MAX_TOTAL_AUTO_CONTINUE } from "./turn-helpers.js";
+import { providerHasKey, resolveRoute, compactTurnHistory, reduceHistoryToFit, pruneToolResultsInHistory, recordTurnTokenCost, resolveSessionId, resolveRunId, resolveMaxLoops, buildIncompleteTurnNotice, buildCircuitBreakerNotice, detectIncompleteCompletion, detectTruncatedArtifact, buildAutoContinueNudge, buildAutoContinueExhaustedNotice, publishAutoContinueContinuation, MAX_AUTO_CONTINUE, MAX_TOTAL_AUTO_CONTINUE } from "./turn-helpers.js";
 import { resolveContextRetryLimit, computeEffectiveContextBudget } from "./context-retry.js";
+import { RunManifestRecorder } from "../runtime/run-manifest-store.js";
 import { estimateContextBreakdown } from "./context-meter.js";
 import {
   buildSynthesisUserMessage,
@@ -126,6 +127,9 @@ export async function runChatTurnWithStream(
   handlers: ChatStreamHandlers
 ): Promise<ChatTurnResult> {
   const resolvedSessionId = resolveSessionId(input.sessionId);
+  const runId = resolveRunId(input.runId, resolvedSessionId);
+  process.env.AGENCY_RUN_ID = runId;
+  const recorder = new RunManifestRecorder(input.projectRoot, runId, resolvedSessionId);
   const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
 
   // Ingest user prompt at the start of the turn
@@ -737,6 +741,8 @@ export async function runChatTurnWithStream(
     "assistant_reply",
     llmText
   );
+
+  recorder.finishRun("succeeded", `Completed streaming turn for session ${resolvedSessionId}`);
 
   return {
     route,

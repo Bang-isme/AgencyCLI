@@ -58,95 +58,121 @@ export function convertLegacyEventToCanonical(ev: ReplayEvent): ActionLifecycleE
     return lifecycleFromToolEvent("failed", { ...p, runId, turnId, seq: ev.sequenceId, updatedAt: now, durationMs: ev.durationMs }, now);
   }
 
-  // Legacy subagent events
-  if (ev.action === "subagent:started") {
-    return sanitizeLifecycleEvent({
-      id: `${runId}:${turnId || "turn"}:subagent:${String(p.agentId || "agent")}:${ev.sequenceId}`,
-      runId,
-      turnId,
-      agentId: p.agentId ? String(p.agentId) : undefined,
-      kind: "agent",
-      action: "dispatch_subagent",
-      state: "running",
-      label: `Subagent ${p.agentId || "worker"}`,
-      target: p.agentId ? String(p.agentId) : undefined,
-      timing: { startedAt: now, updatedAt: now },
-      startedAt: now,
-      summary: typeof p.task === "string" ? p.task : "Dispatched subagent task",
-    });
-  }
-  if (ev.action === "subagent:progress") {
-    return sanitizeLifecycleEvent({
-      id: `${runId}:${turnId || "turn"}:subagent:${String(p.agentId || "agent")}:${ev.sequenceId}`,
-      runId,
-      turnId,
-      agentId: p.agentId ? String(p.agentId) : undefined,
-      kind: "agent",
-      action: "dispatch_subagent",
-      state: "running",
-      label: `Subagent ${p.agentId || "worker"}`,
-      target: p.agentId ? String(p.agentId) : undefined,
-      timing: { startedAt: now, updatedAt: now, elapsedMs: typeof p.elapsedMs === "number" ? p.elapsedMs : undefined },
-      summary: typeof p.phase === "string" ? `Phase: ${p.phase}` : undefined,
-    });
-  }
-  if (ev.action === "subagent:finished") {
-    return sanitizeLifecycleEvent({
-      id: `${runId}:${turnId || "turn"}:subagent:${String(p.agentId || "agent")}:${ev.sequenceId}`,
-      runId,
-      turnId,
-      agentId: p.agentId ? String(p.agentId) : undefined,
-      kind: "agent",
-      action: "dispatch_subagent",
-      state: "succeeded",
-      label: `Subagent ${p.agentId || "worker"}`,
-      target: p.agentId ? String(p.agentId) : undefined,
-      timing: { updatedAt: now, elapsedMs: typeof p.elapsedMs === "number" ? p.elapsedMs : undefined },
-      summary: `Completed with exit code ${p.exitCode ?? 0}`,
-    });
-  }
-  if (ev.action === "subagent:error") {
-    return sanitizeLifecycleEvent({
-      id: `${runId}:${turnId || "turn"}:subagent:${String(p.agentId || "agent")}:${ev.sequenceId}`,
-      runId,
-      turnId,
-      agentId: p.agentId ? String(p.agentId) : undefined,
-      kind: "agent",
-      action: "dispatch_subagent",
-      state: "failed",
-      label: `Subagent ${p.agentId || "worker"}`,
-      target: p.agentId ? String(p.agentId) : undefined,
-      timing: { updatedAt: now },
-      summary: typeof p.error === "string" ? p.error : "Subagent execution error",
-      recoveryHint: { suggestion: "Inspect subagent logs and retry dispatch.", autoRecoverable: false },
-    });
-  }
-  if (ev.action === "subagent:skipped") {
-    return sanitizeLifecycleEvent({
-      id: `${runId}:${turnId || "turn"}:subagent:${String(p.agentId || "agent")}:${ev.sequenceId}`,
-      runId,
-      turnId,
-      agentId: p.agentId ? String(p.agentId) : undefined,
-      kind: "agent",
-      action: "dispatch_subagent",
-      state: "incomplete",
-      label: `Subagent ${p.agentId || "worker"}`,
-      target: p.agentId ? String(p.agentId) : undefined,
-      summary: "Subagent execution skipped",
-    });
+  // Legacy subagent events - use stable dispatchId/agentId so events update the same lifecycle instance
+  if (ev.action.startsWith("subagent:")) {
+    const dispatchId = String(p.dispatchId || p.agentId || "worker");
+    const subagentLifecycleId = `${runId}:subagent:${dispatchId}`;
+    const agentId = p.agentId ? String(p.agentId) : undefined;
+    const isExplicitIncomplete = Boolean(p.incomplete || p.state === "incomplete");
+
+    if (ev.action === "subagent:started") {
+      return sanitizeLifecycleEvent({
+        id: subagentLifecycleId,
+        runId,
+        turnId,
+        dispatchId,
+        agentId,
+        kind: "agent",
+        action: "dispatch_subagent",
+        state: isExplicitIncomplete ? "incomplete" : "running",
+        label: `Subagent ${agentId || "worker"}`,
+        target: agentId,
+        timing: { startedAt: now, updatedAt: now },
+        startedAt: now,
+        summary: typeof p.task === "string" ? p.task : "Dispatched subagent task",
+        evidence: { task: p.task },
+      });
+    }
+    if (ev.action === "subagent:progress") {
+      return sanitizeLifecycleEvent({
+        id: subagentLifecycleId,
+        runId,
+        turnId,
+        dispatchId,
+        agentId,
+        kind: "agent",
+        action: "dispatch_subagent",
+        state: isExplicitIncomplete ? "incomplete" : "running",
+        label: `Subagent ${agentId || "worker"}`,
+        target: agentId,
+        timing: { startedAt: now, updatedAt: now, elapsedMs: typeof p.elapsedMs === "number" ? p.elapsedMs : undefined },
+        summary: typeof p.phase === "string" ? `Phase: ${p.phase}` : undefined,
+        evidence: { phase: p.phase, elapsedMs: p.elapsedMs },
+      });
+    }
+    if (ev.action === "subagent:finished") {
+      const state: ActionLifecycleState = isExplicitIncomplete ? "incomplete" : "succeeded";
+      return sanitizeLifecycleEvent({
+        id: subagentLifecycleId,
+        runId,
+        turnId,
+        dispatchId,
+        agentId,
+        kind: "agent",
+        action: "dispatch_subagent",
+        state,
+        label: `Subagent ${agentId || "worker"}`,
+        target: agentId,
+        timing: { updatedAt: now, elapsedMs: typeof p.elapsedMs === "number" ? p.elapsedMs : undefined },
+        summary: typeof p.result === "string" ? p.result : `Completed with exit code ${p.exitCode ?? 0}`,
+        evidence: { result: p.result, exitCode: p.exitCode ?? 0 },
+      });
+    }
+    if (ev.action === "subagent:error") {
+      const state: ActionLifecycleState = isExplicitIncomplete ? "incomplete" : "failed";
+      const errorMsg = typeof p.error === "string" ? p.error : (typeof p.result === "string" ? p.result : "Subagent execution error");
+      return sanitizeLifecycleEvent({
+        id: subagentLifecycleId,
+        runId,
+        turnId,
+        dispatchId,
+        agentId,
+        kind: "agent",
+        action: "dispatch_subagent",
+        state,
+        label: `Subagent ${agentId || "worker"}`,
+        target: agentId,
+        timing: { updatedAt: now },
+        summary: errorMsg,
+        evidence: { result: p.result, error: p.error, exitCode: p.exitCode ?? 1 },
+        recoveryHint: { suggestion: "Inspect subagent logs and retry dispatch.", autoRecoverable: false },
+      });
+    }
+    if (ev.action === "subagent:skipped") {
+      return sanitizeLifecycleEvent({
+        id: subagentLifecycleId,
+        runId,
+        turnId,
+        dispatchId,
+        agentId,
+        kind: "agent",
+        action: "dispatch_subagent",
+        state: "incomplete",
+        label: `Subagent ${agentId || "worker"}`,
+        target: agentId,
+        summary: typeof p.reason === "string" ? p.reason : "Subagent execution skipped",
+      });
+    }
   }
 
-  // System warnings / notices
+  // System warnings / notices - only canonicalize warnings with explicit lifecycle ownership
   if (ev.action === "system:warning") {
     const isCircuitBreaker = typeof p?.message === "string" && p.message.includes("circuit breaker");
+    const hasKnownOwner = isCircuitBreaker || p.owner || p.kind === "loop" || p.kind === "verification";
+
+    if (!hasKnownOwner) {
+      // Keep raw warning for metrics counter without emitting artificial lifecycle verification event
+      return null;
+    }
+
     return sanitizeLifecycleEvent({
       id: `${runId}:${turnId || "turn"}:warning:${ev.sequenceId}`,
       runId,
       turnId,
-      kind: isCircuitBreaker ? "loop" : "verification",
-      action: isCircuitBreaker ? "circuit_breaker" : "system_warning",
+      kind: isCircuitBreaker || p.kind === "loop" ? "loop" : "verification",
+      action: isCircuitBreaker ? "circuit_breaker" : String(p.action || "system_warning"),
       state: "failed",
-      label: isCircuitBreaker ? "Circuit Breaker Tripped" : "System Warning",
+      label: isCircuitBreaker ? "Circuit Breaker Tripped" : String(p.label || "System Warning"),
       summary: typeof p?.message === "string" ? p.message : "Warning emitted",
       timing: { startedAt: now, updatedAt: now },
       recoveryHint: isCircuitBreaker ? { suggestion: "Stop repeating identical calls and inspect workspace state.", autoRecoverable: false } : undefined,

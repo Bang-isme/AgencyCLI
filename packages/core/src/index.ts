@@ -46,6 +46,7 @@ export {
   listRunManifests,
   enforceRunRetention,
   sanitizeRunManifest,
+  RunManifestRecorder,
   MAX_RUN_MANIFESTS,
   MAX_MANIFEST_AGE_MS,
   type RunManifest,

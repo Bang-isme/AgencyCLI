@@ -76,8 +76,7 @@ export interface RuntimeState {
   latestCanonicalEvents?: ActionLifecycleEvent[];
 }
 
-/** Tool actions (from `classifyTool`) that touch a file's content/location. */
-const FILE_MUTATING_ACTIONS = new Set(["write", "edit", "delete", "move"]);
+
 
 function parsePayload(ev: ReplayEvent): any {
   try {
@@ -131,7 +130,7 @@ export function reduceRuntimeState(events: ReplayEvent[]): RuntimeState {
 
     const p = parsePayload(ev);
 
-    // Single migration adapter for legacy events -> canonical ActionLifecycleEvent
+    // Single migration adapter for legacy & canonical events -> ActionLifecycleEvent
     const canonical = convertLegacyEventToCanonical(ev);
     if (canonical) {
       latestCanonicalEvents.push(canonical);
@@ -140,58 +139,55 @@ export function reduceRuntimeState(events: ReplayEvent[]): RuntimeState {
       } else {
         activeWorkMap.delete(canonical.id);
       }
+
+      if (canonical.kind === "tool") {
+        if (canonical.state === "running") {
+          tools.total++;
+          const cat = canonical.semantic?.category ?? "other";
+          tools.byCategory[cat] = (tools.byCategory[cat] ?? 0) + 1;
+        } else if (canonical.state === "succeeded" || canonical.state === "failed" || canonical.state === "incomplete" || canonical.state === "cancelled") {
+          const ok = canonical.state === "succeeded";
+          if (!ok) tools.failed++;
+          tools.last = {
+            name: canonical.action,
+            ok,
+            target: canonical.target,
+            summary: canonical.summary,
+          };
+          if (ok && canonical.target && (canonical.semantic?.operation === "write" || canonical.semantic?.operation === "edit" || canonical.semantic?.operation === "delete" || canonical.semantic?.operation === "move")) {
+            modified.add(canonical.target);
+          }
+        }
+      } else if (canonical.kind === "agent") {
+        const agentId = canonical.agentId || canonical.target || "worker";
+        const evDetail = canonical.evidence || {};
+        if (canonical.state === "running") {
+          upsertAgent(agents, agentId, {
+            status: "running",
+            ...(typeof evDetail.task === "string" ? { task: evDetail.task } : (canonical.summary && !canonical.summary.startsWith("Phase:") ? { task: canonical.summary } : {})),
+            ...(typeof evDetail.phase === "string" ? { phase: evDetail.phase } : {}),
+            ...(typeof canonical.timing?.elapsedMs === "number" ? { elapsedMs: canonical.timing.elapsedMs } : {}),
+          });
+        } else if (canonical.state === "succeeded") {
+          upsertAgent(agents, agentId, {
+            status: "done",
+            exitCode: typeof evDetail.exitCode === "number" ? evDetail.exitCode : 0,
+            ...(typeof canonical.timing?.elapsedMs === "number" ? { elapsedMs: canonical.timing.elapsedMs } : {}),
+          });
+        } else if (canonical.state === "failed") {
+          upsertAgent(agents, agentId, {
+            status: "error",
+            exitCode: typeof evDetail.exitCode === "number" ? evDetail.exitCode : 1,
+          });
+        } else if (canonical.state === "incomplete" || canonical.state === "cancelled") {
+          upsertAgent(agents, agentId, {
+            status: "skipped",
+          });
+        }
+      }
     }
 
     switch (ev.action) {
-      case "action:lifecycle":
-      case "action:queued":
-      case "action:running":
-      case "action:succeeded":
-      case "action:failed":
-      case "action:incomplete":
-      case "action:cancelled": {
-        if (canonical && canonical.kind === "tool") {
-          if (canonical.state === "running") {
-            tools.total++;
-            const cat = canonical.semantic?.category ?? "other";
-            tools.byCategory[cat] = (tools.byCategory[cat] ?? 0) + 1;
-          } else if (canonical.state === "succeeded" || canonical.state === "failed" || canonical.state === "incomplete" || canonical.state === "cancelled") {
-            const ok = canonical.state === "succeeded";
-            if (!ok) tools.failed++;
-            tools.last = {
-              name: canonical.action,
-              ok,
-              target: canonical.target,
-              summary: canonical.summary,
-            };
-            if (ok && canonical.target && (canonical.semantic?.operation === "write" || canonical.semantic?.operation === "edit" || canonical.semantic?.operation === "delete" || canonical.semantic?.operation === "move")) {
-              modified.add(canonical.target);
-            }
-          }
-        }
-        break;
-      }
-      case "tool:started": {
-        tools.total++;
-        const cat = typeof p?.category === "string" ? p.category : "other";
-        tools.byCategory[cat] = (tools.byCategory[cat] ?? 0) + 1;
-        break;
-      }
-      case "tool:finished":
-      case "tool:failed": {
-        const ok = ev.action === "tool:finished";
-        if (!ok) tools.failed++;
-        tools.last = {
-          name: typeof p?.name === "string" ? p.name : "?",
-          ok,
-          target: typeof p?.target === "string" ? p.target : undefined,
-          summary: typeof p?.summary === "string" ? p.summary : undefined,
-        };
-        if (ok && FILE_MUTATING_ACTIONS.has(p?.action) && p?.target) {
-          modified.add(String(p.target));
-        }
-        break;
-      }
       case "plan:updated": {
         if (Array.isArray(p?.todos)) {
           plan = p.todos
@@ -207,38 +203,6 @@ export function reduceRuntimeState(events: ReplayEvent[]): RuntimeState {
         }
         break;
       }
-      case "subagent:started":
-        if (p?.agentId)
-          upsertAgent(agents, String(p.agentId), {
-            status: "running",
-            task: typeof p.task === "string" ? p.task : undefined,
-          });
-        break;
-      case "subagent:progress":
-        if (p?.agentId && agents.has(String(p.agentId)))
-          upsertAgent(agents, String(p.agentId), {
-            ...(typeof p.phase === "string" ? { phase: p.phase } : {}),
-            ...(typeof p.elapsedMs === "number" ? { elapsedMs: p.elapsedMs } : {}),
-          });
-        break;
-      case "subagent:finished":
-        if (p?.agentId)
-          upsertAgent(agents, String(p.agentId), {
-            status: "done",
-            exitCode: typeof p.exitCode === "number" ? p.exitCode : 0,
-            ...(typeof p.elapsedMs === "number" ? { elapsedMs: p.elapsedMs } : {}),
-          });
-        break;
-      case "subagent:error":
-        if (p?.agentId)
-          upsertAgent(agents, String(p.agentId), {
-            status: "error",
-            exitCode: typeof p.exitCode === "number" ? p.exitCode : 1,
-          });
-        break;
-      case "subagent:skipped":
-        if (p?.agentId) upsertAgent(agents, String(p.agentId), { status: "skipped" });
-        break;
       case "continuation:started":
         continuations++;
         break;

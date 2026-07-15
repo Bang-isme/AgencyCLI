@@ -42,6 +42,9 @@ import { applyLoopMitigation, executeTurnToolBatch } from "./turn-loop.js";
 // layer). Re-exported here so the many `import { ChatMessage } from
 // "./orchestrator.js"` consumers keep one import path, while the type has a
 // single definition — it was previously a byte-identical duplicate declaration.
+import { resolveRunId } from "./turn-helpers.js";
+import { RunManifestRecorder } from "../runtime/run-manifest-store.js";
+
 export type { ChatMessage };
 
 export interface ChatTurnInput {
@@ -58,6 +61,7 @@ export interface ChatTurnInput {
   reasoningBudgetMultiplier?: number;
   maxLoops?: number;
   sessionId?: string;
+  runId?: string;
   loopMitigationWaitForResume?: boolean;
 }
 
@@ -113,6 +117,10 @@ export async function runChatTurn(
   input: ChatTurnInput
 ): Promise<ChatTurnResult> {
   const resolvedSessionId = resolveSessionId(input.sessionId);
+  const runId = resolveRunId(input.runId, resolvedSessionId);
+  process.env.AGENCY_RUN_ID = runId;
+  const recorder = new RunManifestRecorder(input.projectRoot, runId, resolvedSessionId);
+
   const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
 
   // Ingest user prompt at the start of the turn
@@ -186,6 +194,7 @@ export async function runChatTurn(
       plan
     );
     const hint = fromCache ? "\n(route cache hit)" : "";
+    recorder.finishRun("succeeded", `Completed route-only turn for session ${resolvedSessionId}`);
     return {
       route,
       routeSummary,
@@ -538,6 +547,8 @@ export async function runChatTurn(
     "assistant_reply",
     llmText
   );
+
+  recorder.finishRun("succeeded", `Completed turn for session ${resolvedSessionId}`);
 
   return {
     route,

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,9 @@ import {
   loadRunManifest,
   listRunManifests,
   enforceRunRetention,
+  runWorkflow,
+  runChatTurn,
+  resolveRunId,
   MAX_RUN_MANIFESTS,
   MAX_MANIFEST_AGE_MS,
   type ActionLifecycleEvent,
@@ -20,7 +23,7 @@ import {
 } from "../index.js";
 import { EventBus } from "../events/event-bus.js";
 
-describe("Runtime Control Plane Task 1 - Canonical Lifecycle, Legacy Adapter & Run Manifest", () => {
+describe("Runtime Control Plane Task 1 Integration Audit & Manifest Persistence", () => {
   let projectRoot: string;
 
   beforeEach(() => {
@@ -35,8 +38,8 @@ describe("Runtime Control Plane Task 1 - Canonical Lifecycle, Legacy Adapter & R
     EventBus.getInstance().clear();
   });
 
-  describe("Canonical ActionLifecycleEvent & Redaction", () => {
-    it("sanitizes API keys, secrets, and opaque Windows targets from evidence and target", () => {
+  describe("Canonical ActionLifecycleEvent & Redaction Safety", () => {
+    it("sanitizes API keys, secrets, bearer tokens, and opaque Windows targets", () => {
       const rawEvent: ActionLifecycleEvent = {
         id: "run-1:turn-1:exec:seq-1",
         runId: "run-1",
@@ -62,117 +65,139 @@ describe("Runtime Control Plane Task 1 - Canonical Lifecycle, Legacy Adapter & R
       expect(sanitized.evidence?.secretToken).toBe("[REDACTED]");
       expect((sanitized.evidence?.nested as any)?.auth_token).toBe("[REDACTED]");
     });
+
+    it("sanitizes and bounds rawDetail and oversized evidence string values", () => {
+      const longString = "A".repeat(2000);
+      const event: ActionLifecycleEvent = {
+        id: "run-rawdetail-test",
+        runId: "run-detail",
+        kind: "tool",
+        action: "read_file",
+        state: "succeeded",
+        label: "Read File",
+        rawDetail: `Long stdout with secret sk-proj-12345678901234567890 and ${longString}`,
+        evidence: {
+          oversizedOutput: longString,
+          authorizationHeader: "Bearer secret-token-value-1234567890",
+        },
+      };
+
+      const sanitized = sanitizeLifecycleEvent(event);
+      expect(typeof sanitized.rawDetail).toBe("string");
+      expect(sanitized.rawDetail as string).not.toContain("sk-proj-1234567890");
+      expect((sanitized.rawDetail as string).length).toBeLessThan(700);
+      expect((sanitized.evidence?.oversizedOutput as string).length).toBeLessThan(1200);
+      expect(sanitized.evidence?.authorizationHeader).toBe("[REDACTED]");
+    });
   });
 
-  describe("Legacy Event Migration Adapter", () => {
-    it("converts legacy tool:started, tool:finished, and tool:failed events into canonical lifecycle events", () => {
+  describe("Legacy Event Migration Adapter Identity & Outcomes", () => {
+    it("maps subagent events for the same dispatch to a single stable lifecycle ID", () => {
       const startEv: ReplayEvent = {
-        sequenceId: 1,
+        sequenceId: 10,
         timestamp: 1000,
-        action: "tool:started",
-        runId: "run-legacy-1",
-        payload: { name: "write_file", target: "src/app.ts", category: "fs" },
+        action: "subagent:started",
+        runId: "run-subagent-audit",
+        payload: { dispatchId: "disp-101", agentId: "researcher", task: "Audit dependencies" },
       };
-      const finishEv: ReplayEvent = {
-        sequenceId: 2,
+
+      const progressEv: ReplayEvent = {
+        sequenceId: 11,
         timestamp: 1050,
-        durationMs: 50,
-        action: "tool:finished",
-        runId: "run-legacy-1",
-        payload: { name: "write_file", target: "src/app.ts", action: "write", summary: "Wrote 120 bytes" },
+        action: "subagent:progress",
+        runId: "run-subagent-audit",
+        payload: { dispatchId: "disp-101", agentId: "researcher", phase: "Parsing AST" },
+      };
+
+      const errorEv: ReplayEvent = {
+        sequenceId: 12,
+        timestamp: 1100,
+        action: "subagent:error",
+        runId: "run-subagent-audit",
+        payload: { dispatchId: "disp-101", agentId: "researcher", result: "Fatal syntax error in module", error: "CompileError" },
       };
 
       const canonStart = convertLegacyEventToCanonical(startEv);
-      expect(canonStart).not.toBeNull();
-      expect(canonStart?.kind).toBe("tool");
-      expect(canonStart?.state).toBe("running");
-      expect(canonStart?.runId).toBe("run-legacy-1");
+      const canonProgress = convertLegacyEventToCanonical(progressEv);
+      const canonError = convertLegacyEventToCanonical(errorEv);
 
-      const canonFinish = convertLegacyEventToCanonical(finishEv);
-      expect(canonFinish).not.toBeNull();
-      expect(canonFinish?.kind).toBe("tool");
-      expect(canonFinish?.state).toBe("succeeded");
-      expect(canonFinish?.summary).toContain("Wrote 120 bytes");
+      expect(canonStart?.id).toBe("run-subagent-audit:subagent:disp-101");
+      expect(canonProgress?.id).toBe("run-subagent-audit:subagent:disp-101");
+      expect(canonError?.id).toBe("run-subagent-audit:subagent:disp-101");
+      expect(canonError?.state).toBe("failed");
+      expect(canonError?.summary).toBe("CompileError");
+      expect(canonError?.evidence?.result).toBe("Fatal syntax error in module");
     });
 
-    it("converts legacy subagent and system:warning events into canonical lifecycle events", () => {
-      const subagentEv: ReplayEvent = {
-        sequenceId: 3,
-        timestamp: 1100,
-        action: "subagent:error",
-        runId: "run-legacy-2",
-        payload: { agentId: "worker-1", error: "Subagent failed compilation" },
-      };
+    it("does not convert unknown system:warning into verification failed", () => {
       const warningEv: ReplayEvent = {
-        sequenceId: 4,
-        timestamp: 1150,
+        sequenceId: 99,
+        timestamp: 2000,
         action: "system:warning",
-        runId: "run-legacy-2",
-        payload: { message: "Tool loop halted by circuit breaker after repeated failed calls." },
+        runId: "run-warning-test",
+        payload: { message: "Low disk space notice" },
       };
 
-      const canonAgent = convertLegacyEventToCanonical(subagentEv);
-      expect(canonAgent?.kind).toBe("agent");
-      expect(canonAgent?.state).toBe("failed");
-      expect(canonAgent?.recoveryHint?.suggestion).toContain("Inspect subagent logs");
+      const canonical = convertLegacyEventToCanonical(warningEv);
+      expect(canonical).toBeNull();
 
-      const canonWarning = convertLegacyEventToCanonical(warningEv);
-      expect(canonWarning?.kind).toBe("loop");
-      expect(canonWarning?.state).toBe("failed");
-      expect(canonWarning?.label).toBe("Circuit Breaker Tripped");
+      const state = reduceRuntimeState([warningEv]);
+      expect(state.warnings).toBe(1);
+      expect(state.latestCanonicalEvents).toHaveLength(0);
     });
   });
 
-  describe("RuntimeState Reducer", () => {
-    it("folds canonical events and active work correctly", () => {
-      const canonicalEvents: ActionLifecycleEvent[] = [
+  describe("Reducer Correctness & Regression Protection", () => {
+    it("counts legacy tool started + finished exactly ONCE without duplicate counters or stale active work", () => {
+      const events: ReplayEvent[] = [
         {
-          id: "run-1:turn-1:write:1",
-          runId: "run-1",
-          kind: "tool",
-          action: "write_file",
-          state: "running",
-          label: "Write src/index.ts",
-          target: "src/index.ts",
+          sequenceId: 1,
+          timestamp: 1000,
+          action: "tool:started",
+          runId: "run-reducer-test",
+          payload: { name: "write_file", target: "src/main.ts", category: "fs" },
         },
         {
-          id: "run-1:turn-1:write:1",
-          runId: "run-1",
-          kind: "tool",
-          action: "write_file",
-          state: "succeeded",
-          label: "Write src/index.ts",
-          target: "src/index.ts",
-          semantic: { category: "fs", operation: "write", label: "Write" },
-        },
-        {
-          id: "run-1:turn-1:exec:2",
-          runId: "run-1",
-          kind: "tool",
-          action: "execute_command",
-          state: "running",
-          label: "Run tests",
-          target: "pnpm test",
+          sequenceId: 2,
+          timestamp: 1050,
+          action: "tool:finished",
+          runId: "run-reducer-test",
+          payload: { name: "write_file", target: "src/main.ts", action: "write", summary: "File written" },
         },
       ];
 
-      const replayEvents: ReplayEvent[] = canonicalEvents.map((ce, idx) => ({
-        sequenceId: idx + 1,
-        timestamp: 1000 + idx * 10,
-        action: "action:lifecycle",
-        payload: ce,
-      }));
-
-      const state = reduceRuntimeState(replayEvents);
-      expect(state.eventCount).toBe(3);
-      expect(state.tools.total).toBe(2);
+      const state = reduceRuntimeState(events);
+      expect(state.tools.total).toBe(1);
+      expect(state.tools.failed).toBe(0);
       expect(state.tools.last?.ok).toBe(true);
-      expect(state.modifiedFiles).toContain("src/index.ts");
-      expect(state.activeWork).toHaveLength(1);
-      expect(state.activeWork![0]?.id).toBe("run-1:turn-1:exec:2");
+      expect(state.activeWork).toHaveLength(0);
     });
 
-    it("ensures failures, cancellations, and loop limits never reduce to succeeded/done", () => {
+    it("clears active work when subagent errors and retains real error result", () => {
+      const events: ReplayEvent[] = [
+        {
+          sequenceId: 1,
+          timestamp: 1000,
+          action: "subagent:started",
+          runId: "run-agent-test",
+          payload: { dispatchId: "d1", agentId: "coder", task: "Fix bug" },
+        },
+        {
+          sequenceId: 2,
+          timestamp: 1100,
+          action: "subagent:error",
+          runId: "run-agent-test",
+          payload: { dispatchId: "d1", agentId: "coder", error: "TypeScript build failed" },
+        },
+      ];
+
+      const state = reduceRuntimeState(events);
+      expect(state.activeWork).toHaveLength(0);
+      expect(state.agents).toHaveLength(1);
+      expect(state.agents[0]?.status).toBe("error");
+    });
+
+    it("ensures circuit breaker and incomplete stop reasons never resolve to succeeded", () => {
       const failedLifecycle: ActionLifecycleEvent = {
         id: "run-2:turn-1:exec:1",
         runId: "run-2",
@@ -200,7 +225,7 @@ describe("Runtime Control Plane Task 1 - Canonical Lifecycle, Legacy Adapter & R
     });
   });
 
-  describe("Run Manifest Store & Retention Enforcement", () => {
+  describe("Run Manifest Store & Atomic Write Integration", () => {
     it("persists sanitized run manifest atomically to .agency/runs/<runId>.json", () => {
       const manifest: RunManifest = {
         runId: "run-test-atomic",
@@ -271,6 +296,41 @@ describe("Runtime Control Plane Task 1 - Canonical Lifecycle, Legacy Adapter & R
       const all = listRunManifests(projectRoot);
       expect(all.length).toBeLessThanOrEqual(MAX_RUN_MANIFESTS);
       expect(all.find((m) => m.runId === "run-old-expired")).toBeUndefined();
+    });
+  });
+
+  describe("Real Execution Entrypoint Integration Tests", () => {
+    it("persists .agency/runs/<runId>.json on real runChatTurn completion", async () => {
+      const runId = "run-chat-e2e-audit";
+      const result = await runChatTurn({
+        prompt: "Check system health",
+        projectRoot,
+        skillsRoot: projectRoot,
+        noLlm: true,
+        runId,
+      });
+
+      expect(result).toBeDefined();
+      const manifest = loadRunManifest(projectRoot, runId);
+      expect(manifest).not.toBeNull();
+      expect(manifest?.runId).toBe(runId);
+      expect(manifest?.status).toBe("succeeded");
+    });
+
+    it("persists .agency/runs/<runId>.json on real runWorkflow completion", async () => {
+      const runId = "run-workflow-e2e-audit";
+      const skillsRoot = join(process.cwd(), "packages", "skills-bridge", "resources", "packaged_skills");
+      
+      const result = await runWorkflow(skillsRoot, projectRoot, "create", {
+        runId,
+        yes: true,
+      });
+
+      expect(result).toBeDefined();
+      const manifest = loadRunManifest(projectRoot, runId);
+      expect(manifest).not.toBeNull();
+      expect(manifest?.runId).toBe(runId);
+      expect(["succeeded", "failed"]).toContain(manifest?.status);
     });
   });
 

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { EventBus } from "../events/event-bus.js";
 import { sanitizeLifecycleEvent, type ActionLifecycleEvent } from "../product/action-lifecycle.js";
 
 export const MAX_RUN_MANIFESTS = 20;
@@ -161,3 +162,77 @@ export function listRunManifests(projectRoot: string): RunManifest[] {
     return [];
   }
 }
+
+/**
+ * Subscribes to ActionLifecycleEvents for a single run and automatically saves a compact,
+ * sanitized RunManifest to `.agency/runs/<runId>.json` when a terminal state is reached.
+ */
+export class RunManifestRecorder {
+  private events: ActionLifecycleEvent[] = [];
+  private startedAt = Date.now();
+  private status: "queued" | "running" | "succeeded" | "failed" | "incomplete" | "cancelled" = "running";
+  private unsubscribe?: () => void;
+
+  constructor(
+    private readonly projectRoot: string,
+    public readonly runId: string,
+    public readonly sessionId?: string
+  ) {
+    const bus = EventBus.getInstance();
+    const listener = (payload: any) => {
+      if (!payload || typeof payload !== "object") return;
+      const event = payload as ActionLifecycleEvent;
+      if (event.runId === this.runId) {
+        this.events.push(event);
+      }
+    };
+    bus.subscribe("action:lifecycle", listener);
+    this.unsubscribe = () => {
+      bus.unsubscribe("action:lifecycle", listener);
+    };
+  }
+
+  /** Record a lifecycle event directly if bus listener was not triggered synchronously. */
+  public recordEvent(event: ActionLifecycleEvent): void {
+    if (event.runId === this.runId && !this.events.some((e) => e.id === event.id && e.state === event.state)) {
+      this.events.push(event);
+    }
+  }
+
+  /** Marks the run with its terminal status, saves the manifest, and cleans up event bus listener. */
+  public finishRun(
+    finalStatus: "succeeded" | "failed" | "incomplete" | "cancelled",
+    summary?: string
+  ): RunManifest | null {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = undefined;
+    }
+
+    this.status = finalStatus;
+    const now = Date.now();
+    const modifiedFiles = Array.from(
+      new Set(
+        this.events
+          .filter((e) => e.state === "succeeded" && e.target && (e.semantic?.operation === "write" || e.semantic?.operation === "edit" || e.semantic?.operation === "delete" || e.semantic?.operation === "move"))
+          .map((e) => e.target!)
+      )
+    );
+
+    const manifest: RunManifest = {
+      runId: this.runId,
+      sessionId: this.sessionId,
+      startedAt: this.startedAt,
+      updatedAt: now,
+      status: this.status,
+      summary: summary || `Run ${this.runId} finished with status ${finalStatus}`,
+      eventCount: this.events.length,
+      modifiedFiles,
+      lifecycleEvents: this.events,
+    };
+
+    saveRunManifest(this.projectRoot, manifest);
+    return manifest;
+  }
+}
+

@@ -100,9 +100,13 @@ export function detectDagCycle(nodes: Record<string, DagTaskNode>): string[] | n
   return null;
 }
 
+import { resolveRunId } from "../chat/turn-helpers.js";
+import { RunManifestRecorder } from "../runtime/run-manifest-store.js";
+
 export interface RunPlanOptions {
   from?: number;
   taskId?: string;
+  runId?: string;
   skillsRoot?: string;
   /** Run auto_gate quick every N completed tasks (default 3). Set 0 to disable. */
   gateEvery?: number;
@@ -452,6 +456,9 @@ export async function runPlan(
 ): Promise<TaskCheckpoint> {
   const skillsRoot = opts.skillsRoot ?? resolveSkillsRoot();
   const epochId = randomUUID();
+  const runId = resolveRunId(opts.runId, opts.taskId || epochId);
+  process.env.AGENCY_RUN_ID = runId;
+  const recorder = new RunManifestRecorder(projectRoot, runId);
 
   let cp: TaskCheckpoint;
   let absPlan: string;
@@ -997,10 +1004,11 @@ export async function runPlan(
          // Silently catch cleanup errors to not interrupt execution success
        }
      }
-     saveCheckpointRobust(projectRoot, cp, compactedNodes);
-
-  } catch (err) {
+      saveCheckpointRobust(projectRoot, cp, compactedNodes);
+      recorder.finishRun(cp.status === "done" ? "succeeded" : "failed", `Task plan run status: ${cp.status}`);
+  } catch (err: any) {
     saveCheckpointRobust(projectRoot, cp, compactedNodes);
+    recorder.finishRun("failed", err.message || String(err));
     throw err;
   }
 
