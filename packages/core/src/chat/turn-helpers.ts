@@ -52,12 +52,10 @@ export function resolveSessionId(explicit?: string): string {
   return cliSessionFallback;
 }
 
-/** Resolves a stable runId for a turn / execution run: explicit input → AGENCY_RUN_ID env → sessionId → resolveSessionId() */
-export function resolveRunId(explicitRunId?: string, explicitSessionId?: string): string {
+/** Resolves a runId for an execution run: explicit input → fresh run UUID per invocation */
+export function resolveRunId(explicitRunId?: string, _explicitSessionId?: string): string {
   if (explicitRunId) return explicitRunId;
-  if (process.env.AGENCY_RUN_ID) return process.env.AGENCY_RUN_ID;
-  const sess = resolveSessionId(explicitSessionId);
-  return sess ? `run-${sess}` : `run-${randomUUID()}`;
+  return `run-${randomUUID()}`;
 }
 
 /** Per-budget default tool/continuation iteration cap for a turn. */

@@ -89,8 +89,17 @@ export interface ActionEvidence {
   [key: string]: unknown;
 }
 
+export interface RunContext {
+  runId: string;
+  sessionId?: string;
+  turnId?: string;
+  parentId?: string;
+  agentId?: string;
+  dispatchId?: string;
+}
+
 export interface ActionLifecycleEvent {
-  /** Unique execution instance ID (e.g., "run-123:turn-123:write_file:seq-4") */
+  /** Unique execution instance ID (e.g., "run-123:toolCall-456") */
   id: string;
   /** Run correlation ID */
   runId: string;
@@ -275,7 +284,8 @@ export function lifecycleFromToolEvent(
     ? (typeof payload.rawDetail === "string" ? payload.rawDetail : payload.rawDetail as { refId: string; summary: string })
     : undefined;
 
-  const runId = String(payload.runId ?? payload.sessionId ?? process.env.AGENCY_RUN_ID ?? "run-default");
+  const runId = String(payload.runId ?? payload.sessionId ?? "run-legacy");
+  const toolCallId = String(payload.toolCallId ?? payload.operationId ?? payload.callId ?? action);
   const kind: ActionLifecycleKind = payload.kind
     ? (payload.kind as ActionLifecycleKind)
     : capability.category === "automation"
@@ -290,7 +300,7 @@ export function lifecycleFromToolEvent(
   };
 
   return sanitizeLifecycleEvent({
-    id: String(payload.id ?? `${runId}:${String(payload.turnId ?? "turn")}:${action}:${target ?? ""}`),
+    id: String(payload.id ?? `${runId}:${String(payload.turnId ?? "turn")}:${toolCallId}`),
     runId,
     turnId: payload.turnId ? String(payload.turnId) : undefined,
     parentId: payload.parentId ? String(payload.parentId) : undefined,

@@ -92,6 +92,7 @@ export interface ExecuteTurnToolBatchOptions {
   toolCalls: TurnToolCall[];
   projectRoot: string;
   skillsRoot: string;
+  runId?: string;
   sessionId: string;
   prompt: string;
   loopCount: number;
@@ -177,11 +178,14 @@ export async function executeTurnToolBatch(
     if (batchCheck.shouldBreak) {
       breaker.trippedReason = batchCheck.reason ?? "Possible infinite loop detected.";
       for (const tc of toolCalls) {
+        const toolCallId = String(tc.arguments.callId || tc.arguments.toolCallId || `${tc.name}-${randomUUID()}`);
         emitToolStarted({
           name: tc.name,
           toolArgs: tc.arguments,
           seq: nextToolEventSeq(),
+          runId: options.runId,
           turnId: sessionId,
+          toolCallId,
           agentId: toolEventAgentId,
         });
         options.onToolStartedText?.(tc);
@@ -189,7 +193,9 @@ export async function executeTurnToolBatch(
           name: tc.name,
           toolArgs: tc.arguments,
           seq: nextToolEventSeq(),
+          runId: options.runId,
           turnId: sessionId,
+          toolCallId,
           agentId: toolEventAgentId,
           ok: false,
           summary: "blocked by circuit breaker",
@@ -225,21 +231,19 @@ export async function executeTurnToolBatch(
     if (isFileWritingTool(tc.name) && tc.arguments.path) {
       options.onFilesWritten?.(tc.arguments.path);
     }
-    emitToolStarted({
-      name: tc.name,
-      toolArgs: tc.arguments,
-      seq: nextToolEventSeq(),
-      turnId: sessionId,
-      agentId: toolEventAgentId,
-    });
-    options.onToolStartedText?.(tc);
   }
 
   const dispatchCalls = toolCalls.filter((tc) => tc.name === "dispatch_subagent");
   const fanoutResultsPromise =
-    dispatchCalls.length > 1 && options.executeDispatchSubagentFanout
-      ? options.executeDispatchSubagentFanout(dispatchCalls, projectRoot, skillsRoot, signal)
-      : null;
+    dispatchCalls.length > 0 && options.executeDispatchSubagentFanout
+      ? options.executeDispatchSubagentFanout(
+          dispatchCalls,
+          projectRoot,
+          skillsRoot,
+          signal
+        )
+      : undefined;
+
   const fanoutIndexByCall = new Map<TurnToolCall, number>();
   dispatchCalls.forEach((tc, index) => fanoutIndexByCall.set(tc, index));
 
@@ -261,6 +265,18 @@ export async function executeTurnToolBatch(
           step: { label: stepLabel, status: "active" },
         });
       }
+
+      const toolCallId = String(tc.arguments.callId || tc.arguments.toolCallId || `${tc.name}-${randomUUID()}`);
+      emitToolStarted({
+        name: tc.name,
+        toolArgs: tc.arguments,
+        seq: nextToolEventSeq(),
+        runId: options.runId,
+        turnId: sessionId,
+        toolCallId,
+        agentId: toolEventAgentId,
+      });
+      options.onToolStartedText?.(tc);
 
       const toolStartedAt = Date.now();
       let result: string;
@@ -313,7 +329,9 @@ export async function executeTurnToolBatch(
         name: tc.name,
         toolArgs: tc.arguments,
         seq: nextToolEventSeq(),
+        runId: options.runId,
         turnId: sessionId,
+        toolCallId,
         agentId: toolEventAgentId,
         ok,
         summary,

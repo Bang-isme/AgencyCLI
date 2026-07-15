@@ -208,7 +208,6 @@ export async function runWorkflow(
   opts: RunWorkflowOptions = {}
 ): Promise<RunWorkflowResult> {
   const runId = resolveRunId(opts.runId);
-  process.env.AGENCY_RUN_ID = runId;
   const recorder = new RunManifestRecorder(projectRoot, runId);
 
   // Security clearance check

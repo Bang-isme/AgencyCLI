@@ -38,7 +38,9 @@ export {
   type ActionRecoveryHint,
   type ActionEvidence,
   type ActionTimingMetrics,
+  type RunContext,
 } from "./product/action-lifecycle.js";
+export { resolveRunId } from "./chat/turn-helpers.js";
 export { convertLegacyEventToCanonical } from "./runtime/legacy-event-migration.js";
 export {
   saveRunManifest,

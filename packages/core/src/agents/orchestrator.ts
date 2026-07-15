@@ -31,6 +31,7 @@ function publishSubagentLifecycle(
   args: {
     agentId: string;
     dispatchId: string;
+    runId?: string;
     task?: string;
     result?: string;
     reason?: string;
@@ -42,7 +43,7 @@ function publishSubagentLifecycle(
   const label = `Delegate to ${args.agentId}`;
   const event: ActionLifecycleEvent = {
     id: `subagent:${args.dispatchId}:${args.agentId}`,
-    runId: process.env.AGENCY_RUN_ID || args.dispatchId || "run-default",
+    runId: args.runId || args.dispatchId || "run-default",
     kind: "agent",
     dispatchId: args.dispatchId,
     agentId: args.agentId,
@@ -345,6 +346,7 @@ export interface AgentDispatchRequest {
   projectRoot: string;
   contextFiles?: string[];
   dispatchId?: string;
+  runId?: string;
   label?: string;
 }
 
@@ -352,6 +354,7 @@ export interface ParallelDispatchRequest {
   agentId: AgentId;
   task: string;
   dispatchId?: string;
+  runId?: string;
   contextFiles?: string[];
   label?: string;
 }
@@ -638,6 +641,7 @@ async function dispatchAgentImpl(
   publishSubagentLifecycle("running", {
     agentId: req.agentId,
     dispatchId,
+    runId: req.runId,
     task: req.task,
     startedAt: startTime,
   });
@@ -688,6 +692,7 @@ async function dispatchAgentImpl(
     publishSubagentLifecycle("failed", {
       agentId: req.agentId,
       dispatchId,
+      runId: req.runId,
       task: req.task,
       reason: setupErr?.message || "Subagent routing failed",
       elapsedMs: Date.now() - startTime,
@@ -1202,6 +1207,7 @@ async function dispatchAgentImpl(
     publishSubagentLifecycle("succeeded", {
       agentId: req.agentId,
       dispatchId,
+      runId: req.runId,
       result: filesWritten?.length ? `Successfully edited: ${filesWritten.join(", ")}` : "Completed successfully",
       elapsedMs,
     });
@@ -1220,6 +1226,7 @@ async function dispatchAgentImpl(
     publishSubagentLifecycle(incomplete ? "incomplete" : "failed", {
       agentId: req.agentId,
       dispatchId,
+      runId: req.runId,
       result: subagentStderr || "Subagent execution failed",
       elapsedMs,
     });

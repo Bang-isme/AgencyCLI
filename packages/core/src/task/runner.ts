@@ -457,7 +457,6 @@ export async function runPlan(
   const skillsRoot = opts.skillsRoot ?? resolveSkillsRoot();
   const epochId = randomUUID();
   const runId = resolveRunId(opts.runId, opts.taskId || epochId);
-  process.env.AGENCY_RUN_ID = runId;
   const recorder = new RunManifestRecorder(projectRoot, runId);
 
   let cp: TaskCheckpoint;

@@ -128,7 +128,6 @@ export async function runChatTurnWithStream(
 ): Promise<ChatTurnResult> {
   const resolvedSessionId = resolveSessionId(input.sessionId);
   const runId = resolveRunId(input.runId, resolvedSessionId);
-  process.env.AGENCY_RUN_ID = runId;
   const recorder = new RunManifestRecorder(input.projectRoot, runId, resolvedSessionId);
   const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
 

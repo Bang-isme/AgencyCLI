@@ -86,7 +86,9 @@ export interface ToolEvent {
   target: string;
   /** Per-turn monotonic counter so the timeline orders deterministically. */
   seq: number;
+  runId?: string;
   turnId: string;
+  toolCallId?: string;
   agentId?: string;
   dispatchId?: string;
   /** finished/failed only. */
@@ -100,19 +102,24 @@ export function emitToolStarted(args: {
   name: string;
   toolArgs: Record<string, any>;
   seq: number;
+  runId?: string;
   turnId: string;
+  toolCallId?: string;
   agentId?: string;
 }): void {
   if (!shouldEmitToolLifecycleEvent(args.name)) return;
   const { category, action } = classifyTool(args.name);
   const target = toolTarget(args.name, args.toolArgs);
+  const toolCallId = args.toolCallId || `${args.name}-seq-${args.seq}`;
   const ev: ToolEvent = {
     name: args.name,
     category,
     action,
     target,
     seq: args.seq,
+    runId: args.runId,
     turnId: args.turnId,
+    toolCallId,
     agentId: args.agentId,
     dispatchId: typeof args.toolArgs.dispatchId === "string" ? args.toolArgs.dispatchId : undefined,
   };
@@ -122,7 +129,9 @@ export function emitToolStarted(args: {
     name: args.name,
     target,
     seq: args.seq,
+    runId: args.runId,
     turnId: args.turnId,
+    toolCallId,
     agentId: args.agentId,
     dispatchId: ev.dispatchId,
     category,
@@ -137,7 +146,9 @@ export function emitToolFinished(args: {
   name: string;
   toolArgs: Record<string, any>;
   seq: number;
+  runId?: string;
   turnId: string;
+  toolCallId?: string;
   agentId?: string;
   ok: boolean;
   summary: string;
@@ -146,13 +157,16 @@ export function emitToolFinished(args: {
   if (!shouldEmitToolLifecycleEvent(args.name)) return;
   const { category, action } = classifyTool(args.name);
   const target = toolTarget(args.name, args.toolArgs);
+  const toolCallId = args.toolCallId || `${args.name}-seq-${args.seq}`;
   const ev: ToolEvent = {
     name: args.name,
     category,
     action,
     target,
     seq: args.seq,
+    runId: args.runId,
     turnId: args.turnId,
+    toolCallId,
     agentId: args.agentId,
     dispatchId: typeof args.toolArgs.dispatchId === "string" ? args.toolArgs.dispatchId : undefined,
     ok: args.ok,
@@ -166,7 +180,9 @@ export function emitToolFinished(args: {
     name: args.name,
     target,
     seq: args.seq,
+    runId: args.runId,
     turnId: args.turnId,
+    toolCallId,
     agentId: args.agentId,
     dispatchId: ev.dispatchId,
     category,
@@ -183,22 +199,28 @@ export function emitToolCancelled(args: {
   name: string;
   toolArgs: Record<string, any>;
   seq: number;
+  runId?: string;
   turnId: string;
+  toolCallId?: string;
   agentId?: string;
   reason?: string;
 }): void {
   if (!shouldEmitToolLifecycleEvent(args.name)) return;
   const { category, action } = classifyTool(args.name);
   const target = toolTarget(args.name, args.toolArgs);
+  const toolCallId = args.toolCallId || `${args.name}-seq-${args.seq}`;
   const lifecycleEvent = lifecycleFromToolEvent("cancelled", {
     name: args.name,
     target,
     seq: args.seq,
+    runId: args.runId,
     turnId: args.turnId,
+    toolCallId,
     agentId: args.agentId,
     category,
     action,
-    summary: args.reason ?? "Execution cancelled",
+    summary: args.reason ?? "Cancelled",
+    startedAt: Date.now(),
   });
   publishActionLifecycle(lifecycleEvent);
 }

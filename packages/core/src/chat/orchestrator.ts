@@ -110,102 +110,111 @@ export function appendSuggestedCommands(
   _suggestedCommands: string[]
 ): string {
   return text;
-}
-
-
-export async function runChatTurn(
+}export async function runChatTurn(
   input: ChatTurnInput
 ): Promise<ChatTurnResult> {
   const resolvedSessionId = resolveSessionId(input.sessionId);
   const runId = resolveRunId(input.runId, resolvedSessionId);
-  process.env.AGENCY_RUN_ID = runId;
   const recorder = new RunManifestRecorder(input.projectRoot, runId, resolvedSessionId);
+  let terminalStatus: "succeeded" | "failed" | "incomplete" | "cancelled" = "succeeded";
+  let terminalSummary = `Completed turn for session ${resolvedSessionId}`;
 
-  const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
+  try {
+    const historicalMemories = await loadHistoricalMemories(input.projectRoot, input.prompt, resolvedSessionId);
 
-  // Ingest user prompt at the start of the turn
-  safeAddEpisode(
-    input.projectRoot,
-    resolvedSessionId,
-    input.prompt,
-    0,
-    "user_input",
-    input.prompt
-  );
-
-  const budget = parseBudgetMode(input.budget);
-  const initialPlan = getTokenBudgetPlan(budget);
-  const { route, fromCache } = await resolveRoute(input, initialPlan);
-
-  const config = loadAgencyConfig();
-  
-  // 1. Enforce Cost budget hard-freeze
-  const costState = globalCostGovernor.getGovernanceState();
-  if (costState.isDepleted) {
-    throw new Error(`[Cost Governance Depleted] Budget limit of $${costState.budgetLimit.toFixed(2)} exceeded. Execution frozen.`);
-  }
-
-  let requestedProviderId = input.providerId ?? route.provider;
-  
-  // 2. Auto model downgrade at 75% spend
-  if (costState.shouldDowngrade && requestedProviderId === "anthropic") {
-    requestedProviderId = "google";
-  }
-
-  // 3. Provider Failover Switch
-  const providerId = globalProviderSupervisor.getOptimalProvider(requestedProviderId) as any;
-  const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
-
-  // Resolve the adaptive token budget plan based on the resolved modelName (A1).
-  // Provider-aware so the budget uses the conservative context window for THIS
-  // provider (model-catalog clamps a wrong-high catalog entry down).
-  let plan = getTokenBudgetPlan(budget, modelName, providerId);
-
-  const routeSummary = formatRouteSummary(route);
-  const suggestedCommands = buildSuggestedCommands(
-    route,
-    input.projectRoot,
-    input.prompt
-  );
-  const atRefs = resolveAllFileReferences(input.prompt, input.projectRoot);
-  const atBlock =
-    atRefs.length > 0
-      ? buildAtReferenceContext(input.projectRoot, atRefs, plan.maxContextChars)
-          .block
-      : "";
-  const basePack = buildContextPack(input.projectRoot, route, plan);
-  const contextPack = atBlock
-    ? `${basePack}\n\n${atBlock}`.slice(0, plan.maxContextChars)
-    : basePack;
-  const contextFiles = [
-    ...new Set([
-      ...selectContextFiles(input.projectRoot, route, plan, input.prompt),
-      ...atRefs,
-    ]),
-  ];
-
-  const useLlm = !input.noLlm && providerHasKey(providerId, config);
-
-  if (!useLlm) {
-    const text = formatRouteOnlyResponse(
-      route,
-      routeSummary,
-      suggestedCommands,
-      plan
+    // Ingest user prompt at the start of the turn
+    safeAddEpisode(
+      input.projectRoot,
+      resolvedSessionId,
+      input.prompt,
+      0,
+      "user_input",
+      input.prompt
     );
-    const hint = fromCache ? "\n(route cache hit)" : "";
-    recorder.finishRun("succeeded", `Completed route-only turn for session ${resolvedSessionId}`);
-    return {
+
+    const budget = parseBudgetMode(input.budget);
+    const initialPlan = getTokenBudgetPlan(budget);
+    const { route, fromCache } = await resolveRoute(input, initialPlan);
+
+    const config = loadAgencyConfig();
+    
+    // 1. Enforce Cost budget hard-freeze
+    const costState = globalCostGovernor.getGovernanceState();
+    if (costState.isDepleted) {
+      terminalStatus = "cancelled";
+      terminalSummary = "Cost budget depleted";
+      throw new Error(`[Cost Governance Depleted] Budget limit of $${costState.budgetLimit.toFixed(2)} exceeded. Execution frozen.`);
+    }
+
+    let requestedProviderId = input.providerId ?? route.provider;
+    
+    // 2. Auto model downgrade at 75% spend
+    if (costState.shouldDowngrade && requestedProviderId === "anthropic") {
+      requestedProviderId = "google";
+    }
+
+    // 3. Provider Failover Switch
+    const providerId = globalProviderSupervisor.getOptimalProvider(requestedProviderId) as any;
+    const modelName = config.providers[providerId as ProviderId]?.model || (config.providers as any)[providerId]?.defaultModel;
+
+    // Provider-aware so the budget uses the conservative context window for THIS
+    // provider (model-catalog clamps a wrong-high catalog entry down).
+    let plan = getTokenBudgetPlan(budget, modelName, providerId);
+
+    const routeSummary = formatRouteSummary(route);
+    const suggestedCommands = buildSuggestedCommands(
       route,
-      routeSummary,
-      assistantText: text + hint,
-      suggestedCommands,
-      routeOnly: true,
-      budget,
-      contextFiles,
-      routeFromCache: fromCache,
-    };
-  }
+      input.projectRoot,
+      input.prompt
+    );
+    const atRefs = resolveAllFileReferences(input.prompt, input.projectRoot);
+    const atBlock =
+      atRefs.length > 0
+        ? buildAtReferenceContext(input.projectRoot, atRefs, plan.maxContextChars)
+            .block
+        : "";
+    const basePack = buildContextPack(input.projectRoot, route, plan);
+    const contextPack = atBlock
+      ? `${basePack}\n\n${atBlock}`.slice(0, plan.maxContextChars)
+      : basePack;
+    const contextFiles = [
+      ...new Set([
+        ...selectContextFiles(input.projectRoot, route, plan, input.prompt),
+        ...atRefs,
+      ]),
+    ];
+
+    const useLlm = !input.noLlm && providerHasKey(providerId, config);
+
+    if (!useLlm) {
+      const text = formatRouteOnlyResponse(
+        route,
+        routeSummary,
+        suggestedCommands,
+        plan
+      );
+      const hint = fromCache ? "\n(route cache hit)" : "";
+      terminalStatus = "succeeded";
+      terminalSummary = `Completed route-only turn for session ${resolvedSessionId}`;
+      return {
+        route,
+        routeSummary,
+        assistantText: text + hint,
+        suggestedCommands,
+        routeOnly: true,
+        budget,
+        contextFiles,
+        routeFromCache: fromCache,
+        filesWritten: [],
+        completionMetadata: {
+          thinkingBudget: undefined,
+          promptTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          modelSpec: getModelSpec(modelName, providerId),
+        },
+      };
+    }
 
   const startTime = Date.now();
   const traceRecorder = createTraceRecorder(input.projectRoot, resolvedSessionId, input.prompt);
@@ -548,25 +557,32 @@ export async function runChatTurn(
     llmText
   );
 
-  recorder.finishRun("succeeded", `Completed turn for session ${resolvedSessionId}`);
-
-  return {
-    route,
-    routeSummary,
-    assistantText: appendSuggestedCommands(llmText, suggestedCommands),
-    suggestedCommands,
-    routeOnly: false,
-    budget,
-    contextFiles,
-    routeFromCache: fromCache,
-    filesWritten: Array.from(filesWritten),
-    completionMetadata: {
-      thinkingBudget: resolvedOptimization?.budget,
-      taskIntent: resolvedOptimization?.intent,
-      promptTokens: aggregatedUsage.promptTokens,
-      completionTokens: aggregatedUsage.completionTokens,
-      reasoningTokens: aggregatedUsage.reasoningTokens,
-      modelSpec: getModelSpec(modelName, providerId),
-    },
-  };
+    return {
+      route,
+      routeSummary,
+      assistantText: appendSuggestedCommands(llmText, suggestedCommands),
+      suggestedCommands,
+      routeOnly: false,
+      budget,
+      contextFiles,
+      routeFromCache: fromCache,
+      filesWritten: Array.from(filesWritten),
+      completionMetadata: {
+        thinkingBudget: resolvedOptimization?.budget,
+        taskIntent: resolvedOptimization?.intent,
+        promptTokens: aggregatedUsage.promptTokens,
+        completionTokens: aggregatedUsage.completionTokens,
+        reasoningTokens: aggregatedUsage.reasoningTokens,
+        modelSpec: getModelSpec(modelName, providerId),
+      },
+    };
+  } catch (err: any) {
+    if (terminalStatus === "succeeded") {
+      terminalStatus = "failed";
+      terminalSummary = err.message || String(err);
+    }
+    throw err;
+  } finally {
+    recorder.finishRun(terminalStatus, terminalSummary);
+  }
 }
