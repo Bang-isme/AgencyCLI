@@ -17,6 +17,7 @@ export {
 } from "./product/capabilities.js";
 export {
   lifecycleFromToolEvent,
+  sanitizeLifecycleEvent,
   isOpaqueRuntimeTarget,
   publishActionLifecycle,
   ACTION_LIFECYCLE_TOPIC,
@@ -27,6 +28,7 @@ export {
   ACTION_INCOMPLETE_TOPIC,
   ACTION_CANCELLED_TOPIC,
   type ActionLifecycleEvent,
+  type ActionLifecycleKind,
   type ActionLifecycleState,
   type ActionSemanticCategory,
   type ActionSemanticDetail,
@@ -34,7 +36,22 @@ export {
   type ActionVerificationState,
   type ActionVerificationStatus,
   type ActionRecoveryHint,
+  type ActionEvidence,
+  type ActionTimingMetrics,
 } from "./product/action-lifecycle.js";
+export { convertLegacyEventToCanonical } from "./runtime/legacy-event-migration.js";
+export {
+  saveRunManifest,
+  loadRunManifest,
+  listRunManifests,
+  enforceRunRetention,
+  sanitizeRunManifest,
+  MAX_RUN_MANIFESTS,
+  MAX_MANIFEST_AGE_MS,
+  type RunManifest,
+  type RunManifestPolicySummary,
+  type RunManifestReceipts,
+} from "./runtime/run-manifest-store.js";
 export {
   getWorkspaceReadiness,
   providerIsUsable,

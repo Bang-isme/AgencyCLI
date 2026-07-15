@@ -43,6 +43,9 @@ export interface RuntimeToolStats {
   last?: { name: string; ok: boolean; target?: string; summary?: string };
 }
 
+import { convertLegacyEventToCanonical } from "./legacy-event-migration.js";
+import type { ActionLifecycleEvent } from "../product/action-lifecycle.js";
+
 export interface RuntimeState {
   /** Total events folded. */
   eventCount: number;
@@ -67,6 +70,10 @@ export interface RuntimeState {
   totalDurationMs: number;
   /** Sum of attributed cost on terminal events (best-effort, USD). */
   totalCostUsd: number;
+  /** Active in-flight lifecycle events (`running` or `queued` state). */
+  activeWork?: ActionLifecycleEvent[];
+  /** Chronological history of canonical ActionLifecycleEvents. */
+  latestCanonicalEvents?: ActionLifecycleEvent[];
 }
 
 /** Tool actions (from `classifyTool`) that touch a file's content/location. */
@@ -102,6 +109,9 @@ export function reduceRuntimeState(events: ReplayEvent[]): RuntimeState {
   const tools: RuntimeToolStats = { total: 0, failed: 0, byCategory: {} };
   const modified = new Set<string>();
   const agents = new Map<string, RuntimeAgentState>();
+  const activeWorkMap = new Map<string, ActionLifecycleEvent>();
+  const latestCanonicalEvents: ActionLifecycleEvent[] = [];
+
   let plan: RuntimePlanItem[] = [];
   let continuations = 0;
   let warnings = 0;
@@ -121,7 +131,46 @@ export function reduceRuntimeState(events: ReplayEvent[]): RuntimeState {
 
     const p = parsePayload(ev);
 
+    // Single migration adapter for legacy events -> canonical ActionLifecycleEvent
+    const canonical = convertLegacyEventToCanonical(ev);
+    if (canonical) {
+      latestCanonicalEvents.push(canonical);
+      if (canonical.state === "running" || canonical.state === "queued") {
+        activeWorkMap.set(canonical.id, canonical);
+      } else {
+        activeWorkMap.delete(canonical.id);
+      }
+    }
+
     switch (ev.action) {
+      case "action:lifecycle":
+      case "action:queued":
+      case "action:running":
+      case "action:succeeded":
+      case "action:failed":
+      case "action:incomplete":
+      case "action:cancelled": {
+        if (canonical && canonical.kind === "tool") {
+          if (canonical.state === "running") {
+            tools.total++;
+            const cat = canonical.semantic?.category ?? "other";
+            tools.byCategory[cat] = (tools.byCategory[cat] ?? 0) + 1;
+          } else if (canonical.state === "succeeded" || canonical.state === "failed" || canonical.state === "incomplete" || canonical.state === "cancelled") {
+            const ok = canonical.state === "succeeded";
+            if (!ok) tools.failed++;
+            tools.last = {
+              name: canonical.action,
+              ok,
+              target: canonical.target,
+              summary: canonical.summary,
+            };
+            if (ok && canonical.target && (canonical.semantic?.operation === "write" || canonical.semantic?.operation === "edit" || canonical.semantic?.operation === "delete" || canonical.semantic?.operation === "move")) {
+              modified.add(canonical.target);
+            }
+          }
+        }
+        break;
+      }
       case "tool:started": {
         tools.total++;
         const cat = typeof p?.category === "string" ? p.category : "other";
@@ -220,6 +269,8 @@ export function reduceRuntimeState(events: ReplayEvent[]): RuntimeState {
     lastWarning,
     totalDurationMs,
     totalCostUsd,
+    activeWork: Array.from(activeWorkMap.values()),
+    latestCanonicalEvents,
   };
 }
 

@@ -42,6 +42,8 @@ function publishSubagentLifecycle(
   const label = `Delegate to ${args.agentId}`;
   const event: ActionLifecycleEvent = {
     id: `subagent:${args.dispatchId}:${args.agentId}`,
+    runId: process.env.AGENCY_RUN_ID || args.dispatchId || "run-default",
+    kind: "agent",
     dispatchId: args.dispatchId,
     agentId: args.agentId,
     action: "dispatch_subagent",

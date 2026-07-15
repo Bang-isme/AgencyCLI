@@ -10,6 +10,15 @@ export const ACTION_FAILED_TOPIC = "action:failed";
 export const ACTION_INCOMPLETE_TOPIC = "action:incomplete";
 export const ACTION_CANCELLED_TOPIC = "action:cancelled";
 
+export type ActionLifecycleKind =
+  | "context"
+  | "memory"
+  | "tool"
+  | "loop"
+  | "verification"
+  | "hook"
+  | "agent";
+
 export type ActionLifecycleState =
   | "queued"
   | "running"
@@ -62,11 +71,33 @@ export interface ActionRecoveryHint {
   suggestedAction?: string;
 }
 
+export interface ActionTimingMetrics {
+  startedAt?: number;
+  updatedAt?: number;
+  durationMs?: number;
+  elapsedMs?: number;
+}
+
+export interface ActionEvidence {
+  files?: string[];
+  gateResult?: any;
+  artifactPath?: string;
+  selectedMemoryIds?: string[];
+  parserDiagnostic?: string;
+  target?: string;
+  detail?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface ActionLifecycleEvent {
-  /** Unique execution instance ID (e.g., "turn-123:write_file:seq-4") */
+  /** Unique execution instance ID (e.g., "run-123:turn-123:write_file:seq-4") */
   id: string;
+  /** Run correlation ID */
+  runId: string;
   /** Turn or session correlation ID */
   turnId?: string;
+  /** Parent execution instance ID if nested */
+  parentId?: string;
   /** Monotonic sequence ID within turn */
   seq?: number;
   /** Agent / worker attribution */
@@ -76,6 +107,8 @@ export interface ActionLifecycleEvent {
   /** Task ID in DAG / plan */
   taskId?: string;
 
+  /** Canonical kind of runtime activity */
+  kind: ActionLifecycleKind;
   /** Canonical raw tool/action name (e.g., "replace_file_content", "dispatch_subagent") */
   action: string;
   /** Strict lifecycle state */
@@ -90,6 +123,7 @@ export interface ActionLifecycleEvent {
   semantic?: ActionSemanticDetail;
 
   /** Timing metrics */
+  timing?: ActionTimingMetrics;
   startedAt?: number;
   updatedAt?: number;
   durationMs?: number;
@@ -100,6 +134,12 @@ export interface ActionLifecycleEvent {
 
   /** Complete raw detail or spilled payload reference */
   rawDetail?: string | { refId: string; summary: string };
+
+  /** Sanitized structured evidence (no secrets, no raw provider payloads) */
+  evidence?: ActionEvidence;
+
+  /** Risk assessment */
+  risk?: "low" | "medium" | "high" | "critical";
 
   /** Structured verification state */
   verificationState?: ActionVerificationState;
@@ -119,11 +159,62 @@ export function isOpaqueRuntimeTarget(target: string | undefined): boolean {
   return /(?:^OpenJS\.NodeJS\.|Microsoft\.Winget\.|_8we(?:$|\b))/i.test(target);
 }
 
+/** Redacts secrets and raw process titles from lifecycle events before persist/emit. */
+export function sanitizeLifecycleEvent(event: ActionLifecycleEvent): ActionLifecycleEvent {
+  const target = isOpaqueRuntimeTarget(event.target) ? undefined : event.target;
+  const label = isOpaqueRuntimeTarget(event.target) && event.label.includes("OpenJS")
+    ? "Runtime Process"
+    : event.label;
+
+  const sanitizeString = (str?: string): string | undefined => {
+    if (!str) return str;
+    let s = str;
+    // Redact common secret formats (API keys, Bearer tokens, passwords)
+    s = s.replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|AIza[a-zA-Z0-9_-]{35}|gsk_[a-zA-Z0-9_-]{20,}|Bearer\s+[a-zA-Z0-9._-]{20,})\b/g, "[REDACTED_SECRET]");
+    s = s.replace(/((?:api_key|password|secret|auth_token)\s*[:=]\s*["'])[^"']+(["'])/gi, "$1[REDACTED]$2");
+    return s;
+  };
+
+  const sanitizeObj = (obj: any): any => {
+    if (!obj || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(sanitizeObj);
+    const result: Record<string, any> = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (/secret|password|token|key|authorization/i.test(key)) {
+        result[key] = "[REDACTED]";
+      } else if (typeof val === "string") {
+        result[key] = sanitizeString(val);
+      } else if (typeof val === "object") {
+        result[key] = sanitizeObj(val);
+      } else {
+        result[key] = val;
+      }
+    }
+    return result;
+  };
+
+  const evidence = event.evidence ? sanitizeObj(event.evidence) : undefined;
+  if (evidence && target !== undefined) {
+    evidence.target = target;
+  }
+
+  return {
+    ...event,
+    target,
+    label,
+    summary: sanitizeString(event.summary),
+    recovery: sanitizeString(event.recovery),
+    evidence,
+    meta: event.meta ? sanitizeObj(event.meta) : undefined,
+  };
+}
+
 /** Helper to publish an ActionLifecycleEvent to topic action:lifecycle and strict state topic. */
 export function publishActionLifecycle(event: ActionLifecycleEvent): void {
+  const sanitized = sanitizeLifecycleEvent(event);
   const bus = EventBus.getInstance();
-  void bus.publish(ACTION_LIFECYCLE_TOPIC, event);
-  void bus.publish(`action:${event.state}`, event);
+  void bus.publish(ACTION_LIFECYCLE_TOPIC, sanitized);
+  void bus.publish(`action:${sanitized.state}`, sanitized);
 }
 
 /** Converts existing EventBus tool payloads at one boundary; TUI never parses raw tool names. */
@@ -167,28 +258,48 @@ export function lifecycleFromToolEvent(
     ? (typeof payload.rawDetail === "string" ? payload.rawDetail : payload.rawDetail as { refId: string; summary: string })
     : undefined;
 
-  return {
-    id: String(payload.id ?? `${String(payload.turnId ?? "turn")}:${action}:${target ?? ""}:${String(payload.seq ?? now)}`),
+  const runId = String(payload.runId ?? payload.sessionId ?? process.env.AGENCY_RUN_ID ?? "run-default");
+  const kind: ActionLifecycleKind = payload.kind
+    ? (payload.kind as ActionLifecycleKind)
+    : capability.category === "automation"
+      ? "agent"
+      : (action.includes("memory") || action.includes("remember") || action.includes("forget"))
+        ? "memory"
+        : "tool";
+
+  const rawEvidence = (payload.evidence as ActionEvidence) ?? {
+    target: displayTarget,
+    detail: typeof payload.summary === "string" ? { summary: payload.summary } : undefined,
+  };
+
+  return sanitizeLifecycleEvent({
+    id: String(payload.id ?? `${runId}:${String(payload.turnId ?? "turn")}:${action}:${target ?? ""}:${String(payload.seq ?? now)}`),
+    runId,
     turnId: payload.turnId ? String(payload.turnId) : undefined,
+    parentId: payload.parentId ? String(payload.parentId) : undefined,
     seq: typeof payload.seq === "number" ? payload.seq : undefined,
     agentId: payload.agentId ? String(payload.agentId) : undefined,
     dispatchId: payload.dispatchId ? String(payload.dispatchId) : undefined,
     taskId: payload.taskId ? String(payload.taskId) : undefined,
+    kind,
     action,
     state,
     label,
     target: displayTarget,
     semantic,
+    timing: { startedAt, updatedAt, durationMs, elapsedMs },
     startedAt,
     updatedAt,
     durationMs,
     elapsedMs,
     summary: payload.summary ? String(payload.summary) : undefined,
     rawDetail: rawDetailVal,
+    evidence: rawEvidence,
+    risk: (payload.risk as any) ?? (fullCap?.risk === "high" ? "high" : "low"),
     verificationState: payload.verificationState as ActionVerificationState | undefined,
     recoveryHint: payload.recoveryHint as ActionRecoveryHint | undefined ?? (recoveryMessage ? { suggestion: recoveryMessage, autoRecoverable: false } : undefined),
     recovery: recoveryMessage,
     meta: payload.meta as Record<string, unknown> | undefined,
-  };
+  });
 }
 
