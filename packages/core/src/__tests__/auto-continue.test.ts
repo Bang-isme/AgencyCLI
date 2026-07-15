@@ -47,6 +47,7 @@ describe("detectIncompleteCompletion (pure)", () => {
     ).toBe(true);
     expect(detectIncompleteCompletion("Next, I'll create the config file and wire it up.")).toBe(true);
     expect(detectIncompleteCompletion("Good progress so far. Let me continue with the routes.")).toBe(true);
+    expect(detectIncompleteCompletion("TypeScript compiles clean. Now run the full Vite build.")).toBe(true);
   });
 
   it("fires on an explicit 'to be continued' marker", () => {

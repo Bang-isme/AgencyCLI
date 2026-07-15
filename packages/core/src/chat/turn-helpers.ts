@@ -241,7 +241,7 @@ const INCOMPLETE_TAIL_CHARS = 280;
 
 /** First-person, present/future "I'll keep going on the task NOW" promises. */
 const CONTINUATION_PROMISE =
-  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|next,?\s+i(?:'|’)?ll|next,?\s+i will)\s+(now\s+)?(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do|inspect|explore|examine|check|verify|read|scan|look|kick off|launch|begin|start|scaffold|set up|run|execute|install|configure)\b|\b(tôi sẽ|bắt đầu|tiến hành|tiếp tục|tiếp theo sẽ)\s+(tạo|viết|triển khai|xây dựng|scaffold|thiết lập|cấu hình|cập nhật|hoàn thiện|làm|chạy|kiểm tra|đọc|khám phá)\b/i;
+  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|let'?s|let us|next,?\s+i(?:'|’)?ll|next,?\s+i will|now,?\s*(?:let'?s|let us|let me|i(?:'|’)?ll|i will)?)\s*(now\s+)?(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do|inspect|explore|examine|check|verify|read|scan|look|kick off|launch|begin|start|scaffold|set up|run|execute|install|configure)\b|\b(tôi sẽ|bắt đầu|tiến hành|tiếp tục|tiếp theo sẽ|bây giờ sẽ|giờ sẽ)\s+(tạo|viết|triển khai|xây dựng|scaffold|thiết lập|cấu hình|cập nhật|hoàn thiện|làm|chạy|kiểm tra|đọc|khám phá)\b/i;
 
 /** Whole-message action intent — model narrates work it has not started via tools. */
 const START_BY_PROMISE = /\bi(?:'|’)?ll\s+start\s+by\b/i;
