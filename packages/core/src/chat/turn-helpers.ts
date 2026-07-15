@@ -247,7 +247,7 @@ const INCOMPLETE_TAIL_CHARS = 280;
 
 /** First-person, present/future "I'll keep going on the task NOW" promises. */
 const CONTINUATION_PROMISE =
-  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|let'?s|let us|next,?\s+i(?:'|’)?ll|next,?\s+i will|now,?\s*(?:let'?s|let us|let me|i(?:'|’)?ll|i will)?)\s*(now\s+)?(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do|inspect|explore|examine|check|verify|read|scan|look|kick off|launch|begin|start|scaffold|set up|run|execute|install|configure)\b|\b(tôi sẽ|bắt đầu|tiến hành|tiếp tục|tiếp theo sẽ|bây giờ sẽ|giờ sẽ)\s+(tạo|viết|triển khai|xây dựng|scaffold|thiết lập|cấu hình|cập nhật|hoàn thiện|làm|chạy|kiểm tra|đọc|khám phá)\b/i;
+  /\b(i(?:'|’)?ll|i will|i(?:'|’)?m going to|i am going to|let me|let'?s|let us|next,?\s+i(?:'|’)?ll|next,?\s+i will|now,?\s*(?:let'?s|let us|let me|i(?:'|’)?ll|i will)?)\s*(?:just|now|first|also|start to|go ahead and|try to)?\s*(continue|proceed|keep going|carry on|move on|go ahead|add|create|implement|write|generate|build|finish|complete|fill in|update|provide|do|inspect|explore|examine|check|verify|read|scan|look|kick off|launch|begin|start|scaffold|set up|run|execute|install|configure|fix|batch_edit|edit|use)\b|\b(tôi sẽ|bắt đầu|tiến hành|tiếp tục|tiếp theo sẽ|bây giờ sẽ|bây giờ|giờ|giờ sẽ|để tôi|sẽ|dùng)\s+(?:lại|ngay|chạy|sửa|fix|dùng|tạo|viết|triển khai|xây dựng|scaffold|thiết lập|cấu hình|cập nhật|hoàn thiện|làm|kiểm tra|đọc|khám phá|run|batch_edit)\b/i;
 
 /** Whole-message action intent — model narrates work it has not started via tools. */
 const START_BY_PROMISE = /\bi(?:'|’)?ll\s+start\s+by\b/i;
@@ -273,6 +273,11 @@ const VIET_START_NOW = /\bbắt đầu ngay\s*:?\s*$/i;
 const VIET_GET_TO_WORK = /\b(?:tôi\s+)?(?:sẽ\s+)?bắt tay vào việc\b/i;
 const VIET_READ_THEN_WRITE =
   /(?:đồng thời\s+)?(?:đọc|kiểm tra|xem)\s+[\s\S]{0,120}(?:để\s+viết|cho\s+đúng)\s*:\s*$/i;
+const VIET_GO_RUN = /(?:giờ|bây giờ|tiếp theo|sẽ)\s+chạy\b/i;
+
+/** Unfulfilled execution intent in prose or thoughts. */
+const UNFULFILLED_INTENT_PATTERN =
+  /\b(let me|i need to|i will|let'?s|the user wants me to|tôi sẽ|để tôi|bây giờ|giờ|sẽ)\s+[\s\S]{0,100}?\b(run|execute|start|fix|edit|batch_edit|write|read|check|chạy|sửa|tạo|viết)\b/i;
 
 /** Explicit "to be continued" / "I'll send the rest" markers. */
 const EXPLICIT_INCOMPLETE =
@@ -295,6 +300,26 @@ const MAX_ARTIFACT_SCAN_BYTES = 512 * 1024;
 const USER_OFFER =
   /\b(let me know|would you like|do you want|if you(?:'|’)?d like|if you want|shall i|should i|want me to)\b/;
 
+function checkSingleTextIncomplete(trimmed: string): boolean {
+  if (CODE_PLACEHOLDER.test(trimmed)) return true;
+  if (trimmed.endsWith(":")) return true;
+  const tail = trimmed.slice(-INCOMPLETE_TAIL_CHARS).toLowerCase();
+  if (USER_OFFER.test(tail) || USER_OFFER.test(trimmed.toLowerCase())) return false;
+  if (tail.endsWith("?")) return false;
+  if (START_BY_PROMISE.test(trimmed)) return true;
+  if (IN_PROGRESS_NARRATION.test(trimmed)) return true;
+  if (VIET_GET_TO_WORK.test(trimmed)) return true;
+  if (VIET_GO_RUN.test(trimmed)) return true;
+  if (UNFULFILLED_INTENT_PATTERN.test(trimmed)) return true;
+  if (BEFORE_CONTINUING.test(tail)) return true;
+  if (READ_BEFORE_CONTINUE.test(tail)) return true;
+  if (VIET_BEFORE_CONTINUE.test(tail)) return true;
+  if (VIET_READ_BEFORE_CONTINUE.test(trimmed)) return true;
+  if (VIET_START_NOW.test(tail)) return true;
+  if (VIET_READ_THEN_WRITE.test(tail)) return true;
+  return CONTINUATION_PROMISE.test(tail) || EXPLICIT_INCOMPLETE.test(tail);
+}
+
 /**
  * Conservative completion-quality check: a NO-tool-call turn normally ENDS the
  * model loop, but did the model explicitly signal the task is UNFINISHED — an
@@ -313,21 +338,14 @@ export function detectIncompleteCompletion(text: string): boolean {
   if (!text) return false;
   const trimmed = text.trimEnd();
   if (!trimmed) return false;
-  if (CODE_PLACEHOLDER.test(trimmed)) return true;
-  if (trimmed.endsWith(":")) return true;
-  if (START_BY_PROMISE.test(trimmed)) return true;
-  if (IN_PROGRESS_NARRATION.test(trimmed)) return true;
-  if (VIET_GET_TO_WORK.test(trimmed)) return true;
-  const tail = trimmed.slice(-INCOMPLETE_TAIL_CHARS).toLowerCase();
-  if (USER_OFFER.test(tail)) return false;
-  if (tail.endsWith("?")) return false;
-  if (BEFORE_CONTINUING.test(tail)) return true;
-  if (READ_BEFORE_CONTINUE.test(tail)) return true;
-  if (VIET_BEFORE_CONTINUE.test(tail)) return true;
-  if (VIET_READ_BEFORE_CONTINUE.test(trimmed)) return true;
-  if (VIET_START_NOW.test(tail)) return true;
-  if (VIET_READ_THEN_WRITE.test(tail)) return true;
-  return CONTINUATION_PROMISE.test(tail) || EXPLICIT_INCOMPLETE.test(tail);
+
+  const thoughtMatch = text.match(/<thought>([\s\S]*?)<\/thought>/i);
+  const thoughtContent = thoughtMatch ? thoughtMatch[1]!.trim() : "";
+  const mainText = text.replace(/<thought>[\s\S]*?<\/thought>/gi, "").trim();
+
+  if (mainText && checkSingleTextIncomplete(mainText)) return true;
+  if (thoughtContent && checkSingleTextIncomplete(thoughtContent)) return true;
+  return checkSingleTextIncomplete(trimmed);
 }
 
 /**
